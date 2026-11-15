@@ -68,7 +68,7 @@ if not defined NINJA_EXE (
 )
 
 echo Configuring DukaanOS...
-"%CMAKE_EXE%" -S "%~dp0." -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" -DCMAKE_CXX_COMPILER="%CXX_COMPILER%" -DCMAKE_PREFIX_PATH="%QT_PREFIX_PATH%"
+"%CMAKE_EXE%" -S "%~dp0." -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" -DCMAKE_CXX_COMPILER="%CXX_COMPILER%" -DCMAKE_PREFIX_PATH="%QT_PREFIX_PATH%" -DBUILD_TESTING=OFF
 if errorlevel 1 (
     echo CMake configure failed. Check that the MinGW compiler matches the installed Qt kit.
     pause
