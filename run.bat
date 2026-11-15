@@ -15,14 +15,16 @@ if not defined QT_PREFIX_PATH (
     )
 )
 if not defined QT_PREFIX_PATH (
-    echo Qt 6 was not found. Install a Qt 6 MinGW 64-bit kit, or set QT_PREFIX_PATH to its mingw_64 folder.
+    echo Qt 6 MinGW 64-bit was not found. Install Qt 6 with the MinGW kit, or set QT_PREFIX_PATH to its mingw_64 folder.
     pause
     exit /b 1
 )
 
+for %%I in ("%QT_PREFIX_PATH%\..\..") do set "QT_KIT_ROOT=%%~fI"
+if exist "%QT_KIT_ROOT%\Tools" set "QT_ROOT=%QT_KIT_ROOT%"
+
 if not defined CXX_COMPILER if defined CMAKE_CXX_COMPILER set "CXX_COMPILER=%CMAKE_CXX_COMPILER%"
 if not defined CXX_COMPILER if defined MINGW_ROOT if exist "%MINGW_ROOT%\bin\g++.exe" set "CXX_COMPILER=%MINGW_ROOT%\bin\g++.exe"
-if not defined CXX_COMPILER if exist "%QT_ROOT%\Tools\mingw1310_64\bin\g++.exe" set "CXX_COMPILER=%QT_ROOT%\Tools\mingw1310_64\bin\g++.exe"
 if not defined CXX_COMPILER (
     for /d %%M in ("%QT_ROOT%\Tools\mingw*_64") do (
         if not defined CXX_COMPILER if exist "%%~fM\bin\g++.exe" set "CXX_COMPILER=%%~fM\bin\g++.exe"
@@ -39,6 +41,9 @@ if not defined CXX_COMPILER (
 
 for %%I in ("%CXX_COMPILER%") do set "MINGW_BIN=%%~dpI"
 set "PATH=%QT_PREFIX_PATH%\bin;%MINGW_BIN%;%PATH%"
+for %%I in ("%MINGW_BIN%..") do set "MINGW_NAME=%%~nxI"
+for %%I in ("%QT_PREFIX_PATH%\..") do set "QT_VERSION=%%~nxI"
+set "BUILD_DIR=%~dp0build\DukaanOS-%QT_VERSION%-%MINGW_NAME%"
 
 set "CMAKE_EXE="
 if exist "%QT_ROOT%\Tools\CMake_64\bin\cmake.exe" set "CMAKE_EXE=%QT_ROOT%\Tools\CMake_64\bin\cmake.exe"
@@ -63,7 +68,7 @@ if not defined NINJA_EXE (
 )
 
 echo Configuring DukaanOS...
-"%CMAKE_EXE%" -S "%~dp0." -B "%~dp0build\DukaanOS" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" -DCMAKE_CXX_COMPILER="%CXX_COMPILER%" -DCMAKE_PREFIX_PATH="%QT_PREFIX_PATH%"
+"%CMAKE_EXE%" -S "%~dp0." -B "%BUILD_DIR%" -G Ninja -DCMAKE_MAKE_PROGRAM="%NINJA_EXE%" -DCMAKE_CXX_COMPILER="%CXX_COMPILER%" -DCMAKE_PREFIX_PATH="%QT_PREFIX_PATH%"
 if errorlevel 1 (
     echo CMake configure failed. Check that the MinGW compiler matches the installed Qt kit.
     pause
@@ -71,20 +76,21 @@ if errorlevel 1 (
 )
 
 echo Building DukaanOS...
-"%CMAKE_EXE%" --build "%~dp0build\DukaanOS" --target DukaanOS
+"%CMAKE_EXE%" --build "%BUILD_DIR%" --target DukaanOS
 if errorlevel 1 (
     echo Build failed.
     pause
     exit /b 1
 )
 
-set "APP_EXE=%~dp0build\DukaanOS\DukaanOS.exe"
+set "APP_EXE=%BUILD_DIR%\DukaanOS.exe"
 if not exist "%APP_EXE%" (
     echo Application executable was not created.
     pause
     exit /b 1
 )
 
+if /I "%~1"=="--build-only" exit /b 0
 if /I "%~1"=="--package" goto package
 
 if exist "%QT_PREFIX_PATH%\bin\windeployqt.exe" (
