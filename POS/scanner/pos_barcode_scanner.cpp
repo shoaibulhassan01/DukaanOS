@@ -1,24 +1,16 @@
 #include "pos_barcode_scanner.h"
 
-#include <QMediaDevices>
-
 namespace Pos
 {
-// Owner: Zain Ul Abideen. Reuse the existing camera scanner.
+// TODO: Start scanning with the computer's default camera.
 bool startCameraScan(PosBarcodeScanner &scanner, QString &error)
 {
-    QCameraDevice camera = QMediaDevices::defaultVideoInput();
-    if (camera.isNull())
-    {
-        error = QStringLiteral("No default camera is available.");
-        return false;
-    }
-    return scanner.start(camera, error);
+    error = QStringLiteral("TODO: Start camera scanning.");
+    return false;
 }
 
-// Owner: Zain Ul Abideen. Forward the stop request to the existing scanner.
+// TODO: Stop scanning when the user leaves the scan page.
 void stopCameraScan(PosBarcodeScanner &scanner)
 {
-    scanner.stop();
 }
 }

@@ -7,7 +7,7 @@
 
 namespace
 {
-// Owner: Abdul Ahad. Use this temporary page until each screen is implemented.
+// Owner: Shoaib. Use this temporary page until each screen is implemented.
 QWidget *createPlaceholderPage(const QString &title, const QString &ownerTask)
 {
     QWidget *page = new QWidget;
@@ -26,7 +26,7 @@ QWidget *createPlaceholderPage(const QString &title, const QString &ownerTask)
 
 namespace PosUi
 {
-// Owner: Abdul Ahad. Add real page widgets and role-aware navigation here.
+// Owner: Shoaib. Add real page widgets and role-aware navigation here.
 QWidget *createPosWindow()
 {
     auto *tabs = new QTabWidget;

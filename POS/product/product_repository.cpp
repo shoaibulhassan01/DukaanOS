@@ -2,20 +2,16 @@
 
 namespace Pos
 {
-// Owner: Umar Khan. Read one line at a time and parse each product record.
+// TODO: Read Product.txt and fill the list.
 bool readProducts(QString filePath, QVector<Product> &products, QString &error)
 {
-    Q_UNUSED(products);
-    Q_UNUSED(filePath);
     error = QStringLiteral("TODO: Read products from Product.txt.");
     return false;
 }
 
-// Owner: Umar Khan. Write each product as one space-separated line ending in #.
+// TODO: Save all products back to Product.txt.
 bool saveProducts(QString filePath, QVector<Product> products, QString &error)
 {
-    Q_UNUSED(products);
-    Q_UNUSED(filePath);
     error = QStringLiteral("TODO: Save products to Product.txt.");
     return false;
 }

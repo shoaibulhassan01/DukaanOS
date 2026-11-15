@@ -2,45 +2,33 @@
 
 namespace Pos
 {
-// Owner: Anas. Open the file and read its order records.
+// TODO: Read Order.txt into the list.
 bool readOrders(QString filePath, QVector<Order> &orders, QString &error)
 {
-    Q_UNUSED(filePath);
-    Q_UNUSED(orders);
     error = QStringLiteral("TODO: Read orders from Order.txt.");
     return false;
 }
 
-// Owner: Anas. Return only details whose order ID matches.
+// TODO: Read detail rows for one order ID.
 bool readOrderDetails(QString filePath, QString orderId,
     QVector<OrderDetail> &details, QString &error)
 {
-    Q_UNUSED(filePath);
-    Q_UNUSED(orderId);
-    Q_UNUSED(details);
     error = QStringLiteral("TODO: Read order details from OrderDetail.txt.");
     return false;
 }
 
-// Owner: Anas. Save the order record and then its product detail records.
+// TODO: Save one order and its detail rows.
 bool saveOrder(QString orderFile, QString detailFile, Order order,
     QVector<OrderDetail> details, QString &error)
 {
-    Q_UNUSED(orderFile);
-    Q_UNUSED(detailFile);
-    Q_UNUSED(order);
-    Q_UNUSED(details);
     error = QStringLiteral("TODO: Save order and order details.");
     return false;
 }
 
-// Owner: Anas. Keep all other order fields unchanged.
+// TODO: Change an order's status in Order.txt.
 bool changeOrderStatus(QString filePath, QString orderId, QString status,
     QString &error)
 {
-    Q_UNUSED(filePath);
-    Q_UNUSED(orderId);
-    Q_UNUSED(status);
     error = QStringLiteral("TODO: Update the order status.");
     return false;
 }
