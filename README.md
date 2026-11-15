@@ -1,23 +1,21 @@
 # DukaanOS
 
-A barcode based Point of Sale (POS) system built with C++ and Qt. Products are identified by camera scanning Code 39 barcodes, using an encoder and decoder written from scratch.
+A Point of Sale (POS) system being built with C++ and Qt.
 
-## Features
+## Current UI
 
-- Login with Cashier and Manager roles
-- Camera based barcode scanning to view product details
-- Product management: searchable product table, add/edit price, discount and stock, plus a low-stock list
-- Order recording with stock check, hold and payment (cash, card, wallet)
-- Bill generation with order, tax and discount totals
-- Text file storage for products, orders, order details and bills
-- Code 39 barcode generator and scanner (six-digit numeric barcodes)
+- The app opens to a login-page UI placeholder.
+- The page is split evenly: market image and logo on the left, login form on the right.
+- Login is visual only; authentication and backend are not connected.
+- Each page has its own file under `ui/pages/` and is assembled through `ui/ui.cpp`.
+- The old BarcodeX screen is removed from the app window. Barcode code remains available for future POS work.
 
-## Pages
+## Planned POS Pages
 
 | Page | Access | Purpose |
 |---|---|---|
-| Login | Everyone | Sign in with username and password |
-| Dashboard | Cashier, Manager | Role based actions and today's summary |
+| Login | Everyone | Sign-in screen (UI placeholder only) |
+| Dashboard | Cashier, Manager | Role-based actions and today's summary |
 | Scan Product | Cashier, Manager | Scan a barcode and view product details |
 | New Order | Cashier | Scan items, set payment, hold the order or generate the bill |
 | Bill | Cashier | View the generated bill |
@@ -67,7 +65,11 @@ DukaanOS/
 │   ├── product/     # Product records and stock services
 │   ├── scanner/     # POS adapter for the camera barcode scanner
 │   └── user/        # User records and login authentication
-├── ui/              # Barcode and POS windows
+├── ui/
+│   ├── assets/      # Login background and DukaanOS logo
+│   ├── pages/       # One source file per UI page
+│   ├── ui.cpp       # Integrates pages into the main window
+│   └── ui.h
 ├── Data/            # Product.txt, Order.txt, OrderDetail.txt, Bill.txt, Users.txt
 ├── barcodes/        # Product barcode images
 └── tests/

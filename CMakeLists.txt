@@ -12,7 +12,7 @@ qt_standard_project_setup()
 qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
-    ui/pos/pos_ui.cpp
+    ui/pages/login_page.cpp
     POS/common/id_generator.cpp
     POS/common/record_codec.cpp
     POS/user/user_repository.cpp
@@ -29,6 +29,15 @@ qt_add_executable(DukaanOS
     BarCode/scanner/scanner.cpp
     BarCode/decoder/decoder.cpp
     BarCode/camera/camera_scanner.cpp
+)
+
+qt_add_resources(DukaanOS login_assets
+    PREFIX "/assets"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets"
+    FILES
+        ui/assets/app_icon.png
+        ui/assets/dukaanos_logo.png
+        ui/assets/market_background.jpg
 )
 
 target_include_directories(DukaanOS PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
