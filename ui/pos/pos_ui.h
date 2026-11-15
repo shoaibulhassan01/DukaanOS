@@ -4,6 +4,6 @@ class QWidget;
 
 namespace PosUi
 {
-// Owner: Shoaib. TODO: Replace the placeholder tabs with the POS navigation.
+// Owner: Shoaib. Returns the login window. TODO: open the Dashboard after login.
 QWidget *createPosWindow();
 }
