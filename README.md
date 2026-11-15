@@ -37,12 +37,12 @@ Unassigned work (including shared record-codec changes, tests, documentation, bu
 
 ## Getting Started (Windows)
 
-**Requirements:** Git, CMake, Ninja, and Qt 6 (Widgets and Multimedia) with the MinGW 64-bit kit.
+**Requirements:** Git and a Qt 6 MinGW 64-bit installation with the Widgets and Multimedia components. CMake, Ninja, and the matching MinGW compiler can be detected from the Qt installation.
 
 1. Clone the repository.
-2. Run `run.bat`. It configures, builds, deploys the Qt runtime and starts the app.
+2. Run `.\run.bat` from the project folder. It configures and builds the app, deploys the Qt runtime, and opens the UI.
 
-If Qt is not in `C:\Qt`, set `QT_ROOT` (Qt folder) or `QT_PREFIX_PATH` (the kit's `mingw_64` folder). If several MinGW compilers are installed, set `MINGW_ROOT` to the matching one.
+If Qt is installed outside `C:\Qt`, set `QT_ROOT` to its folder or `QT_PREFIX_PATH` to the kit's `mingw_64` folder. If the matching compiler is not detected automatically, set `MINGW_ROOT` to its folder.
 
 To build an installer, run `run.bat --package`, then compile `DukaanOS.iss` in Inno Setup to create `dist\DukaanOS-Setup.exe`.
 
