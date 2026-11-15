@@ -806,7 +806,6 @@ private:
     // ---------------- State display ----------------
     void setScanState(ScanState s, const QString& digits = QString(), const QString& msg = QString())
     {
-        Q_UNUSED(msg);
         QString digitState, status, statusColor;
         QString shown = "------", raw;
         switch (s) {

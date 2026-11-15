@@ -1,7 +1,7 @@
 #ifndef ENCODER_H
 #define ENCODER_H
 
-// OWNER: Leader
+// OWNER: Zain
 // Text deta ho, patterns ki list wapas milti hai.
 // Pattern = 9 letters, n = narrow, w = wide. Example: "nwnnwnwnn"
 // Start '*' aur stop '*' khud lag jate hain.

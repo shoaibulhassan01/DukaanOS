@@ -2,22 +2,17 @@
 
 namespace Pos
 {
-// Owner: Anas. Rows with the same bill ID belong to one bill.
+// TODO: Read bill rows with this bill ID from Bill.txt.
 bool readBill(QString filePath, QString billId, QVector<Bill> &rows,
     QString &error)
 {
-    Q_UNUSED(filePath);
-    Q_UNUSED(billId);
-    Q_UNUSED(rows);
     error = QStringLiteral("TODO: Read bill rows from Bill.txt.");
     return false;
 }
 
-// Owner: Anas. Add one line to Bill.txt for every product.
+// TODO: Save each product row of the bill to Bill.txt.
 bool saveBill(QString filePath, QVector<Bill> rows, QString &error)
 {
-    Q_UNUSED(filePath);
-    Q_UNUSED(rows);
     error = QStringLiteral("TODO: Save bill rows to Bill.txt.");
     return false;
 }

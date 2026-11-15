@@ -1,5 +1,5 @@
 // ui/ui.h  -  BarcodeX user interface (Qt Widgets)
-// Owner: Abdul Ahad. Other team members do not need to edit the UI files.
+// Owner: Shoaib. UI, integration, and the login feature.
 #pragma once
 
 #include <functional>

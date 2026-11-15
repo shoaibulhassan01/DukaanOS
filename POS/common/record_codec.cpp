@@ -2,21 +2,15 @@
 
 namespace Pos
 {
-// Owner: Umar Khan. Remove #, then split the rest at spaces.
+// TODO: Split one record such as "P1 123 APL#".
 bool splitRecord(QString line, QStringList &fields)
 {
-    line = line.trimmed();
-    if (!line.endsWith('#'))
-        return false;
-
-    line.chop(1);
-    fields = line.split(' ', Qt::SkipEmptyParts);
-    return true;
+    return false;
 }
 
-// Owner: Umar Khan. Names with spaces must use underscores before saving.
+// TODO: Join fields and add the ending #.
 QString makeRecord(QStringList fields)
 {
-    return fields.join(' ') + '#';
+    return {};
 }
 }

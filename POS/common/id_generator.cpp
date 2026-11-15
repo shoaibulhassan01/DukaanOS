@@ -2,13 +2,13 @@
 
 namespace Pos
 {
-// Owner: Shoaib. Follow the class rule for the last two order-ID digits.
+// TODO: Make a unique 8-digit order ID.
 bool generateOrderId(QString &id)
 {
     return false;
 }
 
-// Owner: Shoaib. Check that the generated bill ID is not already in Bill.txt.
+// TODO: Make a unique 9-digit bill ID.
 bool generateBillId(QString &id)
 {
     return false;

@@ -6,6 +6,7 @@ A barcode based Point of Sale (POS) system built with C++ and Qt. Products are i
 
 - Login with Cashier and Manager roles
 - Camera based barcode scanning to view product details
+- Product management: searchable product table, add/edit price, discount and stock, plus a low-stock list
 - Order recording with stock check, hold and payment (cash, card, wallet)
 - Bill generation with order, tax and discount totals
 - Text file storage for products, orders, order details and bills
@@ -22,17 +23,19 @@ A barcode based Point of Sale (POS) system built with C++ and Qt. Products are i
 | Bill | Cashier | View the generated bill |
 | Held Orders | Cashier | Resume on-hold orders |
 | Orders History | Cashier, Manager | Search and view orders; Manager can archive |
-| Products | Manager | View, add and edit products |
+| Products | Manager | Search products, add/edit price, discount and stock, and view the low-stock list |
 
 ## Team
 
 | Name | Responsibility |
 |---|---|
-| Shoaib Ul Hassan (Team Leader) | Login/authentication, ID rules and final integration |
-| Umar Khan | Product records, file format helpers, barcode lookup and stock checks |
-| Zain Ul Abideen | POS adapter for the existing camera barcode scanner |
-| Anas | Order, order-detail, bill, payment and hold/resume logic |
-| Abdul Ahad | All POS screens and navigation |
+| Shoaib Ul Hassan (Team Leader) | UI, final integration, and the login feature |
+| Umar Khan | Product and user features/data, including product search, add/edit price, discount and stock, and the low-stock list; product UI is coordinated with Shoaib |
+| Zain Ul Abideen | Order storage, order/bill IDs, barcode image generation and image-file handling |
+| Anas | Payment processing, including card payments |
+| Abdul Ahad | Bill generation and checkout flow |
+
+Unassigned work (including shared record-codec changes, tests, documentation, bug fixes, and improvements) is split evenly across all five team members. Shoaib coordinates integration and shared interfaces; module owners remain responsible for their assigned behavior.
 
 ## Getting Started (Windows)
 
@@ -57,16 +60,20 @@ DukaanOS/
 │   ├── scanner/     # Image to run widths
 │   ├── camera/      # Live camera capture
 │   └── decoder/     # Run widths to digits
-├── models/          # Product, Order, OrderDetail, Bill, User
-├── repositories/    # Text file read/write
-├── services/        # Product, order, billing, auth, payment
-├── ui/              # Pages and widgets
-├── data/            # Product.txt, Order.txt, OrderDetail.txt, Bill.txt, Users.txt
+├── POS/
+│   ├── bill/        # Bill records, storage, and calculations
+│   ├── common/      # Record codec and ID generation
+│   ├── order/       # Order records, storage, and checkout services
+│   ├── product/     # Product records and stock services
+│   ├── scanner/     # POS adapter for the camera barcode scanner
+│   └── user/        # User records and login authentication
+├── ui/              # Barcode and POS windows
+├── Data/            # Product.txt, Order.txt, OrderDetail.txt, Bill.txt, Users.txt
 ├── barcodes/        # Product barcode images
 └── tests/
 ```
 
-Pages only handle display and input, services hold the business rules, and repositories only read and write files. Each member works only inside their own folder, and shared `.h` files are changed only by the Team Leader.
+Pages handle display and input, services hold business rules, and repositories read and write files. Work can span folders when needed to deliver an assigned feature. Coordinate shared-header and interface changes with Shoaib before integration.
 
 ## Data Files
 

@@ -2,24 +2,16 @@
 
 namespace Pos
 {
-// Owner: Umar Khan. Loop through products and return the matching barcode.
+// TODO: Find the product that has this barcode.
 bool findProductByBarcode(QVector<Product> products, QString barcode,
     Product &foundProduct)
 {
-    for (Product product : products)
-    {
-        if (product.barcode == barcode)
-        {
-            foundProduct = product;
-            return true;
-        }
-    }
     return false;
 }
 
-// Owner: Umar Khan. The requested amount can equal the available quantity.
+// TODO: Check that the requested quantity is in stock.
 bool checkStock(Product product, int requestedQuantity)
 {
-    return requestedQuantity > 0 && requestedQuantity <= product.quantity;
+    return false;
 }
 }
