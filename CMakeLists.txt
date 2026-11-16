@@ -12,7 +12,11 @@ qt_standard_project_setup()
 qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
-    ui/pages/login_page.cpp
+    ui/pages/dashboard_page.cpp
+    ui/pages/new_order_page.cpp
+    ui/pages/held_orders_page.cpp
+    ui/pages/order_history_page.cpp
+    ui/pages/bill_page.cpp
     POS/common/id_generator.cpp
     POS/common/record_codec.cpp
     POS/user/user_repository.cpp
@@ -31,12 +35,13 @@ qt_add_executable(DukaanOS
     BarCode/camera/camera_scanner.cpp
 )
 
-qt_add_resources(DukaanOS login_assets
+qt_add_resources(DukaanOS app_assets
     PREFIX "/assets"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets"
     FILES
         ui/assets/app_icon.png
         ui/assets/dukaanos_logo.png
+        ui/assets/dukaanos_wordmark.png
         ui/assets/market_background.jpg
 )
 
