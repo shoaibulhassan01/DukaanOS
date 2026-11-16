@@ -16,6 +16,7 @@ qt_add_executable(DukaanOS
     ui/pages/new_order_page.cpp
     ui/pages/held_orders_page.cpp
     ui/pages/order_history_page.cpp
+    ui/pages/products_page.cpp
     ui/pages/bill_page.cpp
     POS/common/id_generator.cpp
     POS/common/record_codec.cpp

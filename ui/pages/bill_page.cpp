@@ -2,13 +2,18 @@
 
 #include <QDateTime>
 #include <QColor>
+#include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QMessageBox>
+#include <QPageLayout>
+#include <QPageSize>
+#include <QPainter>
 #include <QPushButton>
+#include <QPdfWriter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -24,6 +29,149 @@ const QString kLine = QStringLiteral("#E7E9F3");
 QString money(double amount)
 {
     return QStringLiteral("PKR %1").arg(amount, 0, 'f', 2);
+}
+
+bool exportBillPdf(const OrderPreview &order, const QString &path)
+{
+    QPdfWriter writer(path);
+    writer.setPageSize(QPageSize(QPageSize::A4));
+    writer.setPageMargins(QMarginsF(16, 16, 16, 16), QPageLayout::Millimeter);
+    writer.setResolution(120);
+
+    QPainter painter;
+    if (!painter.begin(&writer))
+        return false;
+
+    const int pageWidth = writer.width();
+    const int pageHeight = writer.height();
+    const int left = 64;
+    const int right = pageWidth - 64;
+    const int bottom = pageHeight - 64;
+    const int rowHeight = 34;
+    int y = 0;
+    int pageNumber = 0;
+
+    auto drawText = [&painter](const QRect &rect, int alignment, const QString &text) {
+        painter.drawText(rect, alignment, text);
+    };
+    auto drawPageHeader = [&]() {
+        ++pageNumber;
+        painter.fillRect(QRect(0, 0, pageWidth, pageHeight), Qt::white);
+        painter.setPen(QColor(kNavy));
+        QFont brandFont(QStringLiteral("Segoe UI"), 20, QFont::Bold);
+        painter.setFont(brandFont);
+        drawText(QRect(left, 42, pageWidth - 2 * left, 42), Qt::AlignLeft | Qt::AlignVCenter,
+            QStringLiteral("DukaanOS"));
+
+        painter.setPen(QColor(kMuted));
+        painter.setFont(QFont(QStringLiteral("Segoe UI"), 10));
+        drawText(QRect(left, 84, pageWidth - 2 * left, 24), Qt::AlignLeft | Qt::AlignVCenter,
+            QStringLiteral("SALES RECEIPT"));
+        drawText(QRect(left, 110, pageWidth - 2 * left, 22), Qt::AlignLeft | Qt::AlignVCenter,
+            QStringLiteral("Bill: %1").arg(order.id.isEmpty()
+                ? QStringLiteral("PREVIEW") : order.id));
+
+        const QString date = order.createdAt.isEmpty()
+            ? QDateTime::currentDateTime().toString(QStringLiteral("dd MMM yyyy, hh:mm AP"))
+            : order.createdAt;
+        drawText(QRect(left, 134, pageWidth - 2 * left, 22), Qt::AlignLeft | Qt::AlignVCenter,
+            QStringLiteral("Date: %1").arg(date));
+        drawText(QRect(left, 158, pageWidth - 2 * left, 22), Qt::AlignLeft | Qt::AlignVCenter,
+            QStringLiteral("Customer: %1").arg(order.customerName.isEmpty()
+                ? QStringLiteral("Walk-in customer") : order.customerName));
+        QString paymentText = QStringLiteral("Payment: %1").arg(order.paymentMethod.isEmpty()
+            ? QStringLiteral("Cash") : order.paymentMethod);
+        if (!order.phone.isEmpty())
+            paymentText += QStringLiteral("    Phone: %1").arg(order.phone);
+        drawText(QRect(left, 182, pageWidth - 2 * left, 22), Qt::AlignLeft | Qt::AlignVCenter,
+            paymentText);
+
+        y = 228;
+        painter.setPen(QPen(QColor(kLine), 1));
+        painter.drawLine(left, y, right, y);
+        y += 12;
+
+        painter.fillRect(QRect(left, y, right - left, 30), QColor(QStringLiteral("#F2F3FA")));
+        painter.setPen(QColor(kMuted));
+        painter.setFont(QFont(QStringLiteral("Segoe UI"), 9, QFont::DemiBold));
+        drawText(QRect(left + 8, y, (right - left) * 0.42, 30),
+            Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("ITEM"));
+        drawText(QRect(left + (right - left) * 0.43, y, (right - left) * 0.18, 30),
+            Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("UNIT PRICE"));
+        drawText(QRect(left + (right - left) * 0.62, y, (right - left) * 0.10, 30),
+            Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("QTY"));
+        drawText(QRect(left + (right - left) * 0.73, y, (right - left) * 0.27 - 8, 30),
+            Qt::AlignRight | Qt::AlignVCenter, QStringLiteral("AMOUNT"));
+        y += 30;
+    };
+
+    drawPageHeader();
+    painter.setFont(QFont(QStringLiteral("Segoe UI"), 10));
+    for (const OrderPreviewLine &line : order.lines)
+    {
+        if (y + rowHeight > bottom - 150)
+        {
+            painter.setPen(QColor(kMuted));
+            painter.setFont(QFont(QStringLiteral("Segoe UI"), 8));
+            drawText(QRect(left, bottom - 18, right - left, 16), Qt::AlignRight,
+                QStringLiteral("Page %1").arg(pageNumber));
+            writer.newPage();
+            drawPageHeader();
+            painter.setFont(QFont(QStringLiteral("Segoe UI"), 10));
+        }
+
+        QString name = line.product.name;
+        name.replace(QLatin1Char('_'), QLatin1Char(' '));
+        const double lineTotal = line.product.unitPrice * line.quantity;
+        painter.setPen(QColor(kInk));
+        drawText(QRect(left + 8, y, (right - left) * 0.42, rowHeight),
+            Qt::AlignLeft | Qt::AlignVCenter, name);
+        drawText(QRect(left + (right - left) * 0.43, y, (right - left) * 0.18, rowHeight),
+            Qt::AlignRight | Qt::AlignVCenter, money(line.product.unitPrice));
+        drawText(QRect(left + (right - left) * 0.62, y, (right - left) * 0.10, rowHeight),
+            Qt::AlignRight | Qt::AlignVCenter, QString::number(line.quantity));
+        drawText(QRect(left + (right - left) * 0.73, y, (right - left) * 0.27 - 8, rowHeight),
+            Qt::AlignRight | Qt::AlignVCenter, money(lineTotal));
+        y += rowHeight;
+        painter.setPen(QPen(QColor(QStringLiteral("#F0F1F6")), 1));
+        painter.drawLine(left, y, right, y);
+    }
+
+    if (y + 140 > bottom)
+    {
+        painter.setPen(QColor(kMuted));
+        painter.setFont(QFont(QStringLiteral("Segoe UI"), 8));
+        drawText(QRect(left, bottom - 18, right - left, 16), Qt::AlignRight,
+            QStringLiteral("Page %1").arg(pageNumber));
+        writer.newPage();
+        drawPageHeader();
+    }
+
+    y += 20;
+    const int labelWidth = (right - left) / 2;
+    auto drawTotal = [&](const QString &label, const QString &amount, bool emphasized) {
+        painter.setPen(QColor(emphasized ? kNavy : kMuted));
+        painter.setFont(QFont(QStringLiteral("Segoe UI"), emphasized ? 12 : 10,
+            emphasized ? QFont::Bold : QFont::Normal));
+        drawText(QRect(left, y, labelWidth, 26), Qt::AlignLeft | Qt::AlignVCenter, label);
+        drawText(QRect(left + labelWidth, y, labelWidth, 26),
+            Qt::AlignRight | Qt::AlignVCenter, amount);
+        y += emphasized ? 34 : 27;
+    };
+    drawTotal(QStringLiteral("Subtotal"), money(order.subtotal), false);
+    drawTotal(QStringLiteral("Tax"), money(order.tax), false);
+    drawTotal(QStringLiteral("Discount"), QStringLiteral("- %1").arg(money(order.discount)), false);
+    painter.setPen(QPen(QColor(kLine), 1));
+    painter.drawLine(left, y, right, y);
+    y += 7;
+    drawTotal(QStringLiteral("TOTAL"), money(order.total), true);
+
+    painter.setPen(QColor(kMuted));
+    painter.setFont(QFont(QStringLiteral("Segoe UI"), 9));
+    drawText(QRect(left, qMin(y + 16, bottom - 30), right - left, 24),
+        Qt::AlignHCenter | Qt::AlignVCenter, QStringLiteral("Thank you for shopping with us!"));
+    painter.end();
+    return true;
 }
 
 QLabel *makeLabel(const QString &text, const QString &style, QWidget *parent)
@@ -191,14 +339,14 @@ public:
             " border-radius: 9px; padding: 0 15px; font-size: 11px; font-weight: 600; }"
             "QPushButton:hover { background: #F8F8FC; }").arg(kNavy, kLine));
         actions->addWidget(newOrder);
-        auto *print = new QPushButton(QStringLiteral("Print bill"), this);
-        print->setCursor(Qt::PointingHandCursor);
-        print->setFixedHeight(38);
-        print->setStyleSheet(QStringLiteral(
+        auto *download = new QPushButton(QStringLiteral("Download PDF"), this);
+        download->setCursor(Qt::PointingHandCursor);
+        download->setFixedHeight(38);
+        download->setStyleSheet(QStringLiteral(
             "QPushButton { background: %1; color: white; border: none; border-radius: 9px;"
             " padding: 0 16px; font-size: 11px; font-weight: 700; }"
             "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
-        actions->addWidget(print);
+        actions->addWidget(download);
         root->addLayout(actions);
 
         auto *receiptWrap = new QWidget(this);
@@ -210,7 +358,7 @@ public:
         root->addWidget(receiptWrap, 1);
 
         auto *note = makeLabel(QStringLiteral(
-            "Preview only — this bill has not been saved or sent to a printer."),
+            "Download a print-ready A4 PDF copy of this bill."),
             QStringLiteral("color: %1; font-size: 10px; background: transparent;").arg(kMuted),
             this);
         note->setAlignment(Qt::AlignCenter);
@@ -220,9 +368,33 @@ public:
             if (onNewOrder)
                 onNewOrder();
         });
-        connect(print, &QPushButton::clicked, this, [this]() {
-            QMessageBox::information(this, QStringLiteral("Print bill"),
-                QStringLiteral("Printing is not connected in preview mode."));
+        connect(download, &QPushButton::clicked, this, [this, order]() {
+            QString fileName = order.id.isEmpty() ? QStringLiteral("DukaanOS-Bill")
+                                                  : QStringLiteral("DukaanOS-%1").arg(order.id);
+            for (QChar &character : fileName)
+            {
+                if (!character.isLetterOrNumber() && character != QLatin1Char('-') &&
+                    character != QLatin1Char('_'))
+                    character = QLatin1Char('_');
+            }
+            const QString path = QFileDialog::getSaveFileName(this,
+                QStringLiteral("Download bill as PDF"), fileName + QStringLiteral(".pdf"),
+                QStringLiteral("PDF files (*.pdf)"));
+            if (path.isEmpty())
+                return;
+
+            QString pdfPath = path;
+            if (!pdfPath.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
+                pdfPath += QStringLiteral(".pdf");
+            if (!exportBillPdf(order, pdfPath))
+            {
+                QMessageBox::critical(this, QStringLiteral("Download failed"),
+                    QStringLiteral("The bill PDF could not be written to:\n%1")
+                        .arg(pdfPath));
+                return;
+            }
+            QMessageBox::information(this, QStringLiteral("Bill downloaded"),
+                QStringLiteral("Your bill was saved as a PDF:\n%1").arg(pdfPath));
         });
     }
 };

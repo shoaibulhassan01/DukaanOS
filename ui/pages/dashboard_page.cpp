@@ -3,6 +3,7 @@
 #include "held_orders_page.h"
 #include "new_order_page.h"
 #include "order_history_page.h"
+#include "products_page.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -419,6 +420,8 @@ private:
         else if (currentPage_ == QStringLiteral("Order History"))
             contentLayout_->addWidget(UiPages::createOrderHistoryPage(contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
+        else if (currentPage_ == QStringLiteral("Products"))
+            contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
             contentLayout_->addWidget(UiPages::createBillPage(billPreview_, contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
@@ -570,8 +573,7 @@ private:
     {
         auto *page = new QWidget(contentHost_);
         auto *layout = new QVBoxLayout(page);
-        const int bottomPadding = roleCombo_->currentText() == QStringLiteral("Manager") ? 56 : 0;
-        layout->setContentsMargins(0, 0, 0, bottomPadding);
+        layout->setContentsMargins(0, 0, 0, 64);
         layout->setSpacing(0);
 
         if (items.size() > 1)
