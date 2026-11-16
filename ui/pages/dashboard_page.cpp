@@ -19,6 +19,7 @@
 #include <QPolygonF>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QVector>
 #include <QWidget>
@@ -140,7 +141,7 @@ QPixmap drawIcon(const QString &name, const QColor &color, int size)
 class DashboardWindow : public QWidget
 {
 public:
-    explicit DashboardWindow(QWidget *parent = nullptr) : QWidget(parent)
+    explicit DashboardWindow(QWidget *parent, const QString &initialRole) : QWidget(parent)
     {
         setObjectName(QStringLiteral("dashboardRoot"));
         setAttribute(Qt::WA_StyledBackground, true);
@@ -194,6 +195,17 @@ public:
         body->addWidget(mainArea, 1);
         root->addLayout(body, 1);
 
+        int initialRoleIndex = -1;
+        for (int i = 0; i < roleCombo_->count(); ++i)
+        {
+            if (roleCombo_->itemText(i).compare(initialRole, Qt::CaseInsensitive) == 0)
+            {
+                initialRoleIndex = i;
+                break;
+            }
+        }
+        if (initialRoleIndex >= 0)
+            roleCombo_->setCurrentIndex(initialRoleIndex);
         updateRole();
     }
 
@@ -268,8 +280,13 @@ private:
             " font-size: 12px; font-weight: 600; }"
             "QPushButton:hover { background: rgba(255,255,255,36); }"
             "QPushButton:pressed { background: rgba(255,255,255,56); }"));
-        // TODO: hook this up to the real sign-out / login screen flow.
-        connect(logout, &QPushButton::clicked, this, [this]() { close(); });
+        // Owner: Shoaib Ul Hassan - return to the login page on sign-out.
+        connect(logout, &QPushButton::clicked, this, [this]() {
+            if (auto *stack = qobject_cast<QStackedWidget *>(parentWidget()))
+                stack->setCurrentIndex(0);
+            else
+                close();
+        });
         layout->addWidget(logout);
 
         connect(roleCombo_, &QComboBox::currentTextChanged,
@@ -699,7 +716,7 @@ private:
 };
 }
 
-QWidget *UiPages::createDashboardPage(QWidget *parent)
+QWidget *UiPages::createDashboardPage(QWidget *parent, const QString &initialRole)
 {
-    return new DashboardWindow(parent);
+    return new DashboardWindow(parent, initialRole);
 }

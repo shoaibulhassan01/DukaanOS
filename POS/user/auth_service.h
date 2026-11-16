@@ -4,7 +4,7 @@
 
 namespace Pos
 {
-// Owner: Shoaib. Check the username and password and return the user's role.
+// Owner: Shoaib Ul Hassan - authenticate the user and return their cashier/manager role.
 bool login(QString filePath, QString username, QString password,
     User &loggedInUser, QString &error);
 }
