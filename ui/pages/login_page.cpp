@@ -276,7 +276,7 @@ protected:
         }
         if (!logo_.isNull())
         {
-            const int logoWidth = qBound(300, width() / 2 - 96, 560);
+            const int logoWidth = qBound(300, width() / 2 - 120, 530);
             logoLabel_->setPixmap(logo_.scaled(
                 QSize(logoWidth, 300), Qt::KeepAspectRatio, Qt::SmoothTransformation));
         }

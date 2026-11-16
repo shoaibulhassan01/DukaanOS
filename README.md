@@ -4,9 +4,9 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 ## Current UI
 
-- The app opens to a login-page UI placeholder.
-- The page is split evenly: market image and logo on the left, login form on the right.
-- Login is visual only; authentication and backend are not connected.
+- The app opens directly to a dashboard preview. New Order can scan a barcode or accept typed input and look up matching products in `Data/Product.txt`; order saving and billing are not connected.
+- Use the role dropdown to switch between Cashier and Manager navigation.
+- Dashboard stats are placeholders. Order History stays empty until order storage is connected; Held Orders and bill generation work as in-memory previews only, and no order is written to storage or sent to a printer.
 - Each page has its own file under `ui/pages/` and is assembled through `ui/ui.cpp`.
 - The old BarcodeX screen is removed from the app window. Barcode code remains available for future POS work.
 
@@ -66,7 +66,7 @@ DukaanOS/
 │   ├── scanner/     # POS adapter for the camera barcode scanner
 │   └── user/        # User records and login authentication
 ├── ui/
-│   ├── assets/      # Login background and DukaanOS logo
+│   ├── assets/      # App icons and page images
 │   ├── pages/       # One source file per UI page
 │   ├── ui.cpp       # Integrates pages into the main window
 │   └── ui.h
