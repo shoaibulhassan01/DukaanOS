@@ -12,6 +12,7 @@ qt_standard_project_setup()
 qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
+    ui/pages/login_page.cpp
     ui/pages/dashboard_page.cpp
     ui/pages/new_order_page.cpp
     ui/pages/held_orders_page.cpp
@@ -61,6 +62,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(PosStarterTest PRIVATE Qt6::Core)
     add_test(NAME PosStarterTest COMMAND PosStarterTest)
+
+    qt_add_executable(UserAuthTest
+        POS/tests/user_auth_test.cpp
+        POS/user/user_repository.cpp
+        POS/user/auth_service.cpp
+    )
+    target_link_libraries(UserAuthTest PRIVATE Qt6::Core)
+    add_test(NAME UserAuthTest COMMAND UserAuthTest)
 
     qt_add_executable(CameraScannerTest
         BarCode/encoder/encoder.cpp

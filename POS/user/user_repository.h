@@ -7,9 +7,9 @@
 
 namespace Pos
 {
-// Owner: Umar. TODO: Read user records from Users.txt.
+// Owner: Umar Khan - read user records from Users.txt (shared with Shoaib's login feature).
 bool readUsers(QString filePath, QVector<User> &users, QString &error);
 
-// Owner: Umar. TODO: Find a user by username.
+// Owner: Umar Khan - find a user by exact username.
 bool findUser(QVector<User> users, QString username, User &user);
 }

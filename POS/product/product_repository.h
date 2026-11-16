@@ -7,9 +7,9 @@
 
 namespace Pos
 {
-// Owner: Umar Khan. Read Product.txt and fill the list.
+// Owner: Umar Khan - read Product.txt and fill the list.
 bool readProducts(QString filePath, QVector<Product> &products, QString &error);
 
-// Owner: Umar Khan. TODO: Save all products back to Product.txt.
+// Owner: Umar Khan - save all products back to Product.txt.
 bool saveProducts(QString filePath, QVector<Product> products, QString &error);
 }

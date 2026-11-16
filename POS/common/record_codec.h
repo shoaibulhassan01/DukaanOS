@@ -5,9 +5,9 @@
 
 namespace Pos
 {
-// Shared work, split evenly across the team. TODO: Split one record such as "P1 123 APL#".
+// Shared by Shoaib, Umar, Zain, Anas and Ahad - split a '#' terminated record into fields.
 bool splitRecord(QString line, QStringList &fields);
 
-// Shared work, split evenly across the team. TODO: Join fields and add the ending #.
+// Shared by Shoaib, Umar, Zain, Anas and Ahad - join fields and append '#'.
 QString makeRecord(QStringList fields);
 }

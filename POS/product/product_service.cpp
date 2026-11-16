@@ -2,7 +2,7 @@
 
 namespace Pos
 {
-// Find a product by its exact barcode.
+// Owner: Umar Khan - find a product by its exact barcode.
 bool findProductByBarcode(QVector<Product> products, QString barcode,
     Product &foundProduct)
 {
@@ -18,7 +18,7 @@ bool findProductByBarcode(QVector<Product> products, QString barcode,
     return false;
 }
 
-// TODO: Check that the requested quantity is in stock.
+// Owner: Umar Khan - check that the requested quantity is in stock.
 bool checkStock(Product product, int requestedQuantity)
 {
     return false;

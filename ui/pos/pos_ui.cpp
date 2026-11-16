@@ -20,7 +20,7 @@ const QColor kNavy(0x0F, 0x17, 0x2A);
 const QColor kBlue(0x25, 0x63, 0xEB);
 const QColor kOrange(0xF9, 0x73, 0x16);
 
-// TODO(Shoaib): connect this to AuthService::login once POS/user is ready.
+// Owner: Shoaib Ul Hassan - legacy authentication placeholder; active login uses AuthService.
 bool authenticate(const QString &username, const QString &password, QString &error)
 {
     Q_UNUSED(username);
@@ -245,7 +245,7 @@ private:
         }
 
         m_error->clear();
-        // TODO(Shoaib): open the Dashboard for the logged-in role.
+        // Owner: Shoaib Ul Hassan - legacy screen; active login opens the role dashboard.
     }
 
     QPixmap m_background;
@@ -258,7 +258,7 @@ private:
 
 namespace PosUi
 {
-// Owner: Shoaib. TODO: replace this with the main window (sidebar and pages) after login.
+// Owner: Shoaib Ul Hassan - legacy login UI, retained outside the active app flow.
 QWidget *createPosWindow()
 {
     return new LoginPage;

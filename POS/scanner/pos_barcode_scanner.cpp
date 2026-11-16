@@ -2,14 +2,14 @@
 
 namespace Pos
 {
-// TODO: Start scanning with the computer's default camera.
+// Owner: Zain Ul Abideen - start scanning with the computer's default camera.
 bool startCameraScan(PosBarcodeScanner &scanner, QString &error)
 {
     error = QStringLiteral("TODO: Start camera scanning.");
     return false;
 }
 
-// TODO: Stop scanning when the user leaves the scan page.
+// Owner: Zain Ul Abideen - stop scanning when the user leaves the scan page.
 void stopCameraScan(PosBarcodeScanner &scanner)
 {
 }

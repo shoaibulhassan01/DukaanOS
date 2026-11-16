@@ -1,7 +1,7 @@
 #ifndef GENERATOR_H
 #define GENERATOR_H
 
-// OWNER: Zain
+// Owner: Zain Ul Abideen - barcode image generation and file handling.
 // Patterns deta ho, barcode ki image wapas milti hai.
 // Narrow bar = 2 pixel, wide bar = 6 pixel.
 // Image ke dono taraf quiet zone (safaid jagah) hogi.
