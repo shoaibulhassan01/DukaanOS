@@ -1,0 +1,3 @@
+manager manager123 manager#
+cashier cashier123 cashier#
+cashier2 cashier123 cashier#
