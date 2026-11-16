@@ -6,7 +6,7 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 - The app opens directly to a dashboard preview. New Order can scan a barcode or accept typed input and look up matching products in `Data/Product.txt`; order saving and billing are not connected.
 - Use the role dropdown to switch between Cashier and Manager navigation.
-- Dashboard stats are placeholders. Order History stays empty until order storage is connected; Held Orders and bill generation work as in-memory previews only, and no order is written to storage or sent to a printer.
+- Dashboard stats are placeholders. Manager Products reads from `Data/Product.txt`; Order History reads saved order records. Held Orders and bill generation work as in-memory previews only, and no new order is written to storage or sent to a printer.
 - Each page has its own file under `ui/pages/` and is assembled through `ui/ui.cpp`.
 - The old BarcodeX screen is removed from the app window. Barcode code remains available for future POS work.
 
@@ -18,7 +18,7 @@ A Point of Sale (POS) system being built with C++ and Qt.
 | Dashboard | Cashier, Manager | Role-based actions and today's summary |
 | Scan Product | Cashier, Manager | Scan a barcode and view product details |
 | New Order | Cashier | Scan items, set payment, hold the order or generate the bill |
-| Bill | Cashier | View the generated bill |
+| Bill | Cashier | View the bill and download a print-ready A4 PDF |
 | Held Orders | Cashier | Resume on-hold orders |
 | Orders History | Cashier, Manager | Search and view orders; Manager can archive |
 | Products | Manager | Search products, add/edit price, discount and stock, and view the low-stock list |
