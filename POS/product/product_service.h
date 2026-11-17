@@ -45,6 +45,13 @@ bool updateProduct(QString productFile, QString productId, double unitPrice,
 // names). Empty text returns every product.
 QVector<Product> searchProducts(QVector<Product> products, QString text);
 
+// Owner: Umar Khan - remove a product from Product.txt (Manager).
+// A product that already appears in OrderDetail.txt cannot be deleted,
+// because old orders refer to it by id and barcode; set its stock to 0
+// instead. A missing orderDetailFile means no orders yet.
+bool deleteProduct(QString productFile, QString orderDetailFile, QString productId,
+    QString &error);
+
 // Owner: Umar Khan - products with this quantity or less (low-stock list).
 QVector<Product> lowStockProducts(QVector<Product> products, int threshold = 10);
 }

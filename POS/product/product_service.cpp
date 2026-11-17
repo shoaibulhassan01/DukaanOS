@@ -1,8 +1,10 @@
 #include "product_service.h"
 
 #include "product_repository.h"
+#include "../common/record_codec.h"
 
 #include <QFile>
+#include <QTextStream>
 
 namespace Pos
 {
@@ -213,6 +215,65 @@ bool updateProduct(QString productFile, QString productId, double unitPrice,
         return false;
 
     products[index] = updated;
+    return saveProducts(productFile, products, error);
+}
+
+// Owner: Umar Khan - true if productId is on any line of OrderDetail.txt
+// (format: orderId productId barcode quantity#).
+static bool isProductInOrders(const QString &orderDetailFile, const QString &productId,
+    bool &used, QString &error)
+{
+    used = false;
+    if (!QFile::exists(orderDetailFile))
+        return true;
+
+    QFile file(orderDetailFile);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot open %1: %2").arg(orderDetailFile, file.errorString());
+        return false;
+    }
+    QTextStream input(&file);
+    while (!input.atEnd())
+    {
+        QStringList fields;
+        if (splitRecord(input.readLine(), fields) && fields.size() >= 2 &&
+            fields.at(1) == productId)
+        {
+            used = true;
+            return true;
+        }
+    }
+    return true;
+}
+
+// Owner: Umar Khan - delete only products that were never sold.
+bool deleteProduct(QString productFile, QString orderDetailFile, QString productId,
+    QString &error)
+{
+    productId = productId.trimmed();
+    QVector<Product> products;
+    if (!loadForEdit(productFile, products, error))
+        return false;
+
+    const int index = indexOfId(products, productId);
+    if (index < 0)
+    {
+        error = QStringLiteral("Product %1 is not in Product.txt.").arg(productId);
+        return false;
+    }
+
+    bool used = false;
+    if (!isProductInOrders(orderDetailFile, productId, used, error))
+        return false;
+    if (used)
+    {
+        error = QStringLiteral("%1 cannot be deleted because it is part of an existing order. "
+                               "Set its stock to 0 instead.").arg(productId);
+        return false;
+    }
+
+    products.removeAt(index);
     return saveProducts(productFile, products, error);
 }
 

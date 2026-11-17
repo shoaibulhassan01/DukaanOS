@@ -2,6 +2,8 @@
 
 #include "../../POS/product/product.h"
 #include "../../POS/product/product_repository.h"
+#include "../../POS/product/product_service.h"
+#include "product_dialog.h"
 
 #include <QCheckBox>
 #include <QCoreApplication>
@@ -12,7 +14,9 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPixmap>
+#include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -33,6 +37,12 @@ QString productFilePath()
         return workingDirectoryPath;
     return QDir(QCoreApplication::applicationDirPath()).filePath(
         QStringLiteral("../../Data/Product.txt"));
+}
+
+QString orderDetailFilePath()
+{
+    // OrderDetail.txt sits next to Product.txt in the Data folder.
+    return QFileInfo(productFilePath()).dir().filePath(QStringLiteral("OrderDetail.txt"));
 }
 
 QString barcodeImagePath(const QString &imagePath)
@@ -109,11 +119,47 @@ public:
         countLabel_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
         heading->addWidget(countLabel_);
+        heading->addSpacing(10);
+
+        editButton_ = new QPushButton(QStringLiteral("Edit selected"), card);
+        editButton_->setCursor(Qt::PointingHandCursor);
+        editButton_->setFixedHeight(36);
+        editButton_->setEnabled(false);
+        editButton_->setToolTip(QStringLiteral("Change price, discount or stock (or double-click a row)"));
+        editButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            "QPushButton:hover { background: #E8E9FF; }"
+            "QPushButton:disabled { color: #A9ABBD; background: #F6F6FA; border-color: %2; }")
+            .arg(kNavy, kLine));
+        heading->addWidget(editButton_);
+
+        deleteButton_ = new QPushButton(QStringLiteral("Delete"), card);
+        deleteButton_->setCursor(Qt::PointingHandCursor);
+        deleteButton_->setFixedHeight(36);
+        deleteButton_->setEnabled(false);
+        deleteButton_->setToolTip(QStringLiteral("Delete a product that has never been sold"));
+        deleteButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #FEF3F2; color: #B42318; border: 1px solid #FECDCA;"
+            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            "QPushButton:hover { background: #FEE4E2; }"
+            "QPushButton:disabled { color: #A9ABBD; background: #F6F6FA; border-color: %1; }")
+            .arg(kLine));
+        heading->addWidget(deleteButton_);
+
+        auto *addButton = new QPushButton(QStringLiteral("+ Add product"), card);
+        addButton->setCursor(Qt::PointingHandCursor);
+        addButton->setFixedHeight(36);
+        addButton->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: white; border: none; border-radius: 8px;"
+            " padding: 0 14px; font-size: 10px; font-weight: 700; }"
+            "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
+        heading->addWidget(addButton);
         layout->addLayout(heading);
 
         auto *filters = new QHBoxLayout;
         search_ = new QLineEdit(card);
-        search_->setPlaceholderText(QStringLiteral("Search by product, barcode or code"));
+        search_->setPlaceholderText(QStringLiteral("Search by name, barcode, ID or acronym"));
         search_->setFixedHeight(40);
         search_->setStyleSheet(QStringLiteral(
             "QLineEdit { background: #FAFAFD; color: %1; border: 1px solid %2;"
@@ -130,7 +176,8 @@ public:
             "QCheckBox::indicator:unchecked { background: white; border: 1px solid %2;"
             " border-radius: 4px; }"
             "QCheckBox::indicator:checked { background: %3; border: 1px solid %3;"
-            " border-radius: 4px; }").arg(kMuted, kLine, kNavy));
+            " border-radius: 4px; image: url(:/assets/checkbox_check.png); }")
+            .arg(kMuted, kLine, kNavy));
         filters->addWidget(lowStockOnly_);
         layout->addLayout(filters);
 
@@ -179,6 +226,20 @@ public:
 
         connect(search_, &QLineEdit::textChanged, this, [this]() { applyFilters(); });
         connect(lowStockOnly_, &QCheckBox::toggled, this, [this]() { applyFilters(); });
+        connect(table_, &QTableWidget::itemSelectionChanged, this, [this]() {
+            editButton_->setEnabled(selectedProductRow() >= 0);
+            deleteButton_->setEnabled(selectedProductRow() >= 0);
+        });
+        connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int, int) { editSelected(); });
+        connect(editButton_, &QPushButton::clicked, this, [this]() { editSelected(); });
+        connect(deleteButton_, &QPushButton::clicked, this, [this]() { deleteSelected(); });
+        connect(addButton, &QPushButton::clicked, this, [this]() {
+            if (UiPages::showAddProductDialog(this, productFilePath()))
+            {
+                loadProducts();
+                showSaved(QStringLiteral("Product added to Product.txt."));
+            }
+        });
         loadProducts();
     }
 
@@ -186,7 +247,8 @@ private:
     void loadProducts()
     {
         QString error;
-        if (!Pos::readProducts(productFilePath(), products_, error))
+        loadFailed_ = !Pos::readProducts(productFilePath(), products_, error);
+        if (loadFailed_)
         {
             note_->setText(error);
             note_->setStyleSheet(QStringLiteral(
@@ -197,46 +259,43 @@ private:
             return;
         }
 
-        int lowStockCount = 0;
         int unitCount = 0;
         for (const Pos::Product &product : products_)
-        {
-            if (product.quantity <= 10)
-                ++lowStockCount;
             unitCount += product.quantity;
-        }
         productCount_->setText(QString::number(products_.size()));
-        lowStockCount_->setText(QString::number(lowStockCount));
+        lowStockCount_->setText(QString::number(
+            Pos::lowStockProducts(products_, kLowStockThreshold).size()));
         unitCount_->setText(QString::number(unitCount));
+        note_->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
         note_->setText(QStringLiteral(
             "Product data is loaded from Data/Product.txt. Stock of 10 units or less is marked low."));
+        table_->show();
         applyFilters();
     }
 
     void applyFilters()
     {
-        if (table_->isHidden() && !products_.isEmpty())
+        if (loadFailed_)
             return;
 
-        const QString query = search_->text().trimmed().toLower();
+        // Search and low-stock rules live in product_service, not in the UI.
         const bool lowStockOnly = lowStockOnly_->isChecked();
-        table_->setRowCount(products_.size());
-        int visibleCount = 0;
+        visible_ = Pos::searchProducts(products_, search_->text());
+        if (lowStockOnly)
+            visible_ = Pos::lowStockProducts(visible_, kLowStockThreshold);
 
-        for (int row = 0; row < products_.size(); ++row)
+        table_->clearSelection();
+        table_->setRowCount(0);   // drop the old rows and their cell widgets first
+        table_->setRowCount(visible_.size());
+        const int visibleCount = visible_.size();
+
+        for (int row = 0; row < visible_.size(); ++row)
         {
-            const Pos::Product &product = products_.at(row);
+            const Pos::Product &product = visible_.at(row);
             QString name = product.name;
             name.replace(QLatin1Char('_'), QLatin1Char(' '));
-            const QString searchableText = QStringLiteral("%1 %2 %3 %4")
-                .arg(name, product.id, product.barcode, product.acronym).toLower();
-            const bool isLowStock = product.quantity <= 10;
-            const bool visible = (query.isEmpty() || searchableText.contains(query)) &&
-                (!lowStockOnly || isLowStock);
-            table_->setRowHidden(row, !visible);
-            if (!visible)
-                continue;
-            ++visibleCount;
+            const bool isLowStock = product.quantity <= kLowStockThreshold;
 
             auto *productCell = new QWidget(table_);
             auto *productLayout = new QHBoxLayout(productCell);
@@ -290,6 +349,60 @@ private:
             .arg(visibleCount).arg(products_.size()));
     }
 
+    int selectedProductRow() const
+    {
+        const QModelIndexList rows = table_->selectionModel()
+            ? table_->selectionModel()->selectedRows() : QModelIndexList();
+        if (rows.isEmpty() || rows.first().row() >= visible_.size())
+            return -1;
+        return rows.first().row();
+    }
+
+    void editSelected()
+    {
+        const int row = selectedProductRow();
+        if (row < 0)
+            return;
+        const Pos::Product product = visible_.at(row);
+        if (UiPages::showEditProductDialog(this, productFilePath(), product))
+        {
+            loadProducts();
+            showSaved(QStringLiteral("Product %1 updated in Product.txt.").arg(product.id));
+        }
+    }
+
+    void deleteSelected()
+    {
+        const int row = selectedProductRow();
+        if (row < 0)
+            return;
+        const Pos::Product product = visible_.at(row);
+        QString name = product.name;
+        name.replace(QLatin1Char('_'), QLatin1Char(' '));
+        const auto answer = QMessageBox::question(this, QStringLiteral("Delete product"),
+            QStringLiteral("Delete %1 (%2) from Product.txt?\nThis cannot be undone.")
+                .arg(name, product.id),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes)
+            return;
+
+        QString error;
+        if (!Pos::deleteProduct(productFilePath(), orderDetailFilePath(), product.id, error))
+        {
+            QMessageBox::warning(this, QStringLiteral("Cannot delete product"), error);
+            return;
+        }
+        loadProducts();
+        showSaved(QStringLiteral("Product %1 deleted from Product.txt.").arg(product.id));
+    }
+
+    void showSaved(const QString &message)
+    {
+        note_->setStyleSheet(QStringLiteral(
+            "color: #18764A; font-size: 10px; font-weight: 600; background: transparent;"));
+        note_->setText(message);
+    }
+
     void setCell(int row, int column, const QString &text)
     {
         auto *cell = new QTableWidgetItem(text);
@@ -297,7 +410,13 @@ private:
         table_->setItem(row, column, cell);
     }
 
+    static constexpr int kLowStockThreshold = 10;
+
     QVector<Pos::Product> products_;
+    QVector<Pos::Product> visible_;
+    bool loadFailed_ = false;
+    QPushButton *editButton_ = nullptr;
+    QPushButton *deleteButton_ = nullptr;
     QLabel *productCount_ = nullptr;
     QLabel *lowStockCount_ = nullptr;
     QLabel *unitCount_ = nullptr;
