@@ -58,13 +58,33 @@ static void testBillLines()
         makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3, sugar, err));
     CHECK(sugar.totalPayable == 489.00 && sugar.totalDiscount == 15.00);
 
+    Bill rounded;
+    CHECK(calculateBillLine("000000001", order,
+        makeProduct("P003", "100003", "ROUND", 1.006, 0.006, 0, 3),
+        3, rounded, err));
+    CHECK(rounded.unitPrice == 1.01 && rounded.totalWithoutTax == 3.03);
+    CHECK(rounded.totalTax == 0.03 && rounded.totalPayable == 3.06);
+
     Bill bad;
     CHECK(!calculateBillLine("1", order, makeProduct("P", "1", "X", 1, 0, 0, 1), 0, bad, err));
     CHECK(!err.isEmpty());
     CHECK(!calculateBillLine("1", order, makeProduct("P", "1", "X", -1, 0, 0, 1), 1, bad, err));
 
     QVector<Bill> rows;
+    rows.append(milk);
     CHECK(!buildBill("1", order, {}, rows, err));
+    CHECK(rows.isEmpty());
+
+    Product overDiscount = makeProduct("P", "1", "X", 10, 1, 20, 1);
+    CHECK(!calculateBillLine("1", order, overDiscount, 1, bad, err));
+    CHECK(bad.id.isEmpty());
+
+    const QVector<CartItem> invalidItems = {
+        { makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2 },
+        { makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 0 }
+    };
+    rows.append(milk);
+    CHECK(!buildBill("000000001", order, invalidItems, rows, err));
     CHECK(rows.isEmpty());
 }
 
@@ -92,6 +112,15 @@ static void testRepository(const QString &dir)
     CHECK(back.size() == 2);
     CHECK(back.value(0).customerName == "Ali Raza");
     CHECK(back.value(1).totalPayable == 489.00);
+
+    QVector<Bill> inconsistent = rows;
+    inconsistent[1].orderId = QStringLiteral("00000120");
+    CHECK(!saveBill(file, inconsistent, err));
+    CHECK(readLines(file).size() == 2);
+    inconsistent = rows;
+    inconsistent[0].totalPayable += 1;
+    CHECK(!saveBill(file, inconsistent, err));
+    CHECK(readLines(file).size() == 2);
 
     // A second bill is appended; reading one bill returns only its own rows.
     QVector<Bill> second = rows;
@@ -138,10 +167,12 @@ static void testCheckout(const QString &dir)
 
     // Empty cart and missing merchant must not write anything.
     CheckoutResult result;
+    result.totals.payable = 5;
     QString err;
     CheckoutRequest empty = request;
     empty.items.clear();
     CHECK(!generateBill(empty, result, err) && !err.isEmpty());
+    CHECK(result.totals.payable == 0 && result.order.id.isEmpty());
 
     CheckoutRequest noMerchant = request;
     noMerchant.merchant.clear();

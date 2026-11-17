@@ -1,6 +1,8 @@
 #include "bill_repository.h"
 
+#include <cmath>
 #include <QFile>
+#include <QRegularExpression>
 #include <QStringList>
 #include <QTextStream>
 
@@ -11,12 +13,34 @@ namespace
 // Bill.txt line format: 12 fields separated by one space, line ends with '#'.
 constexpr int kBillFieldCount = 12;
 
+bool isSafeToken(const QString &text)
+{
+    if (text.isEmpty() || text.contains(QLatin1Char('#')))
+        return false;
+    for (const QChar character : text) {
+        if (character.isSpace())
+            return false;
+    }
+    return true;
+}
+
+bool isValidMoney(double value)
+{
+    return std::isfinite(value) && value >= 0;
+}
+
+double round2(double value)
+{
+    return std::round(value * 100.0) / 100.0;
+}
+
 QString toField(QString text)
 {
     text = text.trimmed();
     if (text.isEmpty())
         return QStringLiteral("-");
-    return text.replace(' ', '_');
+    return text.replace(QRegularExpression(QStringLiteral("\\s+")),
+        QStringLiteral("_"));
 }
 
 QString fromField(QString text)
@@ -80,6 +104,18 @@ bool parseLine(const QString &rawLine, Bill &bill)
             return false;
     if (!okPayable)
         return false;
+    if (!isSafeToken(b.id) || !isSafeToken(b.orderId)
+        || !isSafeToken(b.productAcronym) || !isSafeToken(b.paymentStatus)
+        || b.quantity <= 0 || !isValidMoney(b.unitPrice)
+        || !isValidMoney(b.discountPerUnit) || !isValidMoney(b.totalWithoutTax)
+        || !isValidMoney(b.totalTax) || !isValidMoney(b.totalDiscount)
+        || !isValidMoney(b.totalPayable)
+        || b.totalWithoutTax != round2(b.unitPrice * b.quantity)
+        || b.totalDiscount != round2(b.discountPerUnit * b.quantity)
+        || b.totalPayable != round2(b.totalWithoutTax + b.totalTax
+            - b.totalDiscount)) {
+        return false;
+    }
 
     bill = b;
     return true;
@@ -135,12 +171,29 @@ bool saveBill(QString filePath, QVector<Bill> rows, QString &error)
         return false;
     }
 
-    // Build all lines first so a bad row never leaves a half-written bill.
+    const Bill &first = rows.first();
     QStringList lines;
     for (const Bill &row : rows) {
-        if (row.id.trimmed().isEmpty() || row.orderId.trimmed().isEmpty()
-            || row.productAcronym.trimmed().isEmpty()) {
-            error = QStringLiteral("Bill row is missing its bill ID, order ID or acronym.");
+        if (!isSafeToken(row.id) || !isSafeToken(row.orderId)
+            || !isSafeToken(row.productAcronym) || !isSafeToken(row.paymentStatus)
+            || row.customerName.contains(QLatin1Char('#')) || row.quantity <= 0) {
+            error = QStringLiteral("Bill row is missing a required field or has an invalid quantity.");
+            return false;
+        }
+        if (row.id != first.id || row.orderId != first.orderId
+            || row.customerName != first.customerName
+            || row.paymentStatus != first.paymentStatus) {
+            error = QStringLiteral("All bill rows must share the same bill, order, customer and status.");
+            return false;
+        }
+        if (!isValidMoney(row.unitPrice) || !isValidMoney(row.discountPerUnit)
+            || !isValidMoney(row.totalWithoutTax) || !isValidMoney(row.totalTax)
+            || !isValidMoney(row.totalDiscount) || !isValidMoney(row.totalPayable)
+            || row.totalWithoutTax != round2(row.unitPrice * row.quantity)
+            || row.totalDiscount != round2(row.discountPerUnit * row.quantity)
+            || row.totalPayable != round2(row.totalWithoutTax + row.totalTax
+                - row.totalDiscount)) {
+            error = QStringLiteral("Bill row contains invalid or inconsistent amounts.");
             return false;
         }
         lines.append(toLine(row));
