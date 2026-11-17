@@ -1,6 +1,9 @@
 #include "product_repository.h"
 
+#include "../common/record_codec.h"
+
 #include <QFile>
+#include <QSaveFile>
 #include <QTextStream>
 
 namespace Pos
@@ -69,10 +72,72 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
     return true;
 }
 
+namespace
+{
+// A text field must be non-empty and must not contain a space or '#',
+// otherwise the record could not be read back correctly.
+bool isStorableText(const QString &value)
+{
+    return !value.isEmpty() && !value.contains(QLatin1Char(' ')) &&
+        !value.contains(QLatin1Char('#'));
+}
+
+QString money(double value)
+{
+    return QString::number(value, 'f', 2);
+}
+}
+
 // Owner: Umar Khan - save all products back to Product.txt.
 bool saveProducts(QString filePath, QVector<Product> products, QString &error)
 {
-    error = QStringLiteral("TODO: Save products to Product.txt.");
-    return false;
+    QStringList lines;
+    for (int i = 0; i < products.size(); ++i)
+    {
+        const Product &product = products.at(i);
+        if (!isStorableText(product.id) || !isStorableText(product.barcode) ||
+            !isStorableText(product.acronym) || !isStorableText(product.name) ||
+            !isStorableText(product.unit) || !isStorableText(product.barcodeImage))
+        {
+            error = QStringLiteral("Product %1 has an empty field or a field with a space or #.")
+                .arg(product.id.isEmpty() ? QString::number(i + 1) : product.id);
+            return false;
+        }
+
+        lines.append(makeRecord({
+            product.id,
+            product.barcode,
+            product.acronym,
+            product.name,
+            product.unit,
+            money(product.unitPrice),
+            money(product.tax),
+            money(product.discountPerUnit),
+            QString::number(product.quantity),
+            product.barcodeImage }));
+    }
+
+    // QSaveFile writes to a temporary file and only replaces Product.txt
+    // when commit() succeeds.
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot write %1: %2").arg(filePath, file.errorString());
+        return false;
+    }
+
+    QTextStream output(&file);
+    for (const QString &line : lines)
+        output << line << '\n';
+    output.flush();
+
+    if (output.status() != QTextStream::Ok || !file.commit())
+    {
+        error = QStringLiteral("Could not save %1: %2").arg(filePath, file.errorString());
+        return false;
+    }
+
+    error.clear();
+    return true;
 }
 }

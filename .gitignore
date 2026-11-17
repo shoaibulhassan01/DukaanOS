@@ -51,6 +51,3 @@ object_script.*
 *~
 .DS_Store
 Thumbs.db
-
-# Root-level test folder
-/tests/
