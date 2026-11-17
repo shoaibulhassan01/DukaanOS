@@ -9,7 +9,7 @@
 #include "../payment/payment_method.h"
 #include "../product/product_service.h"
 
-#include <QDate>
+#include <cmath>
 #include <memory>
 #include <QDateTime>
 
@@ -17,6 +17,12 @@ namespace Pos
 {
 namespace
 {
+void setErrorIfEmpty(QString &error, const QString &fallback)
+{
+    if (error.isEmpty())
+        error = fallback;
+}
+
 // Totals of the whole cart, computed with the same bill-line rules.
 bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
     QString &error)
@@ -32,6 +38,22 @@ bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
         sum.discount += row.totalDiscount;
         sum.payable += row.totalPayable;
     }
+    if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
+        || !std::isfinite(sum.discount) || !std::isfinite(sum.payable)) {
+        error = QStringLiteral("Cart totals are outside the supported range.");
+        return false;
+    }
+
+    sum.withoutTax = std::round(sum.withoutTax * 100.0) / 100.0;
+    sum.tax = std::round(sum.tax * 100.0) / 100.0;
+    sum.discount = std::round(sum.discount * 100.0) / 100.0;
+    sum.payable = std::round(sum.payable * 100.0) / 100.0;
+    if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
+        || !std::isfinite(sum.discount) || !std::isfinite(sum.payable)) {
+        error = QStringLiteral("Cart totals are outside the supported range.");
+        return false;
+    }
+
     totals = sum;
     return true;
 }
@@ -41,6 +63,7 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     QString &error)
 {
     error.clear();
+    result = CheckoutResult{};
 
     // Validate the request and payment (no files touched).
     if (request.items.isEmpty()) {
@@ -49,8 +72,10 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     }
 
     CartTotals totals;
-    if (!computeTotals(request.items, totals, error))
+    if (!computeTotals(request.items, totals, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not calculate the cart totals."));
         return false;
+    }
 
     std::unique_ptr<PaymentMethod> payment = createPaymentMethod(request.paymentMode);
     if (!payment) {
@@ -58,19 +83,25 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
         return false;
     }
     if (!payment->validate(request.amountPaid, totals.payable,
-            request.merchant, error))
+            request.merchant, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Payment validation failed."));
         return false;
+    }
 
     // Step 1: order ID.
     const QDateTime now = QDateTime::currentDateTime();
     QString orderId;
-    if (!generateOrderId(DataPaths::orders, now.date(), orderId, error))
+    if (!generateOrderId(DataPaths::orders, now.date(), orderId, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not generate an order ID."));
         return false;
+    }
 
     // Step 2: bill ID.
     QString billId;
-    if (!generateBillId(DataPaths::bills, billId, error))
+    if (!generateBillId(DataPaths::bills, billId, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not generate a bill ID."));
         return false;
+    }
 
     // Order record. Cash has no merchant, so it is stored as "-".
     Order order;
@@ -98,16 +129,24 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
 
     // Step 3: build the bill rows.
     QVector<Bill> billRows;
-    if (!buildBill(billId, order, request.items, billRows, error))
+    if (!buildBill(billId, order, request.items, billRows, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not build the bill."));
         return false;
+    }
 
     // Steps 4-6: files are written from here on.
-    if (!saveOrder(DataPaths::orders, DataPaths::orderDetail, order, details, error))
+    if (!saveOrder(DataPaths::orders, DataPaths::orderDetail, order, details, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not save the order."));
         return false;
-    if (!saveBill(DataPaths::bills, billRows, error))
+    }
+    if (!saveBill(DataPaths::bills, billRows, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not save the bill."));
         return false;
-    if (!reduceStock(DataPaths::products, request.items, error))
+    }
+    if (!reduceStock(DataPaths::products, request.items, error)) {
+        setErrorIfEmpty(error, QStringLiteral("Could not reduce product stock."));
         return false;
+    }
 
     result.order = order;
     result.details = details;
