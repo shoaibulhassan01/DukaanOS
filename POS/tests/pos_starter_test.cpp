@@ -56,7 +56,7 @@ int main(int argc, char *argv[])
 
     Pos::Product juice;
     juice.id = QStringLiteral("P0001");
-    juice.barcode = QStringLiteral("100000000001");
+    juice.barcode = QStringLiteral("100001");
     juice.acronym = QStringLiteral("APL");
     juice.name = QStringLiteral("Apple_juice");
     juice.unit = QStringLiteral("count");
@@ -64,22 +64,22 @@ int main(int argc, char *argv[])
     juice.tax = 12.5;
     juice.discountPerUnit = 10;
     juice.quantity = 48;
-    juice.barcodeImage = QStringLiteral("barcodes/100000000001.bmp");
+    juice.barcodeImage = QStringLiteral("barcodes/100001.bmp");
     Pos::Product tea = juice;
     tea.id = QStringLiteral("P0003");
-    tea.barcode = QStringLiteral("100000000003");
+    tea.barcode = QStringLiteral("100003");
     tea.acronym = QStringLiteral("TEA");
     tea.name = QStringLiteral("Tea_leaves");
     tea.unit = QStringLiteral("weight");
     tea.quantity = 12;
-    tea.barcodeImage = QStringLiteral("barcodes/100000000003.bmp");
+    tea.barcodeImage = QStringLiteral("barcodes/100003.bmp");
 
     if (!Pos::saveProducts(productFile, { juice, tea }, error))
         return fail(error);
     QFile saved(productFile);
     if (!saved.open(QIODevice::ReadOnly | QIODevice::Text) ||
         QString::fromUtf8(saved.readLine()).trimmed() !=
-            QStringLiteral("P0001 100000000001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100000000001.bmp#"))
+            QStringLiteral("P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100001.bmp#"))
         return fail(QStringLiteral("saveProducts did not write the required record format."));
     saved.close();
 
@@ -118,6 +118,77 @@ int main(int argc, char *argv[])
     unknown.product.id = QStringLiteral("P9999");
     if (Pos::reduceStock(productFile, { unknown }, error))
         return fail(QStringLiteral("reduceStock accepted an unknown product."));
+
+    // validateProduct
+    if (!Pos::validateProduct(juice, error))
+        return fail(QStringLiteral("A valid product was rejected: ") + error);
+    Pos::Product invalid = juice;
+    invalid.barcode = QStringLiteral("100000000001");
+    if (Pos::validateProduct(invalid, error))
+        return fail(QStringLiteral("A 12-digit barcode must be rejected."));
+    invalid = juice;
+    invalid.barcode = QStringLiteral("012345");
+    if (Pos::validateProduct(invalid, error))
+        return fail(QStringLiteral("A barcode starting with 0 must be rejected."));
+    invalid = juice;
+    invalid.acronym = QStringLiteral("TOOLONGXX");
+    if (Pos::validateProduct(invalid, error))
+        return fail(QStringLiteral("An acronym over 8 characters must be rejected."));
+    invalid = juice;
+    invalid.unit = QStringLiteral("litre");
+    if (Pos::validateProduct(invalid, error))
+        return fail(QStringLiteral("A unit other than count/weight must be rejected."));
+    invalid = juice;
+    invalid.discountPerUnit = 300;
+    if (Pos::validateProduct(invalid, error))
+        return fail(QStringLiteral("A discount above the price must be rejected."));
+
+    // addProduct (file currently holds P0001 x45 and P0003 x10)
+    Pos::Product milk = juice;
+    milk.id = QStringLiteral("P0002");
+    milk.barcode = QStringLiteral("100002");
+    milk.acronym = QStringLiteral("MILK");
+    milk.name = QStringLiteral("Dairy_milk");
+    milk.quantity = 35;
+    milk.barcodeImage = QStringLiteral("barcodes/100002.bmp");
+    if (!Pos::addProduct(productFile, milk, error))
+        return fail(error);
+    if (!Pos::readProducts(productFile, loaded, error) || loaded.size() != 3 ||
+        loaded.at(2).id != milk.id)
+        return fail(QStringLiteral("addProduct did not add the product."));
+    Pos::Product sameId = milk;
+    sameId.barcode = QStringLiteral("100009");
+    if (Pos::addProduct(productFile, sameId, error))
+        return fail(QStringLiteral("addProduct accepted a duplicate id."));
+    Pos::Product sameBarcode = milk;
+    sameBarcode.id = QStringLiteral("P0009");
+    if (Pos::addProduct(productFile, sameBarcode, error))
+        return fail(QStringLiteral("addProduct accepted a duplicate barcode."));
+    const QString newFile = dataDir.filePath(QStringLiteral("New.txt"));
+    if (!Pos::addProduct(newFile, milk, error))
+        return fail(QStringLiteral("addProduct must create a missing Product.txt: ") + error);
+
+    // updateProduct
+    if (!Pos::updateProduct(productFile, QStringLiteral("P0002"), 190, 5, 30, error))
+        return fail(error);
+    if (!Pos::readProducts(productFile, loaded, error) ||
+        loaded.at(2).unitPrice != 190 || loaded.at(2).discountPerUnit != 5 ||
+        loaded.at(2).quantity != 30 || loaded.at(2).name != milk.name)
+        return fail(QStringLiteral("updateProduct did not change price, discount and stock."));
+    if (Pos::updateProduct(productFile, QStringLiteral("P0002"), 190, 5, -1, error))
+        return fail(QStringLiteral("updateProduct accepted a negative stock."));
+    if (Pos::updateProduct(productFile, QStringLiteral("P9999"), 10, 0, 1, error))
+        return fail(QStringLiteral("updateProduct accepted an unknown product."));
+
+    // searchProducts and lowStockProducts (P0001 x45, P0003 x10, P0002 x30)
+    if (Pos::searchProducts(loaded, QStringLiteral("dairy milk")).size() != 1 ||
+        Pos::searchProducts(loaded, QStringLiteral("10000")).size() != 3 ||
+        Pos::searchProducts(loaded, QString()).size() != 3 ||
+        !Pos::searchProducts(loaded, QStringLiteral("xyz")).isEmpty())
+        return fail(QStringLiteral("searchProducts returned the wrong products."));
+    const QVector<Pos::Product> low = Pos::lowStockProducts(loaded);
+    if (low.size() != 1 || low.at(0).id != QStringLiteral("P0003"))
+        return fail(QStringLiteral("lowStockProducts must list stock of 10 or less."));
 
     Pos::Product pricedProduct;
     pricedProduct.acronym = QStringLiteral("APL");
