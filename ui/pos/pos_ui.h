@@ -4,6 +4,6 @@ class QWidget;
 
 namespace PosUi
 {
-// Owner: Shoaib. Returns the login window. TODO: open the Dashboard after login.
+// Owner: Shoaib Ul Hassan - legacy login window; the active app uses ui/pages/login_page.
 QWidget *createPosWindow();
 }

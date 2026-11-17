@@ -4,9 +4,9 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 ## Current UI
 
-- The app opens to a login-page UI placeholder.
-- The page is split evenly: market image and logo on the left, login form on the right.
-- Login is visual only; authentication and backend are not connected.
+- The app opens directly to a dashboard preview. New Order can scan a barcode or accept typed input and look up matching products in `Data/Product.txt`; order saving and billing are not connected.
+- Use the role dropdown to switch between Cashier and Manager navigation.
+- Dashboard stats are placeholders. Manager Products reads from `Data/Product.txt`; Order History reads saved order records. Held Orders and bill generation work as in-memory previews only, and no new order is written to storage or sent to a printer.
 - Each page has its own file under `ui/pages/` and is assembled through `ui/ui.cpp`.
 - The old BarcodeX screen is removed from the app window. Barcode code remains available for future POS work.
 
@@ -14,11 +14,11 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 | Page | Access | Purpose |
 |---|---|---|
-| Login | Everyone | Sign-in screen (UI placeholder only) |
+| Login | Everyone | Sign in using a username and password from `Data/Users.txt`, then open the matching role dashboard |
 | Dashboard | Cashier, Manager | Role-based actions and today's summary |
 | Scan Product | Cashier, Manager | Scan a barcode and view product details |
 | New Order | Cashier | Scan items, set payment, hold the order or generate the bill |
-| Bill | Cashier | View the generated bill |
+| Bill | Cashier | View the bill and download a print-ready A4 PDF |
 | Held Orders | Cashier | Resume on-hold orders |
 | Orders History | Cashier, Manager | Search and view orders; Manager can archive |
 | Products | Manager | Search products, add/edit price, discount and stock, and view the low-stock list |
@@ -27,11 +27,11 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 | Name | Responsibility |
 |---|---|
-| Shoaib Ul Hassan (Team Leader) | UI, final integration, and the login feature |
-| Umar Khan | Product and user features/data, including product search, add/edit price, discount and stock, and the low-stock list; product UI is coordinated with Shoaib |
-| Zain Ul Abideen | Order storage, order/bill IDs, barcode image generation and image-file handling |
+| Shoaib Ul Hassan (Team Leader) | UI, final integration, AuthService login and dashboard role routing |
+| Umar Khan | Product features/data and user repository; product search, add/edit price, discount and stock, low-stock list, and Users.txt reading |
+| Zain Ul Abideen | Order storage, order/bill IDs, POS barcode scanner adapter, barcode encoding/image generation and image-file handling |
 | Anas | Payment processing, including card payments |
-| Abdul Ahad | Bill generation and checkout flow |
+| Abdul Ahad | Bill generation/storage and order checkout flow (coordinating payment with Anas) |
 
 Unassigned work (including shared record-codec changes, tests, documentation, bug fixes, and improvements) is split evenly across all five team members. Shoaib coordinates integration and shared interfaces; module owners remain responsible for their assigned behavior.
 
@@ -66,7 +66,7 @@ DukaanOS/
 │   ├── scanner/     # POS adapter for the camera barcode scanner
 │   └── user/        # User records and login authentication
 ├── ui/
-│   ├── assets/      # Login background and DukaanOS logo
+│   ├── assets/      # App icons and page images
 │   ├── pages/       # One source file per UI page
 │   ├── ui.cpp       # Integrates pages into the main window
 │   └── ui.h
@@ -90,6 +90,8 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 | Users.txt | username, password, role |
 
 Order status: `in-progress`, `on-hold`, `paid`, `archived`. Payment mode: `cash`, `card`, `wallet`.
+
+`Users.txt` credentials are plain-text demonstration data for local UI testing only. Do not use real or reused passwords.
 
 ## Workflow
 

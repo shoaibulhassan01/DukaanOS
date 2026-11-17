@@ -13,6 +13,12 @@ qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
     ui/pages/login_page.cpp
+    ui/pages/dashboard_page.cpp
+    ui/pages/new_order_page.cpp
+    ui/pages/held_orders_page.cpp
+    ui/pages/order_history_page.cpp
+    ui/pages/products_page.cpp
+    ui/pages/bill_page.cpp
     POS/common/id_generator.cpp
     POS/common/record_codec.cpp
     POS/user/user_repository.cpp
@@ -31,12 +37,13 @@ qt_add_executable(DukaanOS
     BarCode/camera/camera_scanner.cpp
 )
 
-qt_add_resources(DukaanOS login_assets
+qt_add_resources(DukaanOS app_assets
     PREFIX "/assets"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets"
     FILES
         ui/assets/app_icon.png
         ui/assets/dukaanos_logo.png
+        ui/assets/dukaanos_wordmark.png
         ui/assets/market_background.jpg
 )
 
@@ -55,6 +62,14 @@ if(BUILD_TESTING)
     )
     target_link_libraries(PosStarterTest PRIVATE Qt6::Core)
     add_test(NAME PosStarterTest COMMAND PosStarterTest)
+
+    qt_add_executable(UserAuthTest
+        POS/tests/user_auth_test.cpp
+        POS/user/user_repository.cpp
+        POS/user/auth_service.cpp
+    )
+    target_link_libraries(UserAuthTest PRIVATE Qt6::Core)
+    add_test(NAME UserAuthTest COMMAND UserAuthTest)
 
     qt_add_executable(CameraScannerTest
         BarCode/encoder/encoder.cpp

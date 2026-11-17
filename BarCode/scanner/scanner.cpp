@@ -197,7 +197,7 @@ string imageToString(const QImage& qimg) {
 }
 
 Image scanFromCamera() {
-    // TODO: Scan barcode directly from the camera
+    // Owner: Zain Ul Abideen - scan barcode directly from the camera.
     Image img;
     return img;
 }

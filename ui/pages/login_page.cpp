@@ -1,7 +1,13 @@
 #include "login_page.h"
 
+#include "../../POS/user/auth_service.h"
+#include "../../POS/user/user.h"
+
 #include <QAction>
+#include <QCoreApplication>
 #include <QDebug>
+#include <QDir>
+#include <QFileInfo>
 #include <QFontMetrics>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -18,6 +24,7 @@
 #include <QResizeEvent>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <utility>
 
 namespace
 {
@@ -242,7 +249,8 @@ private:
 class LoginPage : public QWidget
 {
 public:
-    explicit LoginPage(QWidget *parent = nullptr) : QWidget(parent)
+    explicit LoginPage(QWidget *parent, std::function<void(const QString &)> onAuthenticated)
+        : QWidget(parent), onAuthenticated_(std::move(onAuthenticated))
     {
         setWindowTitle(QStringLiteral("DukaanOS | Sign in"));
         setWindowIcon(QIcon(QStringLiteral(":/assets/app_icon.png")));
@@ -276,7 +284,7 @@ protected:
         }
         if (!logo_.isNull())
         {
-            const int logoWidth = qBound(300, width() / 2 - 96, 560);
+            const int logoWidth = qBound(300, width() / 2 - 120, 530);
             logoLabel_->setPixmap(logo_.scaled(
                 QSize(logoWidth, 300), Qt::KeepAspectRatio, Qt::SmoothTransformation));
         }
@@ -515,9 +523,31 @@ private:
             return;
         }
 
-        newQuestion();
-        // TODO(Shoaib): call AuthService::login and open the Dashboard for the logged-in role.
-        showNotice(QStringLiteral("Authentication is not connected yet."));
+        Pos::User loggedInUser;
+        QString error;
+        const QString filePath = usersFilePath();
+        if (!Pos::login(filePath, usernameEdit_->text().trimmed(),
+                passwordEdit_->text(), loggedInUser, error))
+        {
+            showNotice(error);
+            return;
+        }
+
+        passwordEdit_->clear();
+        answerEdit_->clear();
+        showNotice(QStringLiteral("Welcome, %1.").arg(loggedInUser.username), false);
+        if (onAuthenticated_)
+            onAuthenticated_(loggedInUser.role);
+    }
+
+    QString usersFilePath() const
+    {
+        const QString workingDirectoryPath = QDir::current().filePath(
+            QStringLiteral("Data/Users.txt"));
+        if (QFileInfo::exists(workingDirectoryPath))
+            return workingDirectoryPath;
+        return QDir(QCoreApplication::applicationDirPath()).filePath(
+            QStringLiteral("../../Data/Users.txt"));
     }
 
     QPixmap background_;
@@ -529,10 +559,12 @@ private:
     QLineEdit *answerEdit_ = nullptr;
     CaptchaWidget *captcha_ = nullptr;
     QLabel *notice_ = nullptr;
+    std::function<void(const QString &)> onAuthenticated_;
 };
 }
 
-QWidget *UiPages::createLoginPage(QWidget *parent)
+QWidget *UiPages::createLoginPage(QWidget *parent,
+    std::function<void(const QString &)> onAuthenticated)
 {
-    return new LoginPage(parent);
+    return new LoginPage(parent, std::move(onAuthenticated));
 }
