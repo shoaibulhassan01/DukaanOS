@@ -18,6 +18,9 @@
 #include <QPixmap>
 #include <QPolygonF>
 #include <QPushButton>
+#include <QKeySequence>
+#include <QShortcut>
+#include <QMessageBox>
 #include <QScrollArea>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -173,7 +176,25 @@ public:
         headerSubtitle_ = new QLabel(mainArea);
         headerSubtitle_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 12px; background: transparent;").arg(kMuted));
-        mainLayout->addWidget(headerTitle_);
+        // Owner: Umar Khan - Refresh button (and F5) rebuilds the current page,
+        // so it re-reads its .txt files and resets its state.
+        auto *titleRow = new QHBoxLayout;
+        titleRow->setContentsMargins(0, 0, 0, 0);
+        titleRow->addWidget(headerTitle_);
+        titleRow->addStretch(1);
+        auto *refresh = new QPushButton(QStringLiteral("Refresh"), mainArea);
+        refresh->setCursor(Qt::PointingHandCursor);
+        refresh->setFixedHeight(34);
+        refresh->setToolTip(QStringLiteral("Reload this page (F5)"));
+        refresh->setStyleSheet(QStringLiteral(
+            "QPushButton { background: white; color: %1; border: 1px solid %2;"
+            " border-radius: 8px; padding: 0 16px; font-size: 11px; font-weight: 600; }"
+            "QPushButton:hover { background: #F0F0FF; border-color: #E1E2FA; }").arg(kNavy, kLine));
+        titleRow->addWidget(refresh);
+        connect(refresh, &QPushButton::clicked, this, [this]() { refreshPage(); });
+        auto *refreshKey = new QShortcut(QKeySequence::Refresh, this);
+        connect(refreshKey, &QShortcut::activated, this, [this]() { refreshPage(); });
+        mainLayout->addLayout(titleRow);
         mainLayout->addSpacing(4);
         mainLayout->addWidget(headerSubtitle_);
         mainLayout->addSpacing(22);
@@ -353,6 +374,17 @@ private:
             heldOrders,
             history
         };
+    }
+
+    void refreshPage()
+    {
+        // Rebuilding New Order would throw away the items in the cart.
+        if (currentPage_ == QStringLiteral("New Order") &&
+            QMessageBox::question(this, QStringLiteral("Refresh New Order"),
+                QStringLiteral("Refreshing clears the current order. Continue?"),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::No) != QMessageBox::Yes)
+            return;
+        navigateTo(currentPage_);
     }
 
     void navigateTo(const QString &page)

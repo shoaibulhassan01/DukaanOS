@@ -180,6 +180,28 @@ int main(int argc, char *argv[])
     if (Pos::updateProduct(productFile, QStringLiteral("P9999"), 10, 0, 1, error))
         return fail(QStringLiteral("updateProduct accepted an unknown product."));
 
+    // deleteProduct: an unsold product can go, a sold one cannot
+    const QString detailFile = dataDir.filePath(QStringLiteral("OrderDetail.txt"));
+    {
+        QFile details(detailFile);
+        if (!details.open(QIODevice::WriteOnly | QIODevice::Text))
+            return fail(QStringLiteral("Could not write a test OrderDetail.txt."));
+        details.write("26111701 P0001 100001 2#\n");
+    }
+    Pos::Product spare = milk;
+    spare.id = QStringLiteral("P0010");
+    spare.barcode = QStringLiteral("100010");
+    if (!Pos::addProduct(productFile, spare, error))
+        return fail(error);
+    if (!Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0010"), error))
+        return fail(QStringLiteral("An unsold product must be deletable: ") + error);
+    if (Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0001"), error))
+        return fail(QStringLiteral("A product that is in an order must not be deleted."));
+    if (Pos::deleteProduct(productFile, detailFile, QStringLiteral("P9999"), error))
+        return fail(QStringLiteral("deleteProduct accepted an unknown product."));
+    if (!Pos::readProducts(productFile, loaded, error) || loaded.size() != 3)
+        return fail(QStringLiteral("deleteProduct changed the wrong products."));
+
     // searchProducts and lowStockProducts (P0001 x45, P0003 x10, P0002 x30)
     if (Pos::searchProducts(loaded, QStringLiteral("dairy milk")).size() != 1 ||
         Pos::searchProducts(loaded, QStringLiteral("10000")).size() != 3 ||
