@@ -8,7 +8,7 @@
 
 int main(int argc, char *argv[])
 {
-    QApplication app(argc, argv);
+    QApplication app(argc, argv); //...
     app.setWindowIcon(QIcon(QStringLiteral(":/assets/app_icon.png")));
     std::unique_ptr<QWidget> window(createMainWindow());
     window->show();
