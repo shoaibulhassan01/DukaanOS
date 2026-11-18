@@ -7,6 +7,7 @@
 #include "../common/id_generator.h"
 #include "../order/order_repository.h"
 #include "../payment/payment_method.h"
+#include "../product/product_repository.h"
 #include "../product/product_service.h"
 
 #include <cmath>
@@ -17,6 +18,43 @@ namespace Pos
 {
 namespace
 {
+// Every sold quantity must still be available in Product.txt (it may have
+// changed since the item was added to the cart).
+bool checkStockForSale(const QVector<CartItem> &items, QString &error)
+{
+    QVector<Product> products;
+    if (!readProducts(DataPaths::products(), products, error))
+        return false;
+    for (const CartItem &item : items)
+    {
+        int needed = 0;
+        for (const CartItem &other : items)
+        {
+            if (other.product.id == item.product.id)
+                needed += other.quantity;
+        }
+        bool found = false;
+        for (const Product &product : products)
+        {
+            if (product.id != item.product.id)
+                continue;
+            found = true;
+            if (needed > product.quantity)
+            {
+                error = QStringLiteral("Only %1 of %2 left in stock.")
+                    .arg(product.quantity).arg(product.id);
+                return false;
+            }
+        }
+        if (!found)
+        {
+            error = QStringLiteral("Product %1 is no longer in Product.txt.").arg(item.product.id);
+            return false;
+        }
+    }
+    return true;
+}
+
 void setErrorIfEmpty(QString &error, const QString &fallback)
 {
     if (error.isEmpty())
@@ -91,14 +129,14 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     // Step 1: order ID.
     const QDateTime now = QDateTime::currentDateTime();
     QString orderId;
-    if (!generateOrderId(DataPaths::orders, now.date(), orderId, error)) {
+    if (!generateOrderId(DataPaths::orders(), now.date(), orderId, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not generate an order ID."));
         return false;
     }
 
     // Step 2: bill ID.
     QString billId;
-    if (!generateBillId(DataPaths::bills, billId, error)) {
+    if (!generateBillId(DataPaths::bills(), now.date(), billId, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not generate a bill ID."));
         return false;
     }
@@ -134,16 +172,21 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
         return false;
     }
 
+    // Stock is checked against Product.txt now, before any file is written,
+    // so reduceStock cannot fail after the order and bill are already saved.
+    if (!checkStockForSale(request.items, error))
+        return false;
+
     // Steps 4-6: files are written from here on.
-    if (!saveOrder(DataPaths::orders, DataPaths::orderDetail, order, details, error)) {
+    if (!saveOrder(DataPaths::orders(), DataPaths::orderDetail(), order, details, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not save the order."));
         return false;
     }
-    if (!saveBill(DataPaths::bills, billRows, error)) {
+    if (!saveBill(DataPaths::bills(), billRows, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not save the bill."));
         return false;
     }
-    if (!reduceStock(DataPaths::products, request.items, error)) {
+    if (!reduceStock(DataPaths::products(), request.items, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not reduce product stock."));
         return false;
     }

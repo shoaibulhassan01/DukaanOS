@@ -1,9 +1,12 @@
 #include "product_service.h"
 
 #include "product_repository.h"
+#include "barcode_image.h"
 #include "../common/record_codec.h"
 
 #include <QFile>
+#include <QFileInfo>
+#include <QDir>
 #include <QTextStream>
 
 namespace Pos
@@ -166,6 +169,8 @@ bool validateProduct(Product product, QString &error)
 // Owner: Umar Khan - validate, check uniqueness, then save.
 bool addProduct(QString productFile, Product product, QString &error)
 {
+    product.barcode = product.barcode.trimmed();
+    product.barcodeImage = QStringLiteral("Data/barcodes/%1.png").arg(product.barcode);
     if (!validateProduct(product, error))
         return false;
 
@@ -187,6 +192,11 @@ bool addProduct(QString productFile, Product product, QString &error)
             return false;
         }
     }
+
+    QString imagePath;
+    const QString imageFolder = QFileInfo(productFile).absoluteDir().filePath(QStringLiteral("barcodes"));
+    if (!createBarcodeImage(product.barcode, imageFolder, imagePath, error))
+        return false;
 
     products.append(product);
     return saveProducts(productFile, products, error);

@@ -9,6 +9,27 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
 
 qt_standard_project_setup()
 
+# POS logic without any screens. Shared by the app and the tests, so a new
+# .cpp file only has to be listed here once.
+set(POS_LOGIC_SOURCES
+    POS/common/data_paths.cpp
+    POS/common/date_format.cpp
+    POS/common/id_generator.cpp
+    POS/common/record_codec.cpp
+    POS/user/user_repository.cpp
+    POS/user/auth_service.cpp
+    POS/product/product_repository.cpp
+    POS/product/product_service.cpp
+    POS/product/barcode_image.cpp
+    POS/order/order_repository.cpp
+    POS/payment/payment_methods.cpp
+    POS/bill/bill_repository.cpp
+    POS/bill/bill_service.cpp
+    POS/checkout/checkout_service.cpp
+    BarCode/encoder/encoder.cpp
+    BarCode/generator/generator.cpp
+)
+
 qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
@@ -20,19 +41,12 @@ qt_add_executable(DukaanOS
     ui/pages/products_page.cpp
     ui/pages/product_dialog.cpp
     ui/pages/bill_page.cpp
-    POS/common/id_generator.cpp
-    POS/common/record_codec.cpp
-    POS/user/user_repository.cpp
-    POS/user/auth_service.cpp
-    POS/product/product_repository.cpp
-    POS/product/product_service.cpp
+    ui/pages/scan_product_page.cpp
+    ui/pages/product_details_view.cpp
+    ui/pages/saved_bill.cpp
+    ${POS_LOGIC_SOURCES}
     POS/scanner/pos_barcode_scanner.cpp
-    POS/order/order_repository.cpp
     POS/order/order_service.cpp
-    POS/bill/bill_repository.cpp
-    POS/bill/bill_service.cpp
-    BarCode/encoder/encoder.cpp
-    BarCode/generator/generator.cpp
     BarCode/scanner/scanner.cpp
     BarCode/decoder/decoder.cpp
     BarCode/camera/camera_scanner.cpp
@@ -55,23 +69,20 @@ set_target_properties(DukaanOS PROPERTIES WIN32_EXECUTABLE ON)
 
 include(CTest)
 if(BUILD_TESTING)
-    qt_add_executable(PosStarterTest
-        POS/tests/pos_starter_test.cpp
-        POS/common/record_codec.cpp
-        POS/product/product_repository.cpp
-        POS/product/product_service.cpp
-        POS/bill/bill_service.cpp
-    )
-    target_link_libraries(PosStarterTest PRIVATE Qt6::Core)
-    add_test(NAME PosStarterTest COMMAND PosStarterTest)
-
-    qt_add_executable(UserAuthTest
-        POS/tests/user_auth_test.cpp
-        POS/user/user_repository.cpp
-        POS/user/auth_service.cpp
-    )
-    target_link_libraries(UserAuthTest PRIVATE Qt6::Core)
-    add_test(NAME UserAuthTest COMMAND UserAuthTest)
+    foreach(test_name PosStarterTest UserAuthTest BillCheckoutTest)
+        if(test_name STREQUAL "PosStarterTest")
+            set(test_source POS/tests/pos_starter_test.cpp)
+        elseif(test_name STREQUAL "UserAuthTest")
+            set(test_source POS/tests/user_auth_test.cpp)
+        else()
+            set(test_source POS/tests/bill_checkout_test.cpp)
+        endif()
+        qt_add_executable(${test_name} ${test_source} ${POS_LOGIC_SOURCES})
+        target_include_directories(${test_name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
+        target_link_libraries(${test_name} PRIVATE Qt6::Gui)
+        set_target_properties(${test_name} PROPERTIES WIN32_EXECUTABLE OFF)
+        add_test(NAME ${test_name} COMMAND ${test_name})
+    endforeach()
 
     qt_add_executable(CameraScannerTest
         BarCode/encoder/encoder.cpp

@@ -11,6 +11,27 @@
 
 namespace Pos
 {
+    // Adds a line break at the end of the file if its last line has none.
+    static bool endFileWithNewline(const QString &path, QString &error)
+    {
+        QFile file(path);
+        if (!file.exists() || file.size() == 0)
+            return true;
+        if (!file.open(QIODevice::ReadWrite))
+        {
+            error = QStringLiteral("Cannot open %1: %2").arg(path, file.errorString());
+            return false;
+        }
+        file.seek(file.size() - 1);
+        char last = 0;
+        if (file.read(&last, 1) == 1 && last != '\n')
+        {
+            file.seek(file.size());
+            file.write("\n");
+        }
+        return true;
+    }
+
     // Check whether the order status is valid.
     static bool isValidStatus(QString status)
     {
@@ -240,6 +261,14 @@ namespace Pos
             << QString::number(order.paymentAmount, 'f', 2)
             << order.paymentMode
             << merchant;
+
+        // A file whose last line has no line break would get the new record
+        // glued onto that line, so add the missing break first.
+        for (const QString &path : { orderFile, detailFile })
+        {
+            if (!endFileWithNewline(path, error))
+                return false;
+        }
 
         QFile orderOutput(orderFile);
         QFile detailOutput(detailFile);

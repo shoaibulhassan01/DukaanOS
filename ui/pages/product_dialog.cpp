@@ -54,7 +54,7 @@ public:
         root->addWidget(title);
 
         auto *hint = new QLabel(mode == Mode::Add
-            ? QStringLiteral("All fields are saved to Product.txt. Barcode: 6 digits, not starting with 0.")
+            ? QStringLiteral("All fields are saved to Product.txt. Barcode: 6 digits, not starting with 0. The barcode picture is created for you.")
             : QStringLiteral("Only the price, discount and available stock can be changed."), this);
         hint->setWordWrap(true);
         hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
@@ -84,7 +84,9 @@ public:
         quantity_->setRange(0, 1000000);
         quantity_->setButtonSymbols(QAbstractSpinBox::NoButtons);
         image_ = new QLineEdit(this);
-        image_->setPlaceholderText(QStringLiteral("Filled in from the barcode"));
+        image_->setPlaceholderText(QStringLiteral("Created from the barcode"));
+        image_->setReadOnly(true);
+        image_->setToolTip(QStringLiteral("The barcode picture is generated automatically when the product is added"));
 
         form->addRow(label(QStringLiteral("Product id")), id_);
         form->addRow(label(QStringLiteral("Barcode")), barcode_);
@@ -137,7 +139,7 @@ public:
             connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
                 if (!imageEdited_)
                     image_->setText(text.trimmed().isEmpty()
-                        ? QString() : QStringLiteral("barcodes/%1.bmp").arg(text.trimmed()));
+                        ? QString() : QStringLiteral("Data/barcodes/%1.png").arg(text.trimmed()));
             });
             connect(image_, &QLineEdit::textEdited, this, [this]() { imageEdited_ = true; });
         }

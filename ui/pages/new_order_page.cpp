@@ -4,9 +4,15 @@
 #include "../../POS/product/product.h"
 #include "../../POS/product/product_repository.h"
 #include "../../POS/product/product_service.h"
+#include "../../POS/checkout/checkout_service.h"
+#include "../../POS/common/data_paths.h"
+#include "../../POS/payment/payment_method.h"
+#include "product_details_view.h"
 
 #include <QCoreApplication>
 #include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QSignalBlocker>
 #include <QDir>
 #include <QFileInfo>
 #include <QFrame>
@@ -103,7 +109,10 @@ public:
                 setStatus(error, true);
             });
 
-        setStyleSheet(QStringLiteral("background: transparent;"));
+        // The QToolTip rule stops tooltips inheriting the transparent
+        // background (which made them show as a black bar).
+        setStyleSheet(QStringLiteral("background: transparent;"
+            "QToolTip { background: #20233B; color: white; border: none; padding: 5px 8px; font-size: 11px; }"));
         auto *root = new QVBoxLayout(this);
         root->setContentsMargins(0, 0, 0, 18);
         root->setSpacing(16);
@@ -117,7 +126,7 @@ public:
         root->addLayout(body);
 
         auto *notice = new QLabel(
-            QStringLiteral("Preview mode - bill is a preview; order saving and printing are not connected."),
+            QStringLiteral("When the bill is generated it is saved to Order.txt, OrderDetail.txt and Bill.txt, stock is reduced, and the bill opens."),
             this);
         notice->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent; padding-left: 2px;")
@@ -125,6 +134,7 @@ public:
         root->addWidget(notice);
         if (initialOrder)
             loadOrder(*initialOrder);
+        updatePaymentFields();
     }
 
     ~NewOrderPage() override
@@ -219,13 +229,47 @@ private:
         barcodeEdit_->setStyleSheet(fieldStyle());
         entry->addWidget(barcodeEdit_, 1);
 
-        quantity_ = new QSpinBox(card);
+        // Quantity stepper:  [ - ]  qty  [ + ]  (type a number or click).
+        auto *stepper = new QFrame(card);
+        stepper->setObjectName(QStringLiteral("qtyStepper"));
+        stepper->setFixedHeight(42);
+        stepper->setToolTip(QStringLiteral(
+            "Quantity to add. It must be less than the available stock."));
+        stepper->setStyleSheet(QStringLiteral(
+            "QFrame#qtyStepper { background: #FAFAFD; border: 1px solid %1; border-radius: 9px; }"
+            "QPushButton { background: transparent; color: %2; border: none; font-size: 17px;"
+            " font-weight: 700; min-width: 30px; }"
+            "QPushButton:hover { background: #F0F0FF; border-radius: 7px; }"
+            "QPushButton:disabled { color: #C9CAD6; }"
+            "QSpinBox { background: transparent; color: %3; border: none; font-size: 13px;"
+            " font-weight: 700; }").arg(kLine, kNavy, kInk));
+        auto *stepperLayout = new QHBoxLayout(stepper);
+        stepperLayout->setContentsMargins(4, 4, 4, 4);
+        stepperLayout->setSpacing(0);
+        auto *minus = new QPushButton(QString(QChar(0x2212)), stepper);
+        minus->setCursor(Qt::PointingHandCursor);
+        minus->setFocusPolicy(Qt::NoFocus);
+        quantity_ = new QSpinBox(stepper);
         quantity_->setRange(1, 999);
         quantity_->setValue(1);
-        quantity_->setFixedSize(82, 42);
-        quantity_->setToolTip(QStringLiteral("Required quantity"));
-        quantity_->setStyleSheet(fieldStyle());
-        entry->addWidget(quantity_);
+        quantity_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        quantity_->setAlignment(Qt::AlignCenter);
+        quantity_->setFixedWidth(44);
+        auto *plus = new QPushButton(QStringLiteral("+"), stepper);
+        plus->setCursor(Qt::PointingHandCursor);
+        plus->setFocusPolicy(Qt::NoFocus);
+        stepperLayout->addWidget(minus);
+        stepperLayout->addWidget(quantity_);
+        stepperLayout->addWidget(plus);
+        connect(minus, &QPushButton::clicked, quantity_, &QSpinBox::stepDown);
+        connect(plus, &QPushButton::clicked, quantity_, &QSpinBox::stepUp);
+        auto updateStepButtons = [this, minus, plus]() {
+            minus->setEnabled(quantity_->value() > quantity_->minimum());
+            plus->setEnabled(quantity_->value() < quantity_->maximum());
+        };
+        connect(quantity_, &QSpinBox::valueChanged, this, updateStepButtons);
+        updateStepButtons();
+        entry->addWidget(stepper);
 
         addButton_ = new QPushButton(QStringLiteral("Add item"), card);
         addButton_->setCursor(Qt::PointingHandCursor);
@@ -235,6 +279,16 @@ private:
             " font-size: 11px; font-weight: 700; }"
             "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
         entry->addWidget(addButton_);
+
+        descriptionButton_ = new QPushButton(QStringLiteral("Description"), card);
+        descriptionButton_->setCursor(Qt::PointingHandCursor);
+        descriptionButton_->setFixedSize(104, 42);
+        descriptionButton_->setToolTip(QStringLiteral("Show all details of the scanned product"));
+        descriptionButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 9px; font-size: 11px; font-weight: 700; }"
+            "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
+        entry->addWidget(descriptionButton_);
         layout->addLayout(entry);
 
         auto *stockHint = new QLabel(
@@ -300,6 +354,7 @@ private:
             matchLabel_->hide();
         });
         connect(addButton_, &QPushButton::clicked, this, [this]() { addProductToCart(); });
+        connect(descriptionButton_, &QPushButton::clicked, this, [this]() { showDescription(); });
         return card;
     }
 
@@ -353,7 +408,37 @@ private:
         paymentMethod_->setFixedHeight(42);
         paymentMethod_->setStyleSheet(fieldStyle());
         layout->addWidget(paymentMethod_);
-        layout->addSpacing(17);
+        layout->addSpacing(10);
+
+        // Card / Wallet: bank or wallet name. Cash: amount received and change.
+        merchantLabel_ = createFieldLabel(QStringLiteral("Bank / wallet name"), card);
+        layout->addWidget(merchantLabel_);
+        layout->addSpacing(7);
+        merchantEdit_ = new QLineEdit(card);
+        merchantEdit_->setPlaceholderText(QStringLiteral("e.g. HBL, ABL, JazzCash, Easypaisa"));
+        merchantEdit_->setFixedHeight(42);
+        merchantEdit_->setStyleSheet(fieldStyle());
+        layout->addWidget(merchantEdit_);
+
+        cashLabel_ = createFieldLabel(QStringLiteral("Cash received (PKR)"), card);
+        layout->addWidget(cashLabel_);
+        layout->addSpacing(7);
+        cashReceived_ = new QDoubleSpinBox(card);
+        cashReceived_->setRange(0, 100000000);
+        cashReceived_->setDecimals(2);
+        cashReceived_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        cashReceived_->setFixedHeight(42);
+        cashReceived_->setStyleSheet(fieldStyle());
+        layout->addWidget(cashReceived_);
+        layout->addSpacing(6);
+        changeLabel_ = new QLabel(card);
+        changeLabel_->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
+        layout->addWidget(changeLabel_);
+        layout->addSpacing(14);
+        connect(paymentMethod_, &QComboBox::currentTextChanged, this, [this]() { updatePaymentFields(); });
+        connect(cashReceived_, &QDoubleSpinBox::valueChanged, this, [this]() { updatePaymentFields(); });
+        connect(cashReceived_, &QAbstractSpinBox::editingFinished, this, [this]() { cashEdited_ = true; });
 
         auto *hold = new QPushButton(QStringLiteral("Hold order"), card);
         holdButton_ = hold;
@@ -375,6 +460,14 @@ private:
             " font-size: 12px; font-weight: 700; }"
             "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
         layout->addWidget(checkout);
+        layout->addSpacing(8);
+        checkoutMessage_ = new QLabel(card);
+        checkoutMessage_->setWordWrap(true);
+        checkoutMessage_->setStyleSheet(QStringLiteral(
+            "color: #B42318; background: #FEF3F2; border: 1px solid #FECDCA;"
+            " border-radius: 8px; padding: 8px 10px; font-size: 11px;"));
+        checkoutMessage_->hide();
+        layout->addWidget(checkoutMessage_);
         layout->addStretch(1);
         connect(holdButton_, &QPushButton::clicked, this, [this]() { holdOrder(); });
         connect(checkoutButton_, &QPushButton::clicked, this, [this]() { generateBill(); });
@@ -401,13 +494,7 @@ private:
 
     QString productFilePath() const
     {
-        const QString workingDirectoryPath = QDir::current().filePath(
-            QStringLiteral("Data/Product.txt"));
-        if (QFileInfo::exists(workingDirectoryPath))
-            return workingDirectoryPath;
-
-        return QDir(QCoreApplication::applicationDirPath()).filePath(
-            QStringLiteral("../../Data/Product.txt"));
+        return Pos::DataPaths::products();
     }
 
     void toggleCamera()
@@ -523,8 +610,8 @@ private:
             }
         }
 
-        if (currentProduct_.quantity <= 0 ||
-            quantity_->value() >= currentProduct_.quantity - existingQuantity)
+        // Requirement 5: the required quantity must be less than the stock.
+        if (!Pos::checkStock(currentProduct_, existingQuantity + quantity_->value()))
         {
             setStatus(QStringLiteral(
                 "Required quantity must be less than the available stock (%1).")
@@ -544,6 +631,7 @@ private:
     void refreshCart()
     {
         cartTable_->clearSpans();
+        cartTable_->setRowCount(0);   // also removes the "order is empty" message
         cartTable_->setRowCount(cartLines_.size());
         int itemCount = 0;
         double subtotal = 0;
@@ -579,6 +667,43 @@ private:
         taxValue_->setText(QStringLiteral("PKR %1").arg(tax, 0, 'f', 2));
         discountValue_->setText(QStringLiteral("PKR %1").arg(discount, 0, 'f', 2));
         totalValue_->setText(QStringLiteral("PKR %1").arg(subtotal + tax - discount, 0, 'f', 2));
+        currentTotal_ = subtotal + tax - discount;
+        // Until the cashier types an amount, cash received equals the total.
+        if (cashReceived_ && !cashEdited_)
+        {
+            const QSignalBlocker block(cashReceived_);
+            cashReceived_->setValue(currentTotal_);
+        }
+        updatePaymentFields();
+    }
+
+    void updatePaymentFields()
+    {
+        if (!paymentMethod_ || !cashReceived_)
+            return;
+        const bool cash = paymentMethod_->currentText() == QStringLiteral("Cash");
+        merchantLabel_->setVisible(!cash);
+        merchantEdit_->setVisible(!cash);
+        cashLabel_->setVisible(cash);
+        cashReceived_->setVisible(cash);
+        changeLabel_->setVisible(cash);
+        const double change = cashReceived_->value() - currentTotal_;
+        changeLabel_->setText(cashReceived_->value() <= 0
+            ? QStringLiteral("Enter the cash given by the customer.")
+            : change < -0.005
+                ? QStringLiteral("PKR %1 still due").arg(-change, 0, 'f', 2)
+                : QStringLiteral("Change to return: PKR %1").arg(change, 0, 'f', 2));
+    }
+
+    void showDescription()
+    {
+        if (!hasMatchedProduct_)
+        {
+            lookupBarcode(barcodeEdit_->text());
+            if (!hasMatchedProduct_)
+                return;
+        }
+        UiPages::showProductDescription(currentProduct_, this);
     }
 
     OrderPreview createOrderPreview() const
@@ -629,18 +754,62 @@ private:
         OrderPreview order = createOrderPreview();
         if (order.lines.isEmpty())
         {
-            setStatus(QStringLiteral("Add at least one product before generating a bill."), true);
+            checkoutMessage_->setText(QStringLiteral("Add at least one product before generating a bill."));
+            checkoutMessage_->show();
             return;
         }
+        // Requirements 6-10: save Order.txt, OrderDetail.txt and Bill.txt and
+        // reduce stock, all through the checkout service.
+        Pos::CheckoutRequest request;
+        request.customerName = order.customerName;
+        request.customerContact = order.phone;
+        request.paymentMode = paymentMethod_->currentText();
+        const bool cash = request.paymentMode == QStringLiteral("Cash");
+        request.merchant = cash ? QString() : merchantEdit_->text().trimmed();
+        request.amountPaid = cash ? cashReceived_->value() : order.total;
+        for (const CartLine &line : cartLines_)
+            request.items.append(Pos::CartItem{line.product, line.quantity});
+
+        Pos::CheckoutResult result;
+        QString error;
+        if (!Pos::generateBill(request, result, error))
+        {
+            checkoutMessage_->setText(QStringLiteral("Bill not saved: %1").arg(error));
+            checkoutMessage_->show();
+            return;
+        }
+        checkoutMessage_->hide();
+
+        order.id = result.billRows.isEmpty() ? QString() : result.billRows.first().id;
+        order.orderId = result.order.id;
+        order.status = result.order.status;
+        order.customerName = result.order.customerName;
+        order.createdAt = QStringLiteral("%1  %2").arg(result.order.date, result.order.time);
+        order.paymentMethod = cash
+            ? QStringLiteral("Cash (received PKR %1, change PKR %2)")
+                  .arg(request.amountPaid, 0, 'f', 2)
+                  .arg(request.amountPaid - result.totals.payable, 0, 'f', 2)
+            : QStringLiteral("%1 (%2)").arg(paymentMethod_->currentText(), request.merchant);
+        order.subtotal = result.totals.withoutTax;
+        order.tax = result.totals.tax;
+        order.discount = result.totals.discount;
+        order.total = result.totals.payable;
         if (onGenerateBill_)
             onGenerateBill_(order);
-        else
-            setStatus(QStringLiteral("Bill preview is not available."), true);
     }
 
     CameraBarcodeScanner *scanner_ = nullptr;
     QPushButton *cameraButton_ = nullptr;
     QPushButton *addButton_ = nullptr;
+    QPushButton *descriptionButton_ = nullptr;
+    QLabel *merchantLabel_ = nullptr;
+    QLineEdit *merchantEdit_ = nullptr;
+    QLabel *cashLabel_ = nullptr;
+    QDoubleSpinBox *cashReceived_ = nullptr;
+    QLabel *changeLabel_ = nullptr;
+    double currentTotal_ = 0;
+    bool cashEdited_ = false;
+    QLabel *checkoutMessage_ = nullptr;
     QPushButton *holdButton_ = nullptr;
     QPushButton *checkoutButton_ = nullptr;
     QLineEdit *barcodeEdit_ = nullptr;
