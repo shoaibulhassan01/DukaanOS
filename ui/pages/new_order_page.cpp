@@ -8,6 +8,7 @@
 #include "../../POS/common/data_paths.h"
 #include "../../POS/payment/payment_method.h"
 #include "product_details_view.h"
+#include "wheel_guard.h"
 
 #include <QCoreApplication>
 #include <QComboBox>
@@ -233,8 +234,6 @@ private:
         auto *stepper = new QFrame(card);
         stepper->setObjectName(QStringLiteral("qtyStepper"));
         stepper->setFixedHeight(42);
-        stepper->setToolTip(QStringLiteral(
-            "Quantity to add. It must be less than the available stock."));
         stepper->setStyleSheet(QStringLiteral(
             "QFrame#qtyStepper { background: #FAFAFD; border: 1px solid %1; border-radius: 9px; }"
             "QPushButton { background: transparent; color: %2; border: none; font-size: 17px;"
@@ -255,6 +254,7 @@ private:
         quantity_->setButtonSymbols(QAbstractSpinBox::NoButtons);
         quantity_->setAlignment(Qt::AlignCenter);
         quantity_->setFixedWidth(44);
+        UiPages::ignoreMouseWheel(quantity_);
         auto *plus = new QPushButton(QStringLiteral("+"), stepper);
         plus->setCursor(Qt::PointingHandCursor);
         plus->setFocusPolicy(Qt::NoFocus);
@@ -283,7 +283,6 @@ private:
         descriptionButton_ = new QPushButton(QStringLiteral("Description"), card);
         descriptionButton_->setCursor(Qt::PointingHandCursor);
         descriptionButton_->setFixedSize(104, 42);
-        descriptionButton_->setToolTip(QStringLiteral("Show all details of the scanned product"));
         descriptionButton_->setStyleSheet(QStringLiteral(
             "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
             " border-radius: 9px; font-size: 11px; font-weight: 700; }"
@@ -427,6 +426,7 @@ private:
         cashReceived_->setRange(0, 100000000);
         cashReceived_->setDecimals(2);
         cashReceived_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        UiPages::ignoreMouseWheel(cashReceived_);
         cashReceived_->setFixedHeight(42);
         cashReceived_->setStyleSheet(fieldStyle());
         layout->addWidget(cashReceived_);

@@ -220,7 +220,7 @@ public:
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
         table_->setStyleSheet(QStringLiteral(
-            "QTableWidget { background: white; border: none; color: %1; }"
+            "QTableWidget { background: white; border: none; color: %1; outline: 0; }"
             "QTableWidget::item { padding: 6px; border-bottom: 1px solid #F0F1F6; }"
             "QTableWidget::item:selected { background: #F0F0FF; color: %2; }"
             "QHeaderView::section { background: #F8F8FC; color: %3; border: none;"

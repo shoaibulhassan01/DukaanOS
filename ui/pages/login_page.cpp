@@ -20,6 +20,7 @@
 #include <QPixmap>
 #include <QPolygonF>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QRandomGenerator>
 #include <QResizeEvent>
 #include <QVBoxLayout>
@@ -495,6 +496,22 @@ private:
         notice_->setText(text);
     }
 
+protected:
+    // Shown again after a logout: forget the previous user, so the next
+    // person does not see "Welcome, <name>" or a filled-in username.
+    void showEvent(QShowEvent *event) override
+    {
+        QWidget::showEvent(event);
+        if (event->spontaneous())
+            return;   // window restored from minimise, not a logout
+        usernameEdit_->clear();
+        passwordEdit_->clear();
+        notice_->clear();
+        newQuestion();
+        usernameEdit_->setFocus();
+    }
+
+private:
     void newQuestion()
     {
         captcha_->regenerate();
