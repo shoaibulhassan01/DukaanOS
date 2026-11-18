@@ -226,8 +226,11 @@ public:
                 break;
             }
         }
-        if (initialRoleIndex >= 0)
-            roleCombo_->setCurrentIndex(initialRoleIndex);
+        // Access control: the role is the one from Users.txt for the user
+        // who logged in, and it cannot be changed here. An unknown role gets
+        // the least access (Cashier).
+        roleCombo_->setCurrentIndex(initialRoleIndex >= 0 ? initialRoleIndex : 0);
+        roleCombo_->setEnabled(false);
         updateRole();
     }
 
@@ -276,13 +279,16 @@ private:
         roleCombo_ = new QComboBox(header);
         roleCombo_->addItems({QStringLiteral("Cashier"), QStringLiteral("Manager")});
         roleCombo_->setFixedSize(140, 40);
-        roleCombo_->setCursor(Qt::PointingHandCursor);
+        roleCombo_->setToolTip(QStringLiteral("Your role comes from your login. Log out to sign in as another user."));
+        // The role is fixed by the login (see the constructor), so the box is
+        // shown read-only: no hover effect and no drop-down arrow.
         roleCombo_->setStyleSheet(QStringLiteral(
-            "QComboBox { background: rgba(255,255,255,30); color: white;"
+            "QComboBox, QComboBox:disabled { background: rgba(255,255,255,30); color: white;"
             " border: 1px solid rgba(255,255,255,60); border-radius: 10px;"
             " padding: 0 12px; font-size: 12px; font-weight: 600; }"
-            "QComboBox:hover { background: rgba(255,255,255,46); }"
-            "QComboBox::drop-down { border: none; width: 26px; }"
+            "QComboBox::drop-down { border: none; width: 0px; }"
+            "QComboBox::down-arrow { image: none; width: 0px; }"
+            "QToolTip { background: #20233B; color: white; border: none; padding: 5px 8px; }"
             "QComboBox QAbstractItemView { background: white; color: %1;"
             " selection-background-color: #EEF0FF; selection-color: %2;"
             " border: 1px solid %3; outline: 0; }")
@@ -437,7 +443,7 @@ private:
         headerTitle_->setText(currentPage_);
         headerSubtitle_->setText(currentPage_ == QStringLiteral("Dashboard")
             ? QStringLiteral("Here is your store at a glance.")
-            : QStringLiteral("%1 preview  •  %2").arg(role, currentPage_));
+            : QStringLiteral("%1  •  %2").arg(role, currentPage_));
 
         clearContent();
         if (currentPage_ == QStringLiteral("Dashboard"))
