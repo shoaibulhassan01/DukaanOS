@@ -1,4 +1,6 @@
 #include "order_history_page.h"
+#include "bill_page.h"
+#include "saved_bill.h"
 
 #include "../../POS/order/order_repository.h"
 
@@ -18,6 +20,7 @@
 #include <QPainter>
 #include <QPen>
 #include <QPushButton>
+#include <QMessageBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -155,6 +158,18 @@ public:
         countLabel_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
         heading->addWidget(countLabel_);
+        heading->addSpacing(10);
+        viewBillButton_ = new QPushButton(QStringLiteral("View bill"), card);
+        viewBillButton_->setCursor(Qt::PointingHandCursor);
+        viewBillButton_->setFixedHeight(34);
+        viewBillButton_->setEnabled(false);
+        viewBillButton_->setToolTip(QStringLiteral("Show the saved bill of the selected order (or double-click it)"));
+        viewBillButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: white; border: none; border-radius: 8px;"
+            " padding: 0 14px; font-size: 10px; font-weight: 700; }"
+            "QPushButton:hover { background: #0D0D6B; }"
+            "QPushButton:disabled { background: #E4E5EE; color: #A9ABBD; }").arg(kNavy));
+        heading->addWidget(viewBillButton_);
         layout->addLayout(heading);
         layout->addSpacing(14);
 
@@ -252,6 +267,15 @@ public:
                 onNewOrder_();
         });
         connect(search_, &QLineEdit::textChanged, this, [this]() { applyFilters(); });
+        connect(table_, &QTableWidget::itemSelectionChanged, this, [this]() {
+            viewBillButton_->setEnabled(!table_->selectedItems().isEmpty());
+        });
+        connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) { showBill(row); });
+        connect(viewBillButton_, &QPushButton::clicked, this, [this]() {
+            const QList<QTableWidgetItem *> selected = table_->selectedItems();
+            if (!selected.isEmpty())
+                showBill(selected.first()->row());
+        });
         connect(statusFilter_, &QComboBox::currentTextChanged,
             this, [this]() { applyFilters(); });
         connect(periodFilter_, &QComboBox::currentTextChanged,
@@ -263,7 +287,8 @@ private:
     void loadOrders()
     {
         QString error;
-        if (!Pos::readOrders(dataFilePath(QStringLiteral("Order.txt")), orders_, error))
+        loadFailed_ = !Pos::readOrders(dataFilePath(QStringLiteral("Order.txt")), orders_, error);
+        if (loadFailed_)
         {
             note_->setText(error);
             note_->setStyleSheet(QStringLiteral(
@@ -291,6 +316,7 @@ private:
                 table_->hide();
                 emptyState_->hide();
                 countLabel_->setText(QStringLiteral("Could not load order details"));
+                loadFailed_ = true;
                 return;
             }
 
@@ -340,7 +366,7 @@ private:
 
     void applyFilters()
     {
-        if (table_->isHidden() && !rows_.isEmpty())
+        if (loadFailed_)
             return;
 
         table_->setRowCount(rows_.size());
@@ -398,7 +424,24 @@ private:
                 "History is loaded from Order.txt and OrderDetail.txt. Bill totals come from saved order payments."));
     }
 
+    // Table rows are built in the same order as orders_.
+    void showBill(int row)
+    {
+        if (row < 0 || row >= orders_.size())
+            return;
+        OrderPreview bill;
+        QString error;
+        if (!UiPages::loadSavedBill(orders_.at(row), bill, error))
+        {
+            QMessageBox::information(this, QStringLiteral("No bill"), error);
+            return;
+        }
+        UiPages::showBillDialog(bill, this);
+    }
+
     std::function<void()> onNewOrder_;
+    bool loadFailed_ = false;
+    QPushButton *viewBillButton_ = nullptr;
     QVector<Pos::Order> orders_;
     QVector<QStringList> rows_;
     QVector<QDate> rowDates_;

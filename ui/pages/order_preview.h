@@ -13,7 +13,9 @@ struct OrderPreviewLine
 
 struct OrderPreview
 {
-    QString id;
+    QString id;              // bill ID (9 digits) once the bill is saved
+    QString orderId;         // order ID (8 digits) once the order is saved
+    QString status;          // order status from Order.txt, e.g. paid
     QString customerName;
     QString phone;
     QString paymentMethod;

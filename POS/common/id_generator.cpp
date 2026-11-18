@@ -1,132 +1,112 @@
-
 #include "id_generator.h"
 #include "record_codec.h"
 
 #include <QFile>
-#include <QTextStream>
-#include <QStringList>
 #include <QRegularExpression>
-#include <QDate>
+#include <QStringList>
+#include <QTextStream>
 
 namespace Pos
 {
-    // Owner: Zain Ul Abideen - make a unique 8-digit order ID.
-    bool generateOrderId(QString& id)
-    {
-        QFile file("Order.txt");
-
-        QString datePrefix = QDate::currentDate().toString("yyMMdd");
-
-        int highestNumber = 0;
-
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
-        {
-            QTextStream input(&file);
-
-            while (!input.atEnd())
-            {
-                QString line = input.readLine().trimmed();
-
-                if (line.isEmpty())
-                    continue;
-
-                QStringList fields;
-
-                if (!splitRecord(line, fields) || fields.size() != 9)
-                    return false;
-
-                QString existingId = fields.at(0);
-
-                if (!QRegularExpression("^\\d{8}$")
-                    .match(existingId).hasMatch())
-                {
-                    return false;
-                }
-
-                if (existingId.left(6) == datePrefix)
-                {
-                    int number = existingId.right(2).toInt();
-
-                    if (number > highestNumber)
-                        highestNumber = number;
-                }
-            }
-        }
-        else if (file.exists())
-        {
-            return false;
-        }
-
-        if (highestNumber >= 99)
-            return false;
-
-        highestNumber++;
-
-        QString sequence =
-            QString("%1").arg(highestNumber, 2, 10, QChar('0'));
-
-        id = datePrefix + sequence;
-
+namespace
+{
+// Reads the first field (the ID) of every record in a file.
+// A missing file is not an error: it just has no IDs yet.
+bool readIds(const QString &filePath, int fieldCount, int idLength,
+    QStringList &ids, QString &error)
+{
+    ids.clear();
+    QFile file(filePath);
+    if (!file.exists())
         return true;
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot open %1: %2").arg(filePath, file.errorString());
+        return false;
     }
 
-    // Owner: Zain Ul Abideen - make a unique 9-digit bill ID.
-    bool generateBillId(QString& id)
+    const QRegularExpression digits(QStringLiteral("^\\d{%1}$").arg(idLength));
+    QTextStream input(&file);
+    int lineNumber = 0;
+    while (!input.atEnd())
     {
-        QFile file("Bill.txt");
-
-        QString datePrefix = QDate::currentDate().toString("yyMMdd");
-
-        int highestNumber = 0;
-
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
+        const QString line = input.readLine().trimmed();
+        ++lineNumber;
+        if (line.isEmpty())
+            continue;
+        QStringList fields;
+        if (!splitRecord(line, fields) || fields.size() != fieldCount ||
+            !digits.match(fields.at(0)).hasMatch())
         {
-            QTextStream input(&file);
-
-            while (!input.atEnd())
-            {
-                QString line = input.readLine().trimmed();
-
-                if (line.isEmpty())
-                    continue;
-
-                QStringList fields;
-
-                if (!splitRecord(line, fields) || fields.size() != 12)
-                    return false;
-
-                QString existingId = fields.at(0);
-
-                if (!QRegularExpression("^\\d{9}$")
-                    .match(existingId).hasMatch())
-                {
-                    return false;
-                }
-
-                if (existingId.left(6) == datePrefix)
-                {
-                    int number = existingId.right(3).toInt();
-
-                    if (number > highestNumber)
-                        highestNumber = number;
-                }
-            }
-        }
-        else if (file.exists())
-        {
+            error = QStringLiteral("%1 line %2 is not a valid record.").arg(filePath).arg(lineNumber);
             return false;
         }
-
-        if (highestNumber >= 999)
-            return false;
-
-        highestNumber++;
-
-        QString sequence =
-            QString("%1").arg(highestNumber, 3, 10, QChar('0'));
-
-        id = datePrefix + sequence;
-
-        return true;
+        ids.append(fields.at(0));
     }
+    return true;
+}
+}
+
+// Owner: Zain Ul Abideen - running number across all orders, day at the end.
+bool generateOrderId(const QString &orderFile, const QDate &date, QString &id,
+    QString &error)
+{
+    id.clear();
+    if (!date.isValid())
+    {
+        error = QStringLiteral("Cannot make an order ID without a valid date.");
+        return false;
+    }
+
+    QStringList ids;
+    if (!readIds(orderFile, 9, 8, ids, error))
+        return false;
+
+    int highest = 0;
+    for (const QString &existing : ids)
+        highest = qMax(highest, existing.left(6).toInt());
+    if (highest >= 999999)
+    {
+        error = QStringLiteral("No more order IDs are available.");
+        return false;
+    }
+
+    id = QStringLiteral("%1%2").arg(highest + 1, 6, 10, QLatin1Char('0'))
+                               .arg(date.day(), 2, 10, QLatin1Char('0'));
+    error.clear();
+    return true;
+}
+
+// Owner: Zain Ul Abideen - running number per day after a yyMMdd prefix.
+bool generateBillId(const QString &billFile, const QDate &date, QString &id,
+    QString &error)
+{
+    id.clear();
+    if (!date.isValid())
+    {
+        error = QStringLiteral("Cannot make a bill ID without a valid date.");
+        return false;
+    }
+
+    QStringList ids;
+    if (!readIds(billFile, 12, 9, ids, error))
+        return false;
+
+    const QString prefix = date.toString(QStringLiteral("yyMMdd"));
+    int highest = 0;
+    for (const QString &existing : ids)
+    {
+        if (existing.startsWith(prefix))
+            highest = qMax(highest, existing.right(3).toInt());
+    }
+    if (highest >= 999)
+    {
+        error = QStringLiteral("No more bill IDs are available for today.");
+        return false;
+    }
+
+    id = prefix + QStringLiteral("%1").arg(highest + 1, 3, 10, QLatin1Char('0'));
+    error.clear();
+    return true;
+}
 }

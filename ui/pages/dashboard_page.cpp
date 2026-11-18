@@ -4,6 +4,7 @@
 #include "new_order_page.h"
 #include "order_history_page.h"
 #include "products_page.h"
+#include "scan_product_page.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -371,6 +372,8 @@ private:
             dashboard,
             {QStringLiteral("New Order"), QStringLiteral("cart"),
                 QStringLiteral("Start a sale"), QStringLiteral("#F97316"), QStringLiteral("#FFEDE0")},
+            {QStringLiteral("Scan Product"), QStringLiteral("scan"),
+                QStringLiteral("Look up an item"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")},
             heldOrders,
             history
         };
@@ -444,13 +447,10 @@ private:
             const OrderPreview *initialOrder = hasResumeOrder_ ? &resumeOrder_ : nullptr;
             contentLayout_->addWidget(UiPages::createNewOrderPage(contentHost_, initialOrder,
                 [this](const OrderPreview &order) {
-                    billPreview_ = order;
-                    billPreview_.id = QStringLiteral("BILL-%1")
-                        .arg(++billCounter_, 6, 10, QLatin1Char('0'));
-                    billPreview_.createdAt = QDateTime::currentDateTime()
-                        .toString(QStringLiteral("dd MMM yyyy, hh:mm AP"));
-                    hasBillPreview_ = true;
-                    navigateTo(QStringLiteral("Bill"));
+                    // The bill is already saved; show it in a pop-up, then
+                    // start a fresh order when it is closed.
+                    UiPages::showBillDialog(order, this);
+                    navigateTo(QStringLiteral("New Order"));
                 },
                 [this](const OrderPreview &order) {
                     OrderPreview heldOrder = order;
@@ -469,6 +469,8 @@ private:
         else if (currentPage_ == QStringLiteral("Order History"))
             contentLayout_->addWidget(UiPages::createOrderHistoryPage(contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
+        else if (currentPage_ == QStringLiteral("Scan Product"))
+            contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
@@ -742,7 +744,6 @@ private:
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
     int heldOrderCounter_ = 0;
-    int billCounter_ = 0;
     bool hasResumeOrder_ = false;
     bool hasBillPreview_ = false;
 };
