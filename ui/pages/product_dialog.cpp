@@ -1,6 +1,7 @@
 #include "product_dialog.h"
 
 #include "../../POS/product/product_service.h"
+#include "wheel_guard.h"
 
 #include <QComboBox>
 #include <QDialog>
@@ -83,6 +84,7 @@ public:
         quantity_ = new QSpinBox(this);
         quantity_->setRange(0, 1000000);
         quantity_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        UiPages::ignoreMouseWheel(quantity_);
         image_ = new QLineEdit(this);
         image_->setPlaceholderText(QStringLiteral("Created from the barcode"));
         image_->setReadOnly(true);
@@ -169,6 +171,7 @@ private:
         box->setRange(0, 10000000);
         box->setDecimals(2);
         box->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        UiPages::ignoreMouseWheel(box);
         return box;
     }
 
