@@ -1,3 +1,3 @@
-P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100001.bmp#
-P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 35 barcodes/100002.bmp#
-P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 12 barcodes/100003.bmp#
+P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 Data/barcodes/100001.png#
+P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 35 Data/barcodes/100002.png#
+P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 12 Data/barcodes/100003.png#
