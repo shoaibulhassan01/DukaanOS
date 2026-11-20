@@ -21,12 +21,12 @@
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QImage>
+#include <QIntValidator>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMediaDevices>
 #include <QPixmap>
 #include <QPushButton>
-#include <QSpinBox>
 #include <QTableWidgetItem>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -240,7 +240,7 @@ private:
             " font-weight: 700; min-width: 30px; }"
             "QPushButton:hover { background: #F0F0FF; border-radius: 7px; }"
             "QPushButton:disabled { color: #C9CAD6; }"
-            "QSpinBox { background: transparent; color: %3; border: none; font-size: 13px;"
+            "QLineEdit { background: transparent; color: %3; border: none; font-size: 15px;"
             " font-weight: 700; }").arg(kLine, kNavy, kInk));
         auto *stepperLayout = new QHBoxLayout(stepper);
         stepperLayout->setContentsMargins(4, 4, 4, 4);
@@ -248,26 +248,26 @@ private:
         auto *minus = new QPushButton(QString(QChar(0x2212)), stepper);
         minus->setCursor(Qt::PointingHandCursor);
         minus->setFocusPolicy(Qt::NoFocus);
-        quantity_ = new QSpinBox(stepper);
-        quantity_->setRange(1, 999);
-        quantity_->setValue(1);
-        quantity_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        quantity_ = new QLineEdit(stepper);
+        quantity_->setValidator(new QIntValidator(1, 999, quantity_));
+        quantity_->setText(QStringLiteral("1"));
         quantity_->setAlignment(Qt::AlignCenter);
-        quantity_->setFixedWidth(44);
-        UiPages::ignoreMouseWheel(quantity_);
+        quantity_->setFixedWidth(56);
         auto *plus = new QPushButton(QStringLiteral("+"), stepper);
         plus->setCursor(Qt::PointingHandCursor);
         plus->setFocusPolicy(Qt::NoFocus);
         stepperLayout->addWidget(minus);
         stepperLayout->addWidget(quantity_);
         stepperLayout->addWidget(plus);
-        connect(minus, &QPushButton::clicked, quantity_, &QSpinBox::stepDown);
-        connect(plus, &QPushButton::clicked, quantity_, &QSpinBox::stepUp);
+        connect(minus, &QPushButton::clicked, this, [this]() { stepQuantity(-1); });
+        connect(plus, &QPushButton::clicked, this, [this]() { stepQuantity(1); });
         auto updateStepButtons = [this, minus, plus]() {
-            minus->setEnabled(quantity_->value() > quantity_->minimum());
-            plus->setEnabled(quantity_->value() < quantity_->maximum());
+            bool valid = false;
+            const int quantity = quantity_->text().toInt(&valid);
+            minus->setEnabled(valid && quantity > 1);
+            plus->setEnabled(!valid || quantity < 999);
         };
-        connect(quantity_, &QSpinBox::valueChanged, this, updateStepButtons);
+        connect(quantity_, &QLineEdit::textChanged, this, updateStepButtons);
         updateStepButtons();
         entry->addWidget(stepper);
 
@@ -589,6 +589,15 @@ private:
         setStatus(QStringLiteral("Product matched from Product.txt."));
     }
 
+    void stepQuantity(int change)
+    {
+        bool valid = false;
+        int quantity = quantity_->text().toInt(&valid);
+        if (!valid)
+            quantity = 1;
+        quantity_->setText(QString::number(qBound(1, quantity + change, 999)));
+    }
+
     void addProductToCart()
     {
         if (!hasMatchedProduct_)
@@ -596,6 +605,14 @@ private:
             lookupBarcode(barcodeEdit_->text());
             if (!hasMatchedProduct_)
                 return;
+        }
+
+        bool validQuantity = false;
+        const int requestedQuantity = quantity_->text().toInt(&validQuantity);
+        if (!validQuantity || requestedQuantity < 1)
+        {
+            setStatus(QStringLiteral("Enter a quantity from 1 to 999."), true);
+            return;
         }
 
         int existingQuantity = 0;
@@ -611,7 +628,7 @@ private:
         }
 
         // Requirement 5: the required quantity must be less than the stock.
-        if (!Pos::checkStock(currentProduct_, existingQuantity + quantity_->value()))
+        if (!Pos::checkStock(currentProduct_, existingQuantity + requestedQuantity))
         {
             setStatus(QStringLiteral(
                 "Required quantity must be less than the available stock (%1).")
@@ -620,12 +637,30 @@ private:
         }
 
         if (existingRow < 0)
-            cartLines_.append(CartLine{currentProduct_, quantity_->value()});
+            cartLines_.append(CartLine{currentProduct_, requestedQuantity});
         else
-            cartLines_[existingRow].quantity += quantity_->value();
+            cartLines_[existingRow].quantity += requestedQuantity;
 
         refreshCart();
         setStatus(QStringLiteral("Product added to the order preview."));
+    }
+
+    void adjustCartQuantity(int row, int change)
+    {
+        if (row < 0 || row >= cartLines_.size())
+            return;
+
+        CartLine &line = cartLines_[row];
+        if (change > 0 && !Pos::checkStock(line.product, line.quantity + change))
+        {
+            setStatus(QStringLiteral(
+                "Required quantity must be less than the available stock (%1).")
+                .arg(line.product.quantity), true);
+            return;
+        }
+
+        line.quantity = qMax(1, line.quantity + change);
+        refreshCart();
     }
 
     void refreshCart()
@@ -657,7 +692,42 @@ private:
             setCell(0, productName);
             setCell(1, line.product.barcode);
             setCell(2, QStringLiteral("PKR %1").arg(line.product.unitPrice, 0, 'f', 2));
-            setCell(3, QString::number(line.quantity));
+
+            auto *quantityControl = new QWidget(cartTable_);
+            auto *quantityLayout = new QHBoxLayout(quantityControl);
+            quantityLayout->setContentsMargins(2, 1, 2, 1);
+            quantityLayout->setSpacing(2);
+            auto makeQuantityButton = [quantityControl](const QString &text) {
+                auto *button = new QPushButton(text, quantityControl);
+                button->setFixedSize(24, 24);
+                button->setCursor(Qt::PointingHandCursor);
+                button->setStyleSheet(QStringLiteral(
+                    "QPushButton { background: #F0F0FF; color: #111184; border: 1px solid #E1E2FA;"
+                    " border-radius: 6px; font-size: 13px; font-weight: 700; padding: 0; }"
+                    "QPushButton:hover { background: #E1E2FA; }"));
+                return button;
+            };
+            auto *decrease = makeQuantityButton(QString(QChar(0x2212)));
+            auto *quantity = new QLabel(QString::number(line.quantity), quantityControl);
+            quantity->setAlignment(Qt::AlignCenter);
+            quantity->setMinimumWidth(24);
+            quantity->setStyleSheet(QStringLiteral(
+                "color: %1; font-size: 11px; font-weight: 700; background: transparent;")
+                .arg(kInk));
+            auto *increase = makeQuantityButton(QStringLiteral("+"));
+            quantityLayout->addStretch(1);
+            quantityLayout->addWidget(decrease);
+            quantityLayout->addWidget(quantity);
+            quantityLayout->addWidget(increase);
+            quantityLayout->addStretch(1);
+            connect(decrease, &QPushButton::clicked, this,
+                [this, row]() { adjustCartQuantity(row, -1); });
+            connect(increase, &QPushButton::clicked, this,
+                [this, row]() { adjustCartQuantity(row, 1); });
+            decrease->setEnabled(line.quantity > 1);
+            increase->setEnabled(line.quantity + 1 < line.product.quantity);
+            cartTable_->setCellWidget(row, 3, quantityControl);
+
             setCell(4, QStringLiteral("PKR %1").arg(lineSubtotal, 0, 'f', 2));
             cartTable_->setRowHeight(row, 42);
         }
@@ -815,7 +885,7 @@ private:
     QLineEdit *barcodeEdit_ = nullptr;
     QLineEdit *customerNameEdit_ = nullptr;
     QLineEdit *customerPhoneEdit_ = nullptr;
-    QSpinBox *quantity_ = nullptr;
+    QLineEdit *quantity_ = nullptr;
     QComboBox *paymentMethod_ = nullptr;
     QLabel *previewLabel_ = nullptr;
     QLabel *matchLabel_ = nullptr;
