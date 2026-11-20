@@ -1,4 +1,5 @@
 #include "dashboard_page.h"
+#include "../theme.h"
 #include "bill_page.h"
 #include "held_orders_page.h"
 #include "new_order_page.h"
@@ -260,6 +261,17 @@ private:
             logo->setText(QStringLiteral("DukaanOS"));
         layout->addWidget(logo);
         layout->addStretch(1);
+
+        // Light / dark mode (sun / moon). After switching, rebuild the page so
+        // colours set in code (icons, status text) follow too; New Order is
+        // left as it is so the cart is not lost.
+        auto *themeButton = UiTheme::createToggleButton(header, true);
+        connect(themeButton, &QPushButton::clicked, this, [this]() {
+            if (currentPage_ != QStringLiteral("New Order"))
+                navigateTo(currentPage_);
+        });
+        layout->addWidget(themeButton);
+        layout->addSpacing(18);
 
         // Role (right)
         auto *roleIcon = new QLabel(header);
@@ -525,7 +537,7 @@ private:
         layout->addStretch(1);
 
         auto *cta = new QPushButton(QStringLiteral("  ") + primary.title, banner);
-        cta->setIcon(QIcon(drawIcon(primary.icon, QColor(kNavy), 20)));
+        cta->setIcon(QIcon(drawIcon(primary.icon, UiTheme::textColor(QColor(kNavy)), 20)));
         cta->setIconSize(QSize(20, 20));
         cta->setCursor(Qt::PointingHandCursor);
         cta->setFixedSize(170, 46);
@@ -553,7 +565,7 @@ private:
         auto *tile = new QLabel(card);
         tile->setFixedSize(54, 54);
         tile->setAlignment(Qt::AlignCenter);
-        tile->setPixmap(drawIcon(iconName, QColor(accent), 26));
+        tile->setPixmap(drawIcon(iconName, UiTheme::textColor(QColor(accent)), 26));
         tile->setStyleSheet(QStringLiteral("background: %1; border-radius: 15px;").arg(tint));
         layout->addWidget(tile);
 
@@ -593,7 +605,7 @@ private:
         auto *tile = new QLabel(button);
         tile->setFixedSize(52, 52);
         tile->setAlignment(Qt::AlignCenter);
-        tile->setPixmap(drawIcon(item.icon, QColor(item.accent), 26));
+        tile->setPixmap(drawIcon(item.icon, UiTheme::textColor(QColor(item.accent)), 26));
         tile->setStyleSheet(QStringLiteral("background: %1; border-radius: 15px;").arg(item.tint));
         layout->addWidget(tile);
 
@@ -612,7 +624,7 @@ private:
         layout->addLayout(texts, 1);
 
         auto *chevron = new QLabel(button);
-        chevron->setPixmap(drawIcon(QStringLiteral("chevron"), QColor(kMuted), 18));
+        chevron->setPixmap(drawIcon(QStringLiteral("chevron"), UiTheme::textColor(QColor(kMuted)), 18));
         chevron->setStyleSheet(QStringLiteral("background: transparent;"));
         layout->addWidget(chevron);
 
@@ -758,4 +770,4 @@ private:
 QWidget *UiPages::createDashboardPage(QWidget *parent, const QString &initialRole)
 {
     return new DashboardWindow(parent, initialRole);
-}
+}

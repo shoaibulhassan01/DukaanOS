@@ -1,4 +1,5 @@
 #include "products_page.h"
+#include "../theme.h"
 
 #include "../../POS/product/product.h"
 #include "../../POS/product/product_repository.h"
@@ -330,8 +331,8 @@ private:
                 .arg(product.quantity).arg(product.unit));
             stock->setFlags(stock->flags() & ~Qt::ItemIsEditable);
             stock->setTextAlignment(Qt::AlignCenter);
-            stock->setForeground(QColor(isLowStock
-                ? QStringLiteral("#B7791F") : QStringLiteral("#18764A")));
+            stock->setForeground(UiTheme::textColor(QColor(isLowStock
+                ? QStringLiteral("#B7791F") : QStringLiteral("#18764A"))));
             table_->setItem(row, 6, stock);
             table_->setRowHeight(row, 58);
         }
