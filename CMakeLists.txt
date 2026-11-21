@@ -30,10 +30,9 @@ set(POS_LOGIC_SOURCES
     BarCode/generator/generator.cpp
 )
 
-qt_add_executable(DukaanOS
-    main.cpp
+# Screens and camera scanning. Shared by the app and the UI smoke test.
+set(DUKAANOS_UI_SOURCES
     ui/ui.cpp
-    ui/theme.cpp
     ui/theme.cpp
     ui/pages/login_page.cpp
     ui/pages/dashboard_page.cpp
@@ -54,15 +53,23 @@ qt_add_executable(DukaanOS
     BarCode/camera/camera_scanner.cpp
 )
 
+set(DUKAANOS_ASSETS
+    ui/assets/app_icon.png
+    ui/assets/dukaanos_logo.png
+    ui/assets/dukaanos_wordmark.png
+    ui/assets/market_background.jpg
+    ui/assets/checkbox_check.png
+)
+
+qt_add_executable(DukaanOS
+    main.cpp
+    ${DUKAANOS_UI_SOURCES}
+)
+
 qt_add_resources(DukaanOS app_assets
     PREFIX "/assets"
     BASE "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets"
-    FILES
-        ui/assets/app_icon.png
-        ui/assets/dukaanos_logo.png
-        ui/assets/dukaanos_wordmark.png
-        ui/assets/market_background.jpg
-        ui/assets/checkbox_check.png
+    FILES ${DUKAANOS_ASSETS}
 )
 
 target_include_directories(DukaanOS PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
@@ -97,4 +104,34 @@ if(BUILD_TESTING)
     target_include_directories(CameraScannerTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
     target_link_libraries(CameraScannerTest PRIVATE Qt6::Gui Qt6::Multimedia)
     add_test(NAME CameraScannerTest COMMAND CameraScannerTest)
+
+    # Order and bill IDs, saving/reading orders, on-hold -> paid, payments.
+    qt_add_executable(OrderRepositoryTest POS/tests/order_repository_test.cpp ${POS_LOGIC_SOURCES})
+    target_include_directories(OrderRepositoryTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
+    target_link_libraries(OrderRepositoryTest PRIVATE Qt6::Gui)
+    set_target_properties(OrderRepositoryTest PROPERTIES WIN32_EXECUTABLE OFF)
+    add_test(NAME OrderRepositoryTest COMMAND OrderRepositoryTest)
+
+    # Reads the sample data in Data/ and checks it is valid and consistent.
+    qt_add_executable(DataFilesTest POS/tests/data_files_test.cpp ${POS_LOGIC_SOURCES})
+    target_include_directories(DataFilesTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
+    target_compile_definitions(DataFilesTest PRIVATE DUKAANOS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(DataFilesTest PRIVATE Qt6::Gui)
+    set_target_properties(DataFilesTest PROPERTIES WIN32_EXECUTABLE OFF)
+    add_test(NAME DataFilesTest COMMAND DataFilesTest)
+
+    # Opens every screen offscreen: login checks, role lock, light/dark mode,
+    # and a cashier sale (hold, resume, pay). Uses a temporary copy of Data/.
+    qt_add_executable(UiSmokeTest ui/tests/ui_smoke_test.cpp ${DUKAANOS_UI_SOURCES})
+    qt_add_resources(UiSmokeTest ui_smoke_assets
+        PREFIX "/assets"
+        BASE "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets"
+        FILES ${DUKAANOS_ASSETS}
+    )
+    target_include_directories(UiSmokeTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
+    target_compile_definitions(UiSmokeTest PRIVATE DUKAANOS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(UiSmokeTest PRIVATE Qt6::Widgets Qt6::Multimedia)
+    set_target_properties(UiSmokeTest PROPERTIES WIN32_EXECUTABLE OFF)
+    add_test(NAME UiSmokeTest COMMAND UiSmokeTest)
+    set_tests_properties(UiSmokeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
