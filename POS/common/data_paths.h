@@ -9,8 +9,8 @@ namespace DataPaths
 // Owner: Umar Khan - the one place that knows where the data files live.
 // Uses the "Data" folder in the current working folder when it exists
 // (run.bat starts the app from the project folder; tests point the working
-// folder at a temporary copy), otherwise searches the project's Data folder
-// next to or two levels above the .exe.
+// folder at a temporary copy), otherwise searches next to the .exe or in the
+// project folders immediately above or two levels above it.
 QString dataDir();
 
 QString users();          // Users.txt

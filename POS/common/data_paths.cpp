@@ -16,6 +16,7 @@ QString dataDir()
 
     const QDir applicationDir(QCoreApplication::applicationDirPath());
     const QStringList candidates = {
+        QDir::cleanPath(applicationDir.filePath(QStringLiteral("Data"))),
         QDir::cleanPath(applicationDir.filePath(QStringLiteral("../Data"))),
         QDir::cleanPath(applicationDir.filePath(QStringLiteral("../../Data")))
     };
