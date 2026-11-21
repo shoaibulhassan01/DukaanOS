@@ -29,18 +29,37 @@ jobs:
 
       - name: Configure and build
         run: |
-          $env:PATH = "C:\mingw64\bin;$env:PATH"
+          $qtPrefix = (Resolve-Path "$env:Qt6_DIR\..\..\..").Path
+          $qtInstallRoot = Split-Path (Split-Path $qtPrefix -Parent) -Parent
+          $mingwRoot = Get-ChildItem -Directory (Join-Path $qtInstallRoot "Tools") -Filter "mingw*_64" |
+            Sort-Object Name |
+            Select-Object -First 1
+          if (-not $mingwRoot) {
+            throw "Matching MinGW toolchain was not found under $qtInstallRoot\Tools"
+          }
+          $mingwBin = Join-Path $mingwRoot.FullName "bin"
+          $compiler = Join-Path $mingwBin "g++.exe"
+          $env:PATH = "$qtPrefix\bin;$mingwBin;$env:PATH"
           cmake -S . -B build-ci `
             -G "Ninja" `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
-            -DCMAKE_CXX_COMPILER="C:/mingw64/bin/g++.exe" `
+            -DCMAKE_PREFIX_PATH="$qtPrefix" `
+            -DCMAKE_CXX_COMPILER="$compiler" `
             -DBUILD_TESTING=ON
           cmake --build build-ci --config Release
 
       - name: Run tests
         shell: pwsh
         run: |
-          $env:PATH = "$env:QT_ROOT_DIR\bin;$env:PATH"
+          $qtPrefix = (Resolve-Path "$env:Qt6_DIR\..\..\..").Path
+          $qtInstallRoot = Split-Path (Split-Path $qtPrefix -Parent) -Parent
+          $mingwRoot = Get-ChildItem -Directory (Join-Path $qtInstallRoot "Tools") -Filter "mingw*_64" |
+            Sort-Object Name |
+            Select-Object -First 1
+          if (-not $mingwRoot) {
+            throw "Matching MinGW toolchain was not found under $qtInstallRoot\Tools"
+          }
+          $mingwBin = Join-Path $mingwRoot.FullName "bin"
+          $env:PATH = "$qtPrefix\bin;$mingwBin;$env:PATH"
           $env:QT_QPA_PLATFORM = "offscreen"
           ctest --test-dir build-ci --output-on-failure
