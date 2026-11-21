@@ -180,7 +180,7 @@ public:
         root->addWidget(card);
 
         auto *note = new QLabel(QStringLiteral(
-            "Preview mode — held orders are kept in memory only and are cleared when the app closes."),
+            "Held orders are saved to Order.txt and OrderDetail.txt and remain available after restarting the app."),
             this);
         note->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));

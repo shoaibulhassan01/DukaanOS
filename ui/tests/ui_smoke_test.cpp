@@ -5,25 +5,31 @@
 //
 // Covers: login checks (empty fields, wrong security answer); the pages each
 // role may open (Manager / Cashier / unknown role); every page in light and
-// dark mode; a cashier sale: add item, hold, resume, pay in cash, bill saved,
-// stock reduced and the order shown in Order History.
+// dark mode; a cashier sale: hold, resume, pay in cash and export its PDF;
+// manager access to the saved bill and PDF export.
 
 #include "../ui.h"
 #include "../theme.h"
+#include "../pages/bill_page.h"
 #include "../pages/dashboard_page.h"
+#include "../pages/saved_bill.h"
 
 #include "../../POS/order/order_repository.h"
+#include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QDate>
 #include <QDir>
 #include <QDirIterator>
 #include <QDoubleSpinBox>
+#include <QEventLoop>
 #include <QEvent>
 #include <QFile>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -31,6 +37,7 @@
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <QTimer>
+#include <QTableWidget>
 
 #ifndef DUKAANOS_SOURCE_DIR
 #error "DUKAANOS_SOURCE_DIR must point at the project folder (set in CMakeLists.txt)."
@@ -39,6 +46,7 @@
 namespace
 {
 int failures = 0;
+int billDialogsWithPdfButton = 0;
 
 void check(bool condition, const QString &message)
 {
@@ -57,6 +65,14 @@ void settle()
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCoreApplication::processEvents();
     }
+}
+
+void waitFor(int milliseconds)
+{
+    QEventLoop loop;
+    QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+    loop.exec();
+    settle();
 }
 
 bool copyFolder(const QString &from, const QString &to)
@@ -171,7 +187,17 @@ void closePopupsAutomatically()
         QWidget *popup = QApplication::activeModalWidget();
         if (!popup)
             return;
-        for (QPushButton *b : popup->findChildren<QPushButton *>())
+        bool hasPdfButton = false;
+        const QList<QPushButton *> buttons = popup->findChildren<QPushButton *>();
+        for (QPushButton *b : buttons)
+            hasPdfButton = hasPdfButton
+                || b->text().trimmed() == QStringLiteral("Download PDF");
+        if (hasPdfButton && !popup->property("pdfButtonCounted").toBool())
+        {
+            popup->setProperty("pdfButtonCounted", true);
+            ++billDialogsWithPdfButton;
+        }
+        for (QPushButton *b : buttons)
             if (b->text().trimmed() == QStringLiteral("Close") || b->text().trimmed() == QStringLiteral("OK"))
             {
                 b->click();
@@ -180,6 +206,13 @@ void closePopupsAutomatically()
         popup->close();
     });
     timer->start(50);
+}
+
+bool isPdfFile(const QString &path)
+{
+    QFile file(path);
+    return file.open(QIODevice::ReadOnly) && file.size() > 100
+        && file.read(4) == QByteArrayLiteral("%PDF");
 }
 
 int stockOf(const QString &productId)
@@ -283,6 +316,11 @@ void testRoles(QStackedWidget *stack)
 
 void testSale(QStackedWidget *stack)
 {
+    QTemporaryDir pdfs;
+    check(pdfs.isValid(), QStringLiteral("Could not create temporary PDF test folder."));
+    if (!pdfs.isValid())
+        return;
+
     QVector<Pos::Order> before;
     QString error;
     Pos::readOrders(QStringLiteral("Data/Order.txt"), before, error);
@@ -298,14 +336,21 @@ void testSale(QStackedWidget *stack)
 
     QLineEdit *customer = field(cashier, QStringLiteral("Enter customer name"));
     QLineEdit *barcode = field(cashier, QStringLiteral("Enter product barcode"));
-    QPushButton *add = button(cashier, QStringLiteral("Add item"));
-    check(customer && barcode && add, QStringLiteral("New Order: customer, barcode or Add item missing."));
-    if (!customer || !barcode || !add)
+    check(customer && barcode, QStringLiteral("New Order: customer or barcode field missing."));
+    check(!button(cashier, QStringLiteral("Add item")),
+        QStringLiteral("New Order should add products without an Add item button."));
+    if (!customer || !barcode)
         return;
     customer->setText(QStringLiteral("CI Test"));
     barcode->setText(QStringLiteral("100001"));
-    add->click();
+    waitFor(300);
+    check(showsText(cashier, QStringLiteral("Unit price: PKR 250.00")),
+        QStringLiteral("Entering a complete barcode must show product details before Enter."));
+    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+    QApplication::sendEvent(barcode, &enter);
     settle();
+    check(showsText(cashier, QStringLiteral("100001")),
+        QStringLiteral("Pressing Enter must add the matched barcode to the cart."));
 
     // Hold the order, then resume it from Held Orders.
     QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
@@ -314,9 +359,44 @@ void testSale(QStackedWidget *stack)
         return;
     hold->click();
     settle();
-    check(hasLabel(cashier, QStringLiteral("Held Orders")) && showsText(cashier, QStringLiteral("HOLD-0001")),
-        QStringLiteral("Holding an order must open Held Orders and list HOLD-0001."));
-    QPushButton *resume = button(cashier, QStringLiteral("Resume"));
+    QVector<Pos::Order> heldSnapshot;
+    check(Pos::readOrders(Pos::DataPaths::orders(), heldSnapshot, error)
+            && heldSnapshot.size() == before.size() + 1,
+        QStringLiteral("Holding an order must persist one order (%1).").arg(error));
+    if (heldSnapshot.size() != before.size() + 1)
+        return;
+    const QString heldOrderId = heldSnapshot.last().id;
+    check(heldSnapshot.last().status == QStringLiteral("on-hold"),
+        QStringLiteral("A held order must be saved with on-hold status."));
+    check(hasLabel(cashier, QStringLiteral("Held Orders")) && showsText(cashier, heldOrderId),
+        QStringLiteral("Holding an order must open Held Orders and list the saved order ID."));
+
+    // A newly created dashboard after sign-out must reload the held order from disk.
+    cashier = openDashboard(stack, QStringLiteral("Cashier"));
+    QPushButton *heldOrders = button(cashier, QStringLiteral("Held Orders"));
+    check(heldOrders, QStringLiteral("Cashier: no Held Orders button after signing in again."));
+    if (!heldOrders)
+        return;
+    heldOrders->click();
+    settle();
+    check(showsText(cashier, heldOrderId),
+        QStringLiteral("Held order %1 was not restored after creating a fresh dashboard.").arg(heldOrderId));
+    QPushButton *resume = nullptr;
+    for (QTableWidget *table : cashier->findChildren<QTableWidget *>())
+    {
+        if (!table->isVisible())
+            continue;
+        for (int row = 0; row < table->rowCount(); ++row)
+        {
+            if (!table->item(row, 0) || table->item(row, 0)->text() != heldOrderId)
+                continue;
+            QWidget *actions = table->cellWidget(row, 5);
+            if (actions)
+                for (QPushButton *candidate : actions->findChildren<QPushButton *>())
+                    if (candidate->text() == QStringLiteral("Resume"))
+                        resume = candidate;
+        }
+    }
     check(resume, QStringLiteral("Held Orders: no Resume button."));
     if (!resume)
         return;
@@ -324,6 +404,8 @@ void testSale(QStackedWidget *stack)
     settle();
     check(hasLabel(cashier, QStringLiteral("New Order")),
         QStringLiteral("Resume must go back to New Order."));
+    check(showsText(cashier, QStringLiteral("100001")),
+        QStringLiteral("The resumed order did not restore its product and quantity."));
 
     // Pay in cash. The bill pop-up is closed automatically.
     for (QComboBox *box : cashier->findChildren<QComboBox *>())
@@ -336,8 +418,11 @@ void testSale(QStackedWidget *stack)
     check(pay, QStringLiteral("New Order: no Generate bill button."));
     if (!pay)
         return;
+    const int cashierBillDialogsBefore = billDialogsWithPdfButton;
     pay->click();
     settle();
+    check(billDialogsWithPdfButton == cashierBillDialogsBefore + 1,
+        QStringLiteral("Cashier bill dialog has no Download PDF action."));
 
     QVector<Pos::Order> after;
     check(Pos::readOrders(QStringLiteral("Data/Order.txt"), after, error) && after.size() == before.size() + 1,
@@ -345,12 +430,49 @@ void testSale(QStackedWidget *stack)
     if (after.size() != before.size() + 1)
         return;
     const Pos::Order sale = after.last();
+    OrderPreview cashierBill;
+    check(UiPages::loadSavedBill(sale, cashierBill, error)
+            && UiPages::writeBillPdf(cashierBill, pdfs.filePath(QStringLiteral("cashier.pdf")))
+            && isPdfFile(pdfs.filePath(QStringLiteral("cashier.pdf"))),
+        QStringLiteral("Cashier bill could not be exported as a valid PDF (%1).").arg(error));
+    QString checkoutError;
+    for (QLabel *label : cashier->findChildren<QLabel *>())
+        if (label->isVisible() && (label->text().startsWith(QStringLiteral("Bill not saved:"))
+                || label->text().startsWith(QStringLiteral("Add at least one product"))))
+            checkoutError = label->text();
     check(sale.customerName == QStringLiteral("CI_Test") && sale.status == QStringLiteral("paid") &&
             sale.paymentMode.compare(QStringLiteral("cash"), Qt::CaseInsensitive) == 0,
-        QStringLiteral("The saved sale has the wrong customer, status or payment mode."));
+        QStringLiteral("The saved sale has the wrong customer, status or payment mode "
+            "(customer=%1, status=%2, mode=%3; %4).")
+            .arg(sale.customerName, sale.status, sale.paymentMode, checkoutError));
+    check(sale.id == heldOrderId,
+        QStringLiteral("Resuming and paying must update order %1, not create %2.")
+            .arg(heldOrderId, sale.id));
     check(stockOf(QStringLiteral("P0001")) == stockBefore - 1,
         QStringLiteral("Selling 1 item must reduce its stock by 1 (was %1, now %2).")
             .arg(stockBefore).arg(stockOf(QStringLiteral("P0001"))));
+
+    int todayOrderCount = 0;
+    double todaySales = 0;
+    for (const Pos::Order &order : after)
+    {
+        if (order.date != QDate::currentDate().toString(Qt::ISODate))
+            continue;
+        ++todayOrderCount;
+        if (order.status == QStringLiteral("paid"))
+            todaySales += order.paymentAmount;
+    }
+    QPushButton *dashboard = button(cashier, QStringLiteral("Dashboard"));
+    check(dashboard, QStringLiteral("Cashier: no Dashboard button."));
+    if (dashboard)
+    {
+        dashboard->click();
+        settle();
+        check(showsText(cashier, QString::number(todayOrderCount)),
+            QStringLiteral("Dashboard order count did not reflect today's saved orders."));
+        check(showsText(cashier, QStringLiteral("PKR %1").arg(todaySales, 0, 'f', 2)),
+            QStringLiteral("Dashboard sales did not reflect today's paid orders."));
+    }
 
     QPushButton *history = button(cashier, QStringLiteral("Order History"));
     check(history, QStringLiteral("Cashier: no Order History button."));
@@ -360,6 +482,48 @@ void testSale(QStackedWidget *stack)
     settle();
     check(showsText(cashier, sale.id),
         QStringLiteral("Order History does not show the new order %1.").arg(sale.id));
+
+    QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
+    QPushButton *managerHistory = button(manager, QStringLiteral("Order History"));
+    check(managerHistory, QStringLiteral("Manager: no Order History button."));
+    if (!managerHistory)
+        return;
+    managerHistory->click();
+    settle();
+    QTableWidget *historyTable = nullptr;
+    int saleRow = -1;
+    for (QTableWidget *table : manager->findChildren<QTableWidget *>())
+    {
+        if (!table->isVisible())
+            continue;
+        for (int row = 0; row < table->rowCount(); ++row)
+            if (table->item(row, 0) && table->item(row, 0)->text() == sale.id)
+            {
+                historyTable = table;
+                saleRow = row;
+                break;
+            }
+    }
+    check(historyTable && saleRow >= 0,
+        QStringLiteral("Manager Order History does not list the paid order."));
+    if (!historyTable || saleRow < 0)
+        return;
+    historyTable->item(saleRow, 0)->setSelected(true);
+    QPushButton *viewBill = button(manager, QStringLiteral("View bill"));
+    check(viewBill && viewBill->isEnabled(),
+        QStringLiteral("Manager cannot open the saved bill."));
+    if (!viewBill || !viewBill->isEnabled())
+        return;
+    const int managerBillDialogsBefore = billDialogsWithPdfButton;
+    viewBill->click();
+    settle();
+    check(billDialogsWithPdfButton == managerBillDialogsBefore + 1,
+        QStringLiteral("Manager saved-bill dialog has no Download PDF action."));
+    OrderPreview managerBill;
+    check(UiPages::loadSavedBill(sale, managerBill, error)
+            && UiPages::writeBillPdf(managerBill, pdfs.filePath(QStringLiteral("manager.pdf")))
+            && isPdfFile(pdfs.filePath(QStringLiteral("manager.pdf"))),
+        QStringLiteral("Manager bill could not be exported as a valid PDF (%1).").arg(error));
 }
 }
 

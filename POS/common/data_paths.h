@@ -18,6 +18,7 @@ QString products();       // Product.txt
 QString orders();         // Order.txt
 QString orderDetail();    // OrderDetail.txt
 QString bills();          // Bill.txt
+QString billDetails();    // BillDetail.txt
 QString barcodeFolder();  // barcodes/ (product barcode images)
 }
 }
