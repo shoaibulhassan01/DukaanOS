@@ -392,7 +392,7 @@ private:
             form->addSpacing(6);
         }
 
-        auto *title = new QLabel(QStringLiteral("Welcome Back!"), formWidget);
+        auto *title = new QLabel(QStringLiteral("Welcome to DukaanOS"), formWidget);
         title->setAlignment(Qt::AlignCenter);
         title->setStyleSheet(QStringLiteral(
             "color: #0B1F5C; font-size: 32px; font-weight: 800;"));
