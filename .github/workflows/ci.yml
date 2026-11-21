@@ -26,21 +26,38 @@ jobs:
           target: desktop
           arch: win64_mingw
           modules: qtmultimedia
+          tools: tools_mingw1310,qt.tools.win64_mingw1310
 
       - name: Configure and build
         run: |
-          $env:PATH = "C:\mingw64\bin;$env:PATH"
+          $qtPrefix = $env:QT_ROOT_DIR
+          if (-not $qtPrefix -or -not (Test-Path "$qtPrefix\lib\cmake\Qt6")) {
+            throw "Qt installation was not found at QT_ROOT_DIR: $qtPrefix"
+          }
+          $compiler = (Get-Command g++.exe -ErrorAction Stop).Source
+          $compilerVersion = & $compiler --version | Select-Object -First 1
+          if ($compilerVersion -notmatch "13\.1\.0") {
+            throw "Qt 6.8.3 requires MinGW 13.1.0; found: $compilerVersion"
+          }
+          $mingwBin = Split-Path $compiler -Parent
+          $env:PATH = "$qtPrefix\bin;$mingwBin;$env:PATH"
           cmake -S . -B build-ci `
             -G "Ninja" `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
-            -DCMAKE_CXX_COMPILER="C:/mingw64/bin/g++.exe" `
+            -DCMAKE_PREFIX_PATH="$qtPrefix" `
+            -DCMAKE_CXX_COMPILER="$compiler" `
             -DBUILD_TESTING=ON
           cmake --build build-ci --config Release
 
       - name: Run tests
         shell: pwsh
         run: |
-          $env:PATH = "$env:QT_ROOT_DIR\bin;$env:PATH"
+          $qtPrefix = $env:QT_ROOT_DIR
+          if (-not $qtPrefix -or -not (Test-Path "$qtPrefix\lib\cmake\Qt6")) {
+            throw "Qt installation was not found at QT_ROOT_DIR: $qtPrefix"
+          }
+          $compiler = (Get-Command g++.exe -ErrorAction Stop).Source
+          $mingwBin = Split-Path $compiler -Parent
+          $env:PATH = "$qtPrefix\bin;$mingwBin;$env:PATH"
           $env:QT_QPA_PLATFORM = "offscreen"
           ctest --test-dir build-ci --output-on-failure

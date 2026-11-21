@@ -14,10 +14,17 @@ QString dataDir()
     if (QFileInfo(inWorkingFolder).isDir() || !QCoreApplication::instance())
         return QStringLiteral("Data");
 
-    const QString nextToProject = QDir::cleanPath(QDir(QCoreApplication::applicationDirPath())
-        .filePath(QStringLiteral("../../Data")));
-    if (QFileInfo(nextToProject).isDir())
-        return nextToProject;
+    const QDir applicationDir(QCoreApplication::applicationDirPath());
+    const QStringList candidates = {
+        QDir::cleanPath(applicationDir.filePath(QStringLiteral("Data"))),
+        QDir::cleanPath(applicationDir.filePath(QStringLiteral("../Data"))),
+        QDir::cleanPath(applicationDir.filePath(QStringLiteral("../../Data")))
+    };
+    for (const QString &candidate : candidates)
+    {
+        if (QFileInfo(candidate).isDir())
+            return candidate;
+    }
     return QStringLiteral("Data");
 }
 
