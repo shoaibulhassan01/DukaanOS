@@ -33,7 +33,7 @@ QString money(double amount)
     return QStringLiteral("PKR %1").arg(amount, 0, 'f', 2);
 }
 
-bool exportBillPdf(const OrderPreview &order, const QString &path)
+bool exportBillPdfFile(const OrderPreview &order, const QString &path)
 {
     QPdfWriter writer(path);
     writer.setPageSize(QPageSize(QPageSize::A4));
@@ -345,7 +345,7 @@ void downloadBillPdf(const OrderPreview &order, QWidget *parent)
     QString pdfPath = path;
     if (!pdfPath.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
         pdfPath += QStringLiteral(".pdf");
-    if (!exportBillPdf(order, pdfPath))
+    if (!UiPages::writeBillPdf(order, pdfPath))
     {
         QMessageBox::critical(parent, QStringLiteral("Download failed"),
             QStringLiteral("The bill PDF could not be written to:\n%1").arg(pdfPath));
@@ -413,6 +413,11 @@ public:
         });
     }
 };
+}
+
+bool UiPages::writeBillPdf(const OrderPreview &order, const QString &path)
+{
+    return exportBillPdfFile(order, path);
 }
 
 void UiPages::showBillDialog(const OrderPreview &order, QWidget *parent)

@@ -14,6 +14,7 @@ namespace Pos
 struct CheckoutRequest
 {
     QString customerName, customerContact, paymentMode, merchant;
+    QString existingOrderId;
     double amountPaid = 0;
     QVector<CartItem> items;
 };
@@ -22,7 +23,7 @@ struct CheckoutResult
 {
     Order order;
     QVector<OrderDetail> details;
-    QVector<Bill> billRows;
+    Bill bill;
     CartTotals totals;
 };
 

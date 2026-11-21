@@ -7,7 +7,7 @@
 #include "ui/ui.h"
 #include "ui/theme.h"
 
-int main(int argc, char *argv[]) //..
+int main(int argc, char *argv[]) 
 {
     QApplication app(argc, argv);
     UiTheme::install(app);   // light or dark, following Windows

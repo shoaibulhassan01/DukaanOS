@@ -24,8 +24,9 @@ QString paymentText(const Pos::Order &order)
 
 bool UiPages::loadSavedBill(const Pos::Order &order, OrderPreview &bill, QString &error)
 {
-    QVector<Pos::Bill> rows;
-    if (!Pos::readBillForOrder(Pos::DataPaths::bills(), order.id, rows, error))
+    Pos::Bill saved;
+    if (!Pos::readBillForOrder(Pos::DataPaths::bills(),
+            Pos::DataPaths::billDetails(), order.id, saved, error))
         return false;
 
     // Product names: the order's detail lines are saved in the same order as
@@ -37,42 +38,46 @@ bool UiPages::loadSavedBill(const Pos::Order &order, OrderPreview &bill, QString
     Pos::readProducts(Pos::DataPaths::products(), products, ignored);
 
     bill = OrderPreview();
-    bill.id = rows.first().id;
+    bill.id = saved.id;
     bill.orderId = order.id;
     bill.status = order.status;
     bill.customerName = readable(order.customerName);
     bill.phone = order.customerContact;
-    bill.createdAt = QStringLiteral("%1  %2").arg(order.date, order.time);
+    bill.createdAt = QStringLiteral("%1  %2").arg(saved.date, saved.time);
     bill.paymentMethod = paymentText(order);
 
-    for (int i = 0; i < rows.size(); ++i)
+    for (int i = 0; i < saved.details.size(); ++i)
     {
-        const Pos::Bill &row = rows.at(i);
+        const Pos::BillDetail &detail = saved.details.at(i);
         OrderPreviewLine line;
-        line.quantity = row.quantity;
-        line.product.acronym = row.productAcronym;
-        line.product.name = row.productAcronym;
-        // Prices come from the bill, not from today's Product.txt.
-        line.product.unitPrice = row.unitPrice;
-        line.product.discountPerUnit = row.discountPerUnit;
-        line.product.tax = row.quantity > 0 ? row.totalTax / row.quantity : 0;
+        line.quantity = detail.quantity;
+        line.product.acronym = detail.productAcronym;
+        line.product.name = detail.productAcronym;
+        line.product.unitPrice = detail.unitPrice;
+        line.product.discountPerUnit = detail.quantity > 0
+            ? detail.totalDiscount / detail.quantity : 0;
         if (i < details.size())
         {
-            line.product.id = details.at(i).productId;
-            line.product.barcode = details.at(i).barcode;
+            const Pos::OrderDetail &orderDetail = details.at(i);
+            line.product.id = orderDetail.productId;
+            line.product.barcode = orderDetail.barcode;
             for (const Pos::Product &product : products)
             {
-                if (product.id == line.product.id)
+                if (product.id == orderDetail.productId
+                    && product.barcode == orderDetail.barcode)
+                {
                     line.product.name = product.name;
+                    break;
+                }
             }
         }
         bill.lines.append(line);
-        bill.itemCount += row.quantity;
-        bill.subtotal += row.totalWithoutTax;
-        bill.tax += row.totalTax;
-        bill.discount += row.totalDiscount;
-        bill.total += row.totalPayable;
+        bill.itemCount += detail.quantity;
     }
+    bill.subtotal = saved.totalWithoutTax;
+    bill.tax = saved.totalTax;
+    bill.discount = saved.totalDiscount;
+    bill.total = saved.totalPayable;
     error.clear();
     return true;
 }

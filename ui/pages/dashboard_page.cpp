@@ -6,9 +6,13 @@
 #include "order_history_page.h"
 #include "products_page.h"
 #include "scan_product_page.h"
+#include "../../POS/common/data_paths.h"
+#include "../../POS/order/order_repository.h"
+#include "../../POS/order/order_service.h"
 
 #include <QComboBox>
 #include <QDateTime>
+#include <QDate>
 #include <QFont>
 #include <QFrame>
 #include <QGridLayout>
@@ -471,12 +475,18 @@ private:
                     navigateTo(QStringLiteral("New Order"));
                 },
                 [this](const OrderPreview &order) {
-                    OrderPreview heldOrder = order;
-                    heldOrder.id = QStringLiteral("HOLD-%1")
-                        .arg(++heldOrderCounter_, 4, 10, QLatin1Char('0'));
-                    heldOrder.createdAt = QDateTime::currentDateTime()
-                        .toString(QStringLiteral("dd MMM, hh:mm AP"));
-                    heldOrders_.append(heldOrder);
+                    Pos::OrderSession session;
+                    session.orderId = order.orderId;
+                    session.customerName = order.customerName;
+                    session.customerContact = order.phone;
+                    for (const OrderPreviewLine &line : order.lines)
+                        session.items.append(Pos::CartItem{line.product, line.quantity});
+                    QString error;
+                    if (!Pos::holdOrder(session, error))
+                    {
+                        QMessageBox::warning(this, QStringLiteral("Could not hold order"), error);
+                        return;
+                    }
                     hasResumeOrder_ = false;
                     navigateTo(QStringLiteral("Held Orders"));
                 }));
@@ -551,7 +561,8 @@ private:
     }
 
     QFrame *createStatCard(QWidget *parent, const QString &label, const QString &value,
-        const QString &caption, const QString &iconName, const QString &accent, const QString &tint)
+        const QString &caption, const QString &iconName, const QString &accent, const QString &tint,
+        QLabel **valueLabel = nullptr)
     {
         auto *card = new QFrame(parent);
         card->setObjectName(QStringLiteral("statCard"));
@@ -577,6 +588,8 @@ private:
         auto *number = new QLabel(value, card);
         number->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 26px; font-weight: 700; background: transparent;").arg(kInk));
+        if (valueLabel)
+            *valueLabel = number;
         auto *hint = new QLabel(caption, card);
         hint->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 11px; font-weight: 600; background: transparent;").arg(accent));
@@ -664,11 +677,12 @@ private:
         stats->setColumnStretch(0, 1);
         stats->setColumnStretch(1, 1);
         stats->addWidget(createStatCard(page, QStringLiteral("Total Orders"), QStringLiteral("0"),
-            QStringLiteral("No orders yet"), QStringLiteral("receipt"),
-            QStringLiteral("#4F46E5"), QStringLiteral("#EEEFFF")), 0, 0);
+            QStringLiteral("Orders today"), QStringLiteral("receipt"),
+            QStringLiteral("#4F46E5"), QStringLiteral("#EEEFFF"), &totalOrdersValue_), 0, 0);
         stats->addWidget(createStatCard(page, QStringLiteral("Total Sales"), QStringLiteral("PKR 0"),
-            QStringLiteral("No sales yet"), QStringLiteral("trend"),
-            QStringLiteral("#0E9F6E"), QStringLiteral("#E1F7EE")), 0, 1);
+            QStringLiteral("Paid sales today"), QStringLiteral("trend"),
+            QStringLiteral("#0E9F6E"), QStringLiteral("#E1F7EE"), &totalSalesValue_), 0, 1);
+        refreshDashboardStats();
         layout->addLayout(stats);
         layout->addSpacing(28);
 
@@ -709,20 +723,120 @@ private:
         contentLayout_->addWidget(page);
     }
 
+    void refreshDashboardStats()
+    {
+        QVector<Pos::Order> orders;
+        QString error;
+        if (!Pos::readOrders(Pos::DataPaths::orders(), orders, error))
+        {
+            totalOrdersValue_->setText(QStringLiteral("N/A"));
+            totalSalesValue_->setText(QStringLiteral("N/A"));
+            QMessageBox::warning(this, QStringLiteral("Dashboard data unavailable"), error);
+            return;
+        }
+
+        const QString today = QDate::currentDate().toString(Qt::ISODate);
+        int orderCount = 0;
+        double sales = 0;
+        for (const Pos::Order &order : orders)
+        {
+            if (order.date != today)
+                continue;
+            ++orderCount;
+            if (order.status == QStringLiteral("paid"))
+                sales += order.paymentAmount;
+        }
+
+        totalOrdersValue_->setText(QString::number(orderCount));
+        totalSalesValue_->setText(QStringLiteral("PKR %1").arg(sales, 0, 'f', 2));
+    }
+
+    bool makeHeldOrderPreview(const Pos::Order &order, OrderPreview &preview,
+        QString &error) const
+    {
+        Pos::OrderSession session;
+        if (!Pos::resumeOrder(order.id, session, error))
+            return false;
+
+        preview = OrderPreview{};
+        preview.id = order.id;
+        preview.orderId = order.id;
+        preview.status = order.status;
+        preview.customerName = session.customerName;
+        preview.customerName.replace(QLatin1Char('_'), QLatin1Char(' '));
+        preview.phone = session.customerContact;
+        preview.paymentMethod = order.paymentMode;
+        const QDateTime heldAt = QDateTime::fromString(
+            QStringLiteral("%1 %2").arg(order.date, order.time),
+            QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        preview.createdAt = heldAt.isValid()
+            ? heldAt.toString(QStringLiteral("dd MMM, hh:mm AP"))
+            : QStringLiteral("%1 %2").arg(order.date, order.time);
+
+        for (const Pos::CartItem &item : session.items)
+        {
+            preview.lines.append(OrderPreviewLine{item.product, item.quantity});
+            preview.itemCount += item.quantity;
+            preview.subtotal += item.product.unitPrice * item.quantity;
+            preview.tax += item.product.tax * item.quantity;
+            preview.discount += item.product.discountPerUnit * item.quantity;
+        }
+        preview.total = preview.subtotal + preview.tax - preview.discount;
+        error.clear();
+        return true;
+    }
+
+    void loadHeldOrders()
+    {
+        QVector<Pos::Order> savedOrders;
+        QString error;
+        if (!Pos::readHeldOrders(savedOrders, error))
+        {
+            heldOrders_.clear();
+            QMessageBox::warning(this, QStringLiteral("Held orders unavailable"), error);
+            return;
+        }
+
+        heldOrders_.clear();
+        QStringList failures;
+        for (const Pos::Order &order : savedOrders)
+        {
+            OrderPreview preview;
+            if (!makeHeldOrderPreview(order, preview, error))
+            {
+                failures.append(QStringLiteral("%1: %2").arg(order.id, error));
+                continue;
+            }
+            heldOrders_.append(preview);
+        }
+        if (!failures.isEmpty())
+        {
+            QMessageBox::warning(this, QStringLiteral("Some held orders could not be loaded"),
+                failures.join(QLatin1Char('\n')));
+        }
+    }
+
     void showHeldOrders()
     {
+        loadHeldOrders();
         contentLayout_->addWidget(UiPages::createHeldOrdersPage(heldOrders_, contentHost_,
             [this](int index) {
                 if (index < 0 || index >= heldOrders_.size())
                     return;
-                resumeOrder_ = heldOrders_.takeAt(index);
+                resumeOrder_ = heldOrders_.at(index);
                 hasResumeOrder_ = true;
                 navigateTo(QStringLiteral("New Order"));
             },
             [this](int index) {
                 if (index < 0 || index >= heldOrders_.size())
                     return;
-                heldOrders_.removeAt(index);
+                QString error;
+                if (!Pos::changeOrderStatus(Pos::DataPaths::orders(),
+                        heldOrders_.at(index).orderId, QStringLiteral("archived"), error))
+                {
+                    QMessageBox::warning(this, QStringLiteral("Could not discard order"), error);
+                    return;
+                }
                 navigateTo(QStringLiteral("Held Orders"));
             }));
     }
@@ -758,10 +872,11 @@ private:
     QLabel *headerTitle_ = nullptr;
     QLabel *headerSubtitle_ = nullptr;
     QString currentPage_ = QStringLiteral("Dashboard");
+    QLabel *totalOrdersValue_ = nullptr;
+    QLabel *totalSalesValue_ = nullptr;
     QVector<OrderPreview> heldOrders_;
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
-    int heldOrderCounter_ = 0;
     bool hasResumeOrder_ = false;
     bool hasBillPreview_ = false;
 };

@@ -29,6 +29,7 @@
 #include <QPushButton>
 #include <QTableWidgetItem>
 #include <QTableWidget>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QVector>
 #include <utility>
@@ -103,7 +104,7 @@ public:
             [this](const QString &barcode) {
                 stopCamera();
                 barcodeEdit_->setText(barcode);
-                lookupBarcode(barcode);
+                submitBarcode(barcode);
             },
             [this](const QString &error) {
                 stopCamera();
@@ -127,7 +128,7 @@ public:
         root->addLayout(body);
 
         auto *notice = new QLabel(
-            QStringLiteral("When the bill is generated it is saved to Order.txt, OrderDetail.txt and Bill.txt, stock is reduced, and the bill opens."),
+            QStringLiteral("When the bill is generated it is saved to Order.txt, OrderDetail.txt, Bill.txt and BillDetail.txt, stock is reduced, and the bill opens."),
             this);
         notice->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent; padding-left: 2px;")
@@ -207,7 +208,7 @@ private:
         layout->addLayout(heading);
 
         auto *hint = new QLabel(
-            QStringLiteral("Scan a product barcode or enter it below to find the matching product."),
+            QStringLiteral("Scan a barcode to add it immediately, or enter it below and press Enter."),
             card);
         hint->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
@@ -229,6 +230,12 @@ private:
         barcodeEdit_->setFixedHeight(42);
         barcodeEdit_->setStyleSheet(fieldStyle());
         entry->addWidget(barcodeEdit_, 1);
+        barcodeLookupTimer_ = new QTimer(this);
+        barcodeLookupTimer_->setSingleShot(true);
+        barcodeLookupTimer_->setInterval(250);
+        connect(barcodeLookupTimer_, &QTimer::timeout, this, [this]() {
+            lookupBarcode(barcodeEdit_->text());
+        });
 
         // Quantity stepper:  [ - ]  qty  [ + ]  (type a number or click).
         auto *stepper = new QFrame(card);
@@ -270,15 +277,6 @@ private:
         connect(quantity_, &QLineEdit::textChanged, this, updateStepButtons);
         updateStepButtons();
         entry->addWidget(stepper);
-
-        addButton_ = new QPushButton(QStringLiteral("Add item"), card);
-        addButton_->setCursor(Qt::PointingHandCursor);
-        addButton_->setFixedSize(92, 42);
-        addButton_->setStyleSheet(QStringLiteral(
-            "QPushButton { background: %1; color: white; border: none; border-radius: 9px;"
-            " font-size: 11px; font-weight: 700; }"
-            "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
-        entry->addWidget(addButton_);
 
         descriptionButton_ = new QPushButton(QStringLiteral("Description"), card);
         descriptionButton_->setCursor(Qt::PointingHandCursor);
@@ -347,12 +345,15 @@ private:
 
         connect(cameraButton_, &QPushButton::clicked, this, [this]() { toggleCamera(); });
         connect(barcodeEdit_, &QLineEdit::returnPressed, this,
-            [this]() { lookupBarcode(barcodeEdit_->text()); });
-        connect(barcodeEdit_, &QLineEdit::textChanged, this, [this](const QString &) {
+            [this]() { submitBarcode(barcodeEdit_->text()); });
+        connect(barcodeEdit_, &QLineEdit::textChanged, this, [this](const QString &text) {
             hasMatchedProduct_ = false;
             matchLabel_->hide();
+            if (text.trimmed().isEmpty())
+                barcodeLookupTimer_->stop();
+            else
+                barcodeLookupTimer_->start();
         });
-        connect(addButton_, &QPushButton::clicked, this, [this]() { addProductToCart(); });
         connect(descriptionButton_, &QPushButton::clicked, this, [this]() { showDescription(); });
         return card;
     }
@@ -572,6 +573,14 @@ private:
         {
             hasMatchedProduct_ = false;
             matchLabel_->hide();
+            for (const Pos::Product &product : products)
+            {
+                if (product.barcode.startsWith(barcode))
+                {
+                    setStatus(QStringLiteral("Keep entering the product barcode."));
+                    return;
+                }
+            }
             setStatus(QStringLiteral("No product in Product.txt matches barcode %1.")
                 .arg(barcode), true);
             return;
@@ -587,6 +596,14 @@ private:
             .arg(currentProduct_.quantity));
         matchLabel_->show();
         setStatus(QStringLiteral("Product matched from Product.txt."));
+    }
+
+    void submitBarcode(QString barcode)
+    {
+        barcodeLookupTimer_->stop();
+        lookupBarcode(barcode);
+        if (hasMatchedProduct_)
+            addProductToCart();
     }
 
     void stepQuantity(int change)
@@ -643,6 +660,9 @@ private:
 
         refreshCart();
         setStatus(QStringLiteral("Product added to the order preview."));
+        quantity_->setText(QStringLiteral("1"));
+        barcodeEdit_->clear();
+        barcodeEdit_->setFocus();
     }
 
     void adjustCartQuantity(int row, int change)
@@ -779,6 +799,7 @@ private:
     OrderPreview createOrderPreview() const
     {
         OrderPreview order;
+        order.orderId = orderId_;
         order.customerName = customerNameEdit_->text().trimmed();
         order.phone = customerPhoneEdit_->text().trimmed();
         order.paymentMethod = paymentMethod_->currentText();
@@ -796,6 +817,7 @@ private:
 
     void loadOrder(const OrderPreview &order)
     {
+        orderId_ = order.orderId;
         customerNameEdit_->setText(order.customerName);
         customerPhoneEdit_->setText(order.phone);
         const int paymentIndex = paymentMethod_->findText(order.paymentMethod);
@@ -828,11 +850,11 @@ private:
             checkoutMessage_->show();
             return;
         }
-        // Requirements 6-10: save Order.txt, OrderDetail.txt and Bill.txt and
-        // reduce stock, all through the checkout service.
+        // Save the order, bill header/details and stock changes in checkout.
         Pos::CheckoutRequest request;
         request.customerName = order.customerName;
         request.customerContact = order.phone;
+        request.existingOrderId = orderId_;
         request.paymentMode = paymentMethod_->currentText();
         const bool cash = request.paymentMode == QStringLiteral("Cash");
         request.merchant = cash ? QString() : merchantEdit_->text().trimmed();
@@ -850,7 +872,7 @@ private:
         }
         checkoutMessage_->hide();
 
-        order.id = result.billRows.isEmpty() ? QString() : result.billRows.first().id;
+        order.id = result.bill.id;
         order.orderId = result.order.id;
         order.status = result.order.status;
         order.customerName = result.order.customerName;
@@ -870,7 +892,6 @@ private:
 
     CameraBarcodeScanner *scanner_ = nullptr;
     QPushButton *cameraButton_ = nullptr;
-    QPushButton *addButton_ = nullptr;
     QPushButton *descriptionButton_ = nullptr;
     QLabel *merchantLabel_ = nullptr;
     QLineEdit *merchantEdit_ = nullptr;
@@ -883,6 +904,7 @@ private:
     QPushButton *holdButton_ = nullptr;
     QPushButton *checkoutButton_ = nullptr;
     QLineEdit *barcodeEdit_ = nullptr;
+    QTimer *barcodeLookupTimer_ = nullptr;
     QLineEdit *customerNameEdit_ = nullptr;
     QLineEdit *customerPhoneEdit_ = nullptr;
     QLineEdit *quantity_ = nullptr;
@@ -897,6 +919,7 @@ private:
     QLabel *discountValue_ = nullptr;
     QLabel *totalValue_ = nullptr;
     Pos::Product currentProduct_;
+    QString orderId_;
     QVector<CartLine> cartLines_;
     bool hasMatchedProduct_ = false;
     std::function<void(const OrderPreview &)> onGenerateBill_;

@@ -1,353 +1,462 @@
-
 #include "bill_repository.h"
 
+#include "../common/record_codec.h"
+
 #include <cmath>
+#include <QDate>
+#include <QDir>
 #include <QFile>
+#include <QLockFile>
 #include <QRegularExpression>
-#include <QStringList>
+#include <QSet>
+#include <QTime>
 #include <QTextStream>
 
 namespace Pos
 {
-    namespace
+namespace
+{
+constexpr int kBillFieldCount = 14;
+constexpr int kBillDetailFieldCount = 5;
+
+bool safeToken(const QString &value)
+{
+    if (value.isEmpty() || value.contains(QLatin1Char('#')))
+        return false;
+    for (const QChar ch : value)
     {
-        // Bill.txt line format: 12 fields separated by one space, line ends with '#'.
-        constexpr int kBillFieldCount = 12;
+        if (ch.isSpace())
+            return false;
+    }
+    return true;
+}
 
-        bool isSafeToken(const QString &text)
+bool validMoney(double value)
+{
+    return std::isfinite(value) && value >= 0;
+}
+
+double round2(double value)
+{
+    return std::round(value * 100.0) / 100.0;
+}
+
+QString money(double value)
+{
+    return QString::number(value, 'f', 2);
+}
+
+QString toField(QString value)
+{
+    value = value.trimmed();
+    if (value.isEmpty())
+        return QStringLiteral("-");
+    return value.replace(QRegularExpression(QStringLiteral("\\s+")),
+        QStringLiteral("_"));
+}
+
+QString fromField(QString value)
+{
+    return value == QStringLiteral("-")
+        ? QString() : value.replace(QLatin1Char('_'), QLatin1Char(' '));
+}
+
+QString billLine(const Bill &bill)
+{
+    return makeRecord({
+        bill.id,
+        toField(bill.customerName),
+        bill.orderId,
+        money(bill.totalWithoutTax),
+        money(bill.totalTax),
+        money(bill.totalDiscount),
+        money(bill.totalPayable),
+        money(bill.amountReceived),
+        money(bill.balanceReturned),
+        bill.paymentStatus,
+        money(bill.seasonalDiscount),
+        money(bill.specialDiscount),
+        bill.date,
+        bill.time
+    });
+}
+
+QString detailLine(const BillDetail &detail)
+{
+    return makeRecord({
+        detail.billId,
+        detail.productAcronym,
+        money(detail.unitPrice),
+        QString::number(detail.quantity),
+        money(detail.totalDiscount)
+    });
+}
+
+bool parseBillLine(const QString &line, Bill &bill)
+{
+    QStringList fields;
+    if (!splitRecord(line, fields) || fields.size() != kBillFieldCount)
+        return false;
+
+    static const QRegularExpression billIdPattern(QStringLiteral("^\\d{9}$"));
+    bool ok[8] = {};
+    Bill parsed;
+    parsed.id = fields.at(0);
+    parsed.customerName = fromField(fields.at(1));
+    parsed.orderId = fields.at(2);
+    parsed.totalWithoutTax = fields.at(3).toDouble(&ok[0]);
+    parsed.totalTax = fields.at(4).toDouble(&ok[1]);
+    parsed.totalDiscount = fields.at(5).toDouble(&ok[2]);
+    parsed.totalPayable = fields.at(6).toDouble(&ok[3]);
+    parsed.amountReceived = fields.at(7).toDouble(&ok[4]);
+    parsed.balanceReturned = fields.at(8).toDouble(&ok[5]);
+    parsed.paymentStatus = fields.at(9);
+    parsed.seasonalDiscount = fields.at(10).toDouble(&ok[6]);
+    parsed.specialDiscount = fields.at(11).toDouble(&ok[7]);
+    parsed.date = fields.at(12);
+    parsed.time = fields.at(13);
+
+    for (bool valid : ok)
+    {
+        if (!valid)
+            return false;
+    }
+    if (!billIdPattern.match(parsed.id).hasMatch()
+        || !safeToken(parsed.orderId)
+        || !safeToken(parsed.paymentStatus)
+        || !QDate::fromString(parsed.date, Qt::ISODate).isValid()
+        || !QTime::fromString(parsed.time, QStringLiteral("HH:mm:ss")).isValid()
+        || !validMoney(parsed.totalWithoutTax)
+        || !validMoney(parsed.totalTax)
+        || !validMoney(parsed.totalDiscount)
+        || !validMoney(parsed.totalPayable)
+        || !validMoney(parsed.amountReceived)
+        || !validMoney(parsed.balanceReturned)
+        || !validMoney(parsed.seasonalDiscount)
+        || !validMoney(parsed.specialDiscount)
+        || round2(parsed.totalWithoutTax + parsed.totalTax - parsed.totalDiscount)
+            != parsed.totalPayable
+        || parsed.balanceReturned > parsed.amountReceived
+        || (parsed.paymentStatus == QStringLiteral("paid")
+            && round2(parsed.amountReceived - parsed.balanceReturned)
+                != parsed.totalPayable))
+    {
+        return false;
+    }
+    bill = parsed;
+    return true;
+}
+
+bool parseDetailLine(const QString &line, BillDetail &detail)
+{
+    QStringList fields;
+    if (!splitRecord(line, fields) || fields.size() != kBillDetailFieldCount)
+        return false;
+
+    bool priceOk = false;
+    bool quantityOk = false;
+    bool discountOk = false;
+    BillDetail parsed;
+    parsed.billId = fields.at(0);
+    parsed.productAcronym = fields.at(1);
+    parsed.unitPrice = fields.at(2).toDouble(&priceOk);
+    parsed.quantity = fields.at(3).toInt(&quantityOk);
+    parsed.totalDiscount = fields.at(4).toDouble(&discountOk);
+    if (!QRegularExpression(QStringLiteral("^\\d{9}$"))
+            .match(parsed.billId).hasMatch()
+        || !safeToken(parsed.productAcronym)
+        || !priceOk || !quantityOk || !discountOk
+        || parsed.quantity <= 0
+        || !validMoney(parsed.unitPrice)
+        || !validMoney(parsed.totalDiscount)
+        || parsed.totalDiscount > round2(parsed.unitPrice * parsed.quantity))
+    {
+        return false;
+    }
+    detail = parsed;
+    return true;
+}
+
+bool readBillRecords(const QString &path, QVector<Bill> &bills, QString &error)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot open bill file: %1").arg(path);
+        return false;
+    }
+    QVector<Bill> loaded;
+    QSet<QString> ids;
+    QTextStream in(&file);
+    int lineNumber = 0;
+    while (!in.atEnd())
+    {
+        const QString raw = in.readLine();
+        ++lineNumber;
+        if (raw.trimmed().isEmpty())
+            continue;
+        Bill bill;
+        if (!parseBillLine(raw, bill) || ids.contains(bill.id))
         {
-            if (text.isEmpty() || text.contains(QLatin1Char('#')))
-                return false;
-
-            for (const QChar character : text)
-            {
-                if (character.isSpace())
-                    return false;
-            }
-
-            return true;
+            error = QStringLiteral("Invalid or duplicate bill at line %1 in %2.")
+                .arg(lineNumber).arg(path);
+            return false;
         }
+        ids.insert(bill.id);
+        loaded.append(bill);
+    }
+    bills = loaded;
+    return true;
+}
 
-        bool isValidMoney(double value)
+bool readBillDetails(const QString &path, QVector<BillDetail> &details,
+    QString &error)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot open bill detail file: %1").arg(path);
+        return false;
+    }
+    QVector<BillDetail> loaded;
+    QTextStream in(&file);
+    int lineNumber = 0;
+    while (!in.atEnd())
+    {
+        const QString raw = in.readLine();
+        ++lineNumber;
+        if (raw.trimmed().isEmpty())
+            continue;
+        BillDetail detail;
+        if (!parseDetailLine(raw, detail))
         {
-            return std::isfinite(value) && value >= 0;
+            error = QStringLiteral("Invalid bill detail at line %1 in %2.")
+                .arg(lineNumber).arg(path);
+            return false;
         }
+        loaded.append(detail);
+    }
+    details = loaded;
+    return true;
+}
 
-        double round2(double value)
+bool validateDetails(const Bill &bill, QString &error)
+{
+    if (bill.details.isEmpty())
+    {
+        error = QStringLiteral("A bill must contain at least one product.");
+        return false;
+    }
+    double subtotal = 0;
+    double discount = 0;
+    for (const BillDetail &detail : bill.details)
+    {
+        if (detail.billId != bill.id || !safeToken(detail.productAcronym)
+            || detail.quantity <= 0 || !validMoney(detail.unitPrice)
+            || !validMoney(detail.totalDiscount)
+            || detail.totalDiscount > round2(detail.unitPrice * detail.quantity))
         {
-            return std::round(value * 100.0) / 100.0;
+            error = QStringLiteral("Bill detail is invalid or belongs to another bill.");
+            return false;
         }
+        subtotal += round2(detail.unitPrice * detail.quantity);
+        discount += detail.totalDiscount;
+    }
+    if (round2(subtotal) != bill.totalWithoutTax
+        || round2(discount) != bill.totalDiscount)
+    {
+        error = QStringLiteral("Bill totals do not match its product details.");
+        return false;
+    }
+    return true;
+}
 
-        QString toField(QString text)
+bool validateBill(const Bill &bill, QString &error)
+{
+    if (!QRegularExpression(QStringLiteral("^\\d{9}$")).match(bill.id).hasMatch()
+        || !safeToken(bill.orderId)
+        || !safeToken(bill.paymentStatus)
+        || bill.customerName.trimmed().isEmpty()
+        || bill.customerName.contains(QLatin1Char('#'))
+        || !QDate::fromString(bill.date, Qt::ISODate).isValid()
+        || !QTime::fromString(bill.time, QStringLiteral("HH:mm:ss")).isValid()
+        || !validMoney(bill.totalWithoutTax)
+        || !validMoney(bill.totalTax)
+        || !validMoney(bill.totalDiscount)
+        || !validMoney(bill.totalPayable)
+        || !validMoney(bill.amountReceived)
+        || !validMoney(bill.balanceReturned)
+        || !validMoney(bill.seasonalDiscount)
+        || !validMoney(bill.specialDiscount)
+        || round2(bill.totalWithoutTax + bill.totalTax - bill.totalDiscount)
+            != bill.totalPayable
+        || bill.balanceReturned > bill.amountReceived
+        || (bill.paymentStatus == QStringLiteral("paid")
+            && round2(bill.amountReceived - bill.balanceReturned)
+                != bill.totalPayable))
+    {
+        error = QStringLiteral("Bill header contains invalid or inconsistent fields.");
+        return false;
+    }
+    return validateDetails(bill, error);
+}
+
+bool appendLines(const QString &path, const QStringList &lines, QString &error)
+{
+    bool needsNewline = false;
+    QFile existing(path);
+    if (existing.exists() && existing.size() > 0)
+    {
+        if (!existing.open(QIODevice::ReadOnly))
         {
-            text = text.trimmed();
-
-            if (text.isEmpty())
-                return QStringLiteral("-");
-
-            return text.replace(
-                QRegularExpression(QStringLiteral("\\s+")),
-                QStringLiteral("_")
-            );
+            error = QStringLiteral("Cannot read %1: %2")
+                .arg(path, existing.errorString());
+            return false;
         }
-
-        QString fromField(QString text)
-        {
-            return text == QStringLiteral("-")
-                ? QString()
-                : text.replace('_', ' ');
-        }
-
-        QString money(double value)
-        {
-            return QString::number(value, 'f', 2);
-        }
-
-        QString toLine(const Bill &b)
-        {
-            const QStringList fields = {
-                toField(b.id),
-                toField(b.customerName),
-                toField(b.orderId),
-                toField(b.productAcronym),
-                money(b.unitPrice),
-                money(b.discountPerUnit),
-                QString::number(b.quantity),
-                money(b.totalWithoutTax),
-                money(b.totalTax),
-                money(b.totalDiscount),
-                money(b.totalPayable),
-                toField(b.paymentStatus)
-            };
-
-            return fields.join(' ') + QStringLiteral("#");
-        }
-
-        bool parseLine(const QString &rawLine, Bill &bill)
-        {
-            QString line = rawLine.trimmed();
-
-            if (!line.endsWith('#'))
-                return false;
-
-            line.chop(1);
-
-            const QStringList f = line.split(' ', Qt::SkipEmptyParts);
-
-            if (f.size() != kBillFieldCount)
-                return false;
-
-            bool ok[6] = {};
-            Bill b;
-
-            b.id = f[0];
-            b.customerName = fromField(f[1]);
-            b.orderId = f[2];
-            b.productAcronym = f[3];
-
-            b.unitPrice = f[4].toDouble(&ok[0]);
-            b.discountPerUnit = f[5].toDouble(&ok[1]);
-            b.quantity = f[6].toInt(&ok[2]);
-
-            b.totalWithoutTax = f[7].toDouble(&ok[3]);
-            b.totalTax = f[8].toDouble(&ok[4]);
-            b.totalDiscount = f[9].toDouble(&ok[5]);
-
-            bool okPayable = false;
-
-            b.totalPayable = f[10].toDouble(&okPayable);
-            b.paymentStatus = f[11];
-
-            for (bool value : ok)
-            {
-                if (!value)
-                    return false;
-            }
-
-            if (!okPayable)
-                return false;
-
-            if (!isSafeToken(b.id)
-                || !isSafeToken(b.orderId)
-                || !isSafeToken(b.productAcronym)
-                || !isSafeToken(b.paymentStatus)
-                || b.quantity <= 0
-                || !isValidMoney(b.unitPrice)
-                || !isValidMoney(b.discountPerUnit)
-                || !isValidMoney(b.totalWithoutTax)
-                || !isValidMoney(b.totalTax)
-                || !isValidMoney(b.totalDiscount)
-                || !isValidMoney(b.totalPayable)
-                || b.totalWithoutTax != round2(b.unitPrice * b.quantity)
-                || b.totalDiscount != round2(b.discountPerUnit * b.quantity)
-                || b.totalPayable != round2(
-                    b.totalWithoutTax + b.totalTax - b.totalDiscount))
-            {
-                return false;
-            }
-
-            bill = b;
-            return true;
-        }
+        existing.seek(existing.size() - 1);
+        char last = 0;
+        needsNewline = existing.read(&last, 1) == 1 && last != '\n';
     }
 
-    // Reads every row of Bill.txt that has this bill ID.
-    bool readBill(QString filePath, QString billId, QVector<Bill> &rows,
-        QString &error)
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
     {
-        rows.clear();
+        error = QStringLiteral("Cannot write %1: %2")
+            .arg(path, file.errorString());
+        return false;
+    }
+    QTextStream out(&file);
+    if (needsNewline)
+        out << '\n';
+    for (const QString &line : lines)
+        out << line << '\n';
+    out.flush();
+    if (out.status() != QTextStream::Ok || !file.flush())
+    {
+        error = QStringLiteral("Failed while writing %1.").arg(path);
+        return false;
+    }
+    return true;
+}
+
+bool attachDetails(const QString &detailFile, Bill &bill, QString &error)
+{
+    QVector<BillDetail> allDetails;
+    if (!readBillDetails(detailFile, allDetails, error))
+        return false;
+    for (const BillDetail &detail : allDetails)
+    {
+        if (detail.billId == bill.id)
+            bill.details.append(detail);
+    }
+    return validateDetails(bill, error);
+}
+}
+
+bool readBill(QString billFile, QString detailFile, QString billId, Bill &bill,
+    QString &error)
+{
+    bill = Bill{};
+    QVector<Bill> allBills;
+    if (!readBillRecords(billFile, allBills, error))
+        return false;
+    for (Bill &candidate : allBills)
+    {
+        if (candidate.id != billId)
+            continue;
+        if (!attachDetails(detailFile, candidate, error))
+            return false;
+        bill = candidate;
         error.clear();
-
-        QFile file(filePath);
-
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        {
-            error = QStringLiteral("Cannot open bill file: %1").arg(filePath);
-            return false;
-        }
-
-        QVector<Bill> found;
-        QTextStream in(&file);
-        int lineNumber = 0;
-
-        while (!in.atEnd())
-        {
-            const QString line = in.readLine();
-            ++lineNumber;
-
-            if (line.trimmed().isEmpty())
-                continue;
-
-            Bill bill;
-
-            if (!parseLine(line, bill))
-            {
-                error = QStringLiteral("Bad line %1 in %2")
-                    .arg(lineNumber).arg(filePath);
-
-                return false;
-            }
-
-            if (bill.id == billId)
-                found.append(bill);
-        }
-
-        if (found.isEmpty())
-        {
-            error = QStringLiteral("Bill %1 not found.").arg(billId);
-            return false;
-        }
-
-        rows = found;
         return true;
     }
+    error = QStringLiteral("Bill %1 not found.").arg(billId);
+    return false;
+}
 
-    // Reads every row of Bill.txt that belongs to this order.
-    bool readBillForOrder(QString filePath, QString orderId, QVector<Bill> &rows,
-        QString &error)
+bool readBillForOrder(QString billFile, QString detailFile, QString orderId,
+    Bill &bill, QString &error)
+{
+    bill = Bill{};
+    QVector<Bill> allBills;
+    if (!readBillRecords(billFile, allBills, error))
+        return false;
+    bool found = false;
+    for (Bill &candidate : allBills)
     {
-        rows.clear();
-        error.clear();
-
-        QFile file(filePath);
-        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        if (candidate.orderId != orderId)
+            continue;
+        if (found)
         {
-            error = QStringLiteral("Cannot open bill file: %1").arg(filePath);
+            error = QStringLiteral("More than one bill exists for order %1.")
+                .arg(orderId);
             return false;
         }
-
-        QTextStream in(&file);
-        int lineNumber = 0;
-        while (!in.atEnd())
-        {
-            const QString line = in.readLine();
-            ++lineNumber;
-            if (line.trimmed().isEmpty())
-                continue;
-
-            Bill bill;
-            if (!parseLine(line, bill))
-            {
-                error = QStringLiteral("Bad line %1 in %2").arg(lineNumber).arg(filePath);
-                return false;
-            }
-            if (bill.orderId == orderId)
-                rows.append(bill);
-        }
-
-        if (rows.isEmpty())
-        {
-            error = QStringLiteral("No bill is saved for order %1.").arg(orderId);
+        if (!attachDetails(detailFile, candidate, error))
             return false;
-        }
-        return true;
+        bill = candidate;
+        found = true;
+    }
+    if (!found)
+    {
+        error = QStringLiteral("No bill is saved for order %1.").arg(orderId);
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
+bool saveBill(QString billFile, QString detailFile, const Bill &bill,
+    QString &error)
+{
+    error.clear();
+    if (!validateBill(bill, error))
+        return false;
+
+    QLockFile lock(billFile + QStringLiteral(".lock"));
+    if (!lock.tryLock(0))
+    {
+        error = QStringLiteral("Another checkout is saving a bill. Try again.");
+        return false;
     }
 
-    // Appends one line per product row to Bill.txt (creates the file if missing).
-    bool saveBill(QString filePath, QVector<Bill> rows, QString &error)
+    QVector<Bill> existing;
+    if (QFile::exists(billFile) && !readBillRecords(billFile, existing, error))
+        return false;
+    for (const Bill &saved : existing)
     {
-        error.clear();
-
-        if (rows.isEmpty())
+        if (saved.id == bill.id)
         {
-            error = QStringLiteral("Cannot save an empty bill.");
+            error = QStringLiteral("Bill ID %1 already exists.").arg(bill.id);
             return false;
         }
-
-        const Bill &first = rows.first();
-        QStringList lines;
-
-        for (const Bill &row : rows)
-        {
-            if (!isSafeToken(row.id)
-                || !isSafeToken(row.orderId)
-                || !isSafeToken(row.productAcronym)
-                || !isSafeToken(row.paymentStatus)
-                || row.customerName.contains(QLatin1Char('#'))
-                || row.quantity <= 0)
-            {
-                error = QStringLiteral(
-                    "Bill row is missing a required field or has an invalid quantity."
-                );
-
-                return false;
-            }
-
-            if (row.id != first.id
-                || row.orderId != first.orderId
-                || row.customerName != first.customerName
-                || row.paymentStatus != first.paymentStatus)
-            {
-                error = QStringLiteral(
-                    "All bill rows must share the same bill, order, customer and status."
-                );
-
-                return false;
-            }
-
-            if (!isValidMoney(row.unitPrice)
-                || !isValidMoney(row.discountPerUnit)
-                || !isValidMoney(row.totalWithoutTax)
-                || !isValidMoney(row.totalTax)
-                || !isValidMoney(row.totalDiscount)
-                || !isValidMoney(row.totalPayable)
-                || row.totalWithoutTax != round2(row.unitPrice * row.quantity)
-                || row.totalDiscount != round2(
-                    row.discountPerUnit * row.quantity)
-                || row.totalPayable != round2(
-                    row.totalWithoutTax + row.totalTax - row.totalDiscount))
-            {
-                error = QStringLiteral(
-                    "Bill row contains invalid or inconsistent amounts."
-                );
-
-                return false;
-            }
-
-            lines.append(toLine(row));
-        }
-
-        // If the file does not end with a newline, add one before appending.
-        bool needsNewline = false;
-
-        {
-            QFile existing(filePath);
-
-            if (existing.exists() && existing.size() > 0
-                && existing.open(QIODevice::ReadOnly))
-            {
-                existing.seek(existing.size() - 1);
-
-                char last = 0;
-
-                needsNewline = existing.read(&last, 1) == 1 && last != '\n';
-            }
-        }
-
-        QFile file(filePath);
-
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
-        {
-            error = QStringLiteral("Cannot write bill file: %1").arg(filePath);
-            return false;
-        }
-
-        if (needsNewline)
-            file.write("\n");
-
-        QTextStream out(&file);
-
-        for (const QString &line : lines)
-            out << line << '\n';
-
-        out.flush();
-
-        if (out.status() != QTextStream::Ok)
-        {
-            error = QStringLiteral("Failed while writing %1").arg(filePath);
-            return false;
-        }
-
-        return true;
     }
+
+    QVector<BillDetail> existingDetails;
+    if (QFile::exists(detailFile)
+        && !readBillDetails(detailFile, existingDetails, error))
+        return false;
+    for (const BillDetail &saved : existingDetails)
+    {
+        if (saved.billId == bill.id)
+        {
+            error = QStringLiteral(
+                "Bill ID %1 already exists in BillDetail.txt.").arg(bill.id);
+            return false;
+        }
+    }
+
+    QStringList detailLines;
+    for (const BillDetail &detail : bill.details)
+        detailLines.append(detailLine(detail));
+
+    // The header is the commit marker: a failed header append leaves no
+    // visible bill, and the orphan detail ID prevents that ID being reused.
+    if (!appendLines(detailFile, detailLines, error))
+        return false;
+    if (!appendLines(billFile, {billLine(bill)}, error))
+        return false;
+    error.clear();
+    return true;
+}
 }

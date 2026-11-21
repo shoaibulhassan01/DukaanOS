@@ -65,17 +65,15 @@ void setErrorIfEmpty(QString &error, const QString &fallback)
 bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
     QString &error)
 {
-    QVector<Bill> rows;
-    if (!buildBill(QString(), Order(), items, rows, error))
+    Bill bill;
+    if (!buildBill(QString(), Order(), items, bill, error))
         return false;
 
     CartTotals sum;
-    for (const Bill &row : rows) {
-        sum.withoutTax += row.totalWithoutTax;
-        sum.tax += row.totalTax;
-        sum.discount += row.totalDiscount;
-        sum.payable += row.totalPayable;
-    }
+    sum.withoutTax = bill.totalWithoutTax;
+    sum.tax = bill.totalTax;
+    sum.discount = bill.totalDiscount;
+    sum.payable = bill.totalPayable;
     if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
         || !std::isfinite(sum.discount) || !std::isfinite(sum.payable)) {
         error = QStringLiteral("Cart totals are outside the supported range.");
@@ -126,29 +124,61 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
         return false;
     }
 
-    // Step 1: order ID.
+    // Reuse a held order when checking it out; otherwise create a new order.
     const QDateTime now = QDateTime::currentDateTime();
-    QString orderId;
-    if (!generateOrderId(DataPaths::orders(), now.date(), orderId, error)) {
-        setErrorIfEmpty(error, QStringLiteral("Could not generate an order ID."));
-        return false;
+    Order order;
+    const bool resuming = !request.existingOrderId.trimmed().isEmpty();
+    if (resuming)
+    {
+        QVector<Order> orders;
+        if (!readOrders(DataPaths::orders(), orders, error))
+            return false;
+        bool found = false;
+        for (const Order &existing : orders)
+        {
+            if (existing.id != request.existingOrderId)
+                continue;
+            if (existing.status != QStringLiteral("on-hold"))
+            {
+                error = QStringLiteral("Only an on-hold order can be resumed.");
+                return false;
+            }
+            order = existing;
+            found = true;
+            break;
+        }
+        if (!found)
+        {
+            error = QStringLiteral("Held order %1 was not found.")
+                .arg(request.existingOrderId);
+            return false;
+        }
+    }
+    else
+    {
+        if (!generateOrderId(DataPaths::orders(), now.date(), order.id, error))
+        {
+            setErrorIfEmpty(error, QStringLiteral("Could not generate an order ID."));
+            return false;
+        }
+        order.date = formatOrderDate(now);
+        order.time = formatOrderTime(now);
     }
 
-    // Step 2: bill ID.
+    // Bill IDs are generated from the 9-digit IDs already present in Bill.txt.
     QString billId;
     if (!generateBillId(DataPaths::bills(), now.date(), billId, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not generate a bill ID."));
         return false;
     }
 
-    // Order record. Cash has no merchant, so it is stored as "-".
-    Order order;
-    order.id = orderId;
-    order.date = formatOrderDate(now);
-    order.time = formatOrderTime(now);
-    order.customerName = request.customerName.trimmed().isEmpty()
-        ? QStringLiteral("Walk-in") : request.customerName.trimmed();
-    order.customerContact = request.customerContact.trimmed();
+    // Cash has no merchant, so it is stored as an empty value in the model.
+    if (!request.customerName.trimmed().isEmpty())
+        order.customerName = request.customerName.trimmed();
+    if (order.customerName.trimmed().isEmpty())
+        order.customerName = QStringLiteral("Walk-in");
+    if (!request.customerContact.trimmed().isEmpty())
+        order.customerContact = request.customerContact.trimmed();
     order.status = QStringLiteral("paid");
     order.paymentAmount = totals.payable;
     order.paymentMode = payment->mode();
@@ -158,19 +188,24 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     QVector<OrderDetail> details;
     for (const CartItem &item : request.items) {
         OrderDetail detail;
-        detail.orderId = orderId;
+        detail.orderId = order.id;
         detail.productId = item.product.id;
         detail.barcode = item.product.barcode;
         detail.quantity = item.quantity;
         details.append(detail);
     }
 
-    // Step 3: build the bill rows.
-    QVector<Bill> billRows;
-    if (!buildBill(billId, order, request.items, billRows, error)) {
+    // Step 3: build the one-line bill header and its product details.
+    Bill bill;
+    if (!buildBill(billId, order, request.items, bill, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not build the bill."));
         return false;
     }
+    bill.amountReceived = request.amountPaid;
+    bill.balanceReturned = std::round(
+        (request.amountPaid - totals.payable) * 100.0) / 100.0;
+    bill.date = formatOrderDate(now);
+    bill.time = formatOrderTime(now);
 
     // Stock is checked against Product.txt now, before any file is written,
     // so reduceStock cannot fail after the order and bill are already saved.
@@ -178,11 +213,19 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
         return false;
 
     // Steps 4-6: files are written from here on.
-    if (!saveOrder(DataPaths::orders(), DataPaths::orderDetail(), order, details, error)) {
+    if (resuming) {
+        if (!updateOrder(DataPaths::orders(), DataPaths::orderDetail(),
+                order, details, error)) {
+            setErrorIfEmpty(error, QStringLiteral("Could not update the held order."));
+            return false;
+        }
+    }
+    else if (!saveOrder(DataPaths::orders(), DataPaths::orderDetail(),
+                 order, details, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not save the order."));
         return false;
     }
-    if (!saveBill(DataPaths::bills(), billRows, error)) {
+    if (!saveBill(DataPaths::bills(), DataPaths::billDetails(), bill, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not save the bill."));
         return false;
     }
@@ -193,7 +236,7 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
 
     result.order = order;
     result.details = details;
-    result.billRows = billRows;
+    result.bill = bill;
     result.totals = totals;
     return true;
 }
