@@ -24,20 +24,17 @@ jobs:
           version: "6.8.3"
           host: windows
           target: desktop
-          arch: win64_msvc2022_64
+          arch: win64_mingw
           modules: qtmultimedia
-
-      - name: Set up MSVC
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
 
       - name: Configure and build
         run: |
+          $env:PATH = "C:\mingw64\bin;$env:PATH"
           cmake -S . -B build-ci `
             -G "Ninja" `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
+            -DCMAKE_CXX_COMPILER="C:/mingw64/bin/g++.exe" `
             -DBUILD_TESTING=ON
           cmake --build build-ci --config Release
 
