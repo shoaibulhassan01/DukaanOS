@@ -11,7 +11,7 @@ namespace Pos
 namespace
 {
 // Reads the first field (the ID) of every record in a file.
-// A missing file is not an error: it just has no IDs yet.
+
 bool readIds(const QString &filePath, int fieldCount, int idLength,
     QStringList &ids, QString &error)
 {
