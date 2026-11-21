@@ -26,6 +26,7 @@ jobs:
           target: desktop
           arch: win64_mingw
           modules: qtmultimedia
+          tools: tools_mingw,qt.tools.win64_mingw1310
 
       - name: Configure and build
         run: |
@@ -33,15 +34,12 @@ jobs:
           if (-not $qtPrefix -or -not (Test-Path "$qtPrefix\lib\cmake\Qt6")) {
             throw "Qt installation was not found at QT_ROOT_DIR: $qtPrefix"
           }
-          $qtInstallRoot = Split-Path (Split-Path $qtPrefix -Parent) -Parent
-          $mingwRoot = Get-ChildItem -Directory (Join-Path $qtInstallRoot "Tools") -Filter "mingw*_64" |
-            Sort-Object Name |
-            Select-Object -First 1
-          if (-not $mingwRoot) {
-            throw "Matching MinGW toolchain was not found under $qtInstallRoot\Tools"
+          $compiler = (Get-Command g++.exe -ErrorAction Stop).Source
+          $compilerVersion = & $compiler --version | Select-Object -First 1
+          if ($compilerVersion -notmatch "13\.1\.0") {
+            throw "Qt 6.8.3 requires MinGW 13.1.0; found: $compilerVersion"
           }
-          $mingwBin = Join-Path $mingwRoot.FullName "bin"
-          $compiler = Join-Path $mingwBin "g++.exe"
+          $mingwBin = Split-Path $compiler -Parent
           $env:PATH = "$qtPrefix\bin;$mingwBin;$env:PATH"
           cmake -S . -B build-ci `
             -G "Ninja" `
@@ -58,14 +56,8 @@ jobs:
           if (-not $qtPrefix -or -not (Test-Path "$qtPrefix\lib\cmake\Qt6")) {
             throw "Qt installation was not found at QT_ROOT_DIR: $qtPrefix"
           }
-          $qtInstallRoot = Split-Path (Split-Path $qtPrefix -Parent) -Parent
-          $mingwRoot = Get-ChildItem -Directory (Join-Path $qtInstallRoot "Tools") -Filter "mingw*_64" |
-            Sort-Object Name |
-            Select-Object -First 1
-          if (-not $mingwRoot) {
-            throw "Matching MinGW toolchain was not found under $qtInstallRoot\Tools"
-          }
-          $mingwBin = Join-Path $mingwRoot.FullName "bin"
+          $compiler = (Get-Command g++.exe -ErrorAction Stop).Source
+          $mingwBin = Split-Path $compiler -Parent
           $env:PATH = "$qtPrefix\bin;$mingwBin;$env:PATH"
           $env:QT_QPA_PLATFORM = "offscreen"
           ctest --test-dir build-ci --output-on-failure
