@@ -29,7 +29,10 @@ jobs:
 
       - name: Configure and build
         run: |
-          $qtPrefix = (Resolve-Path "$env:Qt6_DIR\..\..\..").Path
+          $qtPrefix = $env:QT_ROOT_DIR
+          if (-not $qtPrefix -or -not (Test-Path "$qtPrefix\lib\cmake\Qt6")) {
+            throw "Qt installation was not found at QT_ROOT_DIR: $qtPrefix"
+          }
           $qtInstallRoot = Split-Path (Split-Path $qtPrefix -Parent) -Parent
           $mingwRoot = Get-ChildItem -Directory (Join-Path $qtInstallRoot "Tools") -Filter "mingw*_64" |
             Sort-Object Name |
@@ -51,7 +54,10 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: |
-          $qtPrefix = (Resolve-Path "$env:Qt6_DIR\..\..\..").Path
+          $qtPrefix = $env:QT_ROOT_DIR
+          if (-not $qtPrefix -or -not (Test-Path "$qtPrefix\lib\cmake\Qt6")) {
+            throw "Qt installation was not found at QT_ROOT_DIR: $qtPrefix"
+          }
           $qtInstallRoot = Split-Path (Split-Path $qtPrefix -Parent) -Parent
           $mingwRoot = Get-ChildItem -Directory (Join-Path $qtInstallRoot "Tools") -Filter "mingw*_64" |
             Sort-Object Name |
