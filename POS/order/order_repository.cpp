@@ -41,6 +41,99 @@ namespace Pos
             || status == "archived";
     }
 
+    static QStringList serializeOrder(const Order& order)
+    {
+        QString customerName = order.customerName;
+        customerName.replace(' ', '_');
+        QString merchant = order.merchant.isEmpty() ? "-" : order.merchant;
+        merchant.replace(' ', '_');
+        return {
+            order.id,
+            order.date,
+            order.time,
+            customerName,
+            order.customerContact.isEmpty() ? "-" : order.customerContact,
+            order.status,
+            QString::number(order.paymentAmount, 'f', 2),
+            order.paymentMode,
+            merchant
+        };
+    }
+
+    static bool writeRecords(const QString& path, const QStringList& records,
+        QString& error)
+    {
+        QSaveFile file(path);
+        if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+        {
+            error = QStringLiteral("Cannot update %1: %2")
+                .arg(path, file.errorString());
+            return false;
+        }
+        QTextStream output(&file);
+        for (const QString& record : records)
+            output << record << '\n';
+        output.flush();
+        if (output.status() != QTextStream::Ok || !file.commit())
+        {
+            error = QStringLiteral("Failed to save %1: %2")
+                .arg(path, file.errorString());
+            return false;
+        }
+        return true;
+    }
+
+    static bool readAllOrderDetails(const QString& path,
+        QVector<OrderDetail>& details, QString& error)
+    {
+        QFile file(path);
+        if (!file.exists())
+        {
+            details.clear();
+            return true;
+        }
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            error = QStringLiteral("Cannot open %1: %2")
+                .arg(path, file.errorString());
+            return false;
+        }
+        QVector<OrderDetail> loaded;
+        QTextStream input(&file);
+        int lineNumber = 0;
+        while (!input.atEnd())
+        {
+            const QString line = input.readLine().trimmed();
+            ++lineNumber;
+            if (line.isEmpty())
+                continue;
+            QStringList fields;
+            bool validQuantity = false;
+            if (!splitRecord(line, fields) || fields.size() != 4)
+            {
+                error = QStringLiteral("Invalid OrderDetail.txt record at line %1.")
+                    .arg(lineNumber);
+                return false;
+            }
+            OrderDetail detail;
+            detail.orderId = fields.at(0);
+            detail.productId = fields.at(1);
+            detail.barcode = fields.at(2);
+            detail.quantity = fields.at(3).toInt(&validQuantity);
+            if (detail.orderId.isEmpty() || detail.productId.isEmpty()
+                || detail.barcode.isEmpty() || !validQuantity
+                || detail.quantity <= 0)
+            {
+                error = QStringLiteral("Invalid order detail at line %1.")
+                    .arg(lineNumber);
+                return false;
+            }
+            loaded.append(detail);
+        }
+        details = loaded;
+        return true;
+    }
+
     // Owner: Zain Ul Abideen - read Order.txt into the list.
     bool readOrders(QString filePath, QVector<Order>& orders, QString& error)
     {
@@ -323,6 +416,85 @@ namespace Pos
         return true;
     }
 
+    bool updateOrder(QString orderFile, QString detailFile, Order order,
+        QVector<OrderDetail> details, QString& error)
+    {
+        if (!QRegularExpression("^\\d{8}$").match(order.id).hasMatch()
+            || details.isEmpty()
+            || order.customerName.trimmed().isEmpty()
+            || !std::isfinite(order.paymentAmount)
+            || order.paymentAmount < 0
+            || !isValidStatus(order.status))
+        {
+            error = QStringLiteral("Invalid order information.");
+            return false;
+        }
+        for (const OrderDetail& detail : details)
+        {
+            if (detail.orderId != order.id || detail.productId.isEmpty()
+                || detail.barcode.isEmpty() || detail.quantity <= 0)
+            {
+                error = QStringLiteral("Invalid order detail information.");
+                return false;
+            }
+        }
+
+        QVector<Order> orders;
+        if (!readOrders(orderFile, orders, error))
+            return false;
+        int matchingOrder = -1;
+        for (int i = 0; i < orders.size(); ++i)
+        {
+            if (orders.at(i).id != order.id)
+                continue;
+            if (matchingOrder >= 0)
+            {
+                error = QStringLiteral("Order ID %1 appears more than once.")
+                    .arg(order.id);
+                return false;
+            }
+            matchingOrder = i;
+        }
+        if (matchingOrder < 0)
+        {
+            error = QStringLiteral("Order ID was not found.");
+            return false;
+        }
+        orders[matchingOrder] = order;
+
+        QVector<OrderDetail> allDetails;
+        if (!readAllOrderDetails(detailFile, allDetails, error))
+            return false;
+        QVector<OrderDetail> replacedDetails;
+        for (const OrderDetail& detail : allDetails)
+        {
+            if (detail.orderId != order.id)
+                replacedDetails.append(detail);
+        }
+        for (const OrderDetail& detail : details)
+            replacedDetails.append(detail);
+
+        QStringList detailRecords;
+        for (const OrderDetail& detail : replacedDetails)
+        {
+            detailRecords.append(makeRecord({
+                detail.orderId, detail.productId, detail.barcode,
+                QString::number(detail.quantity)
+            }));
+        }
+        if (!writeRecords(detailFile, detailRecords, error))
+            return false;
+
+        QStringList orderRecords;
+        for (const Order& existing : orders)
+            orderRecords.append(makeRecord(serializeOrder(existing)));
+        if (!writeRecords(orderFile, orderRecords, error))
+            return false;
+
+        error.clear();
+        return true;
+    }
+
     // Owner: Zain Ul Abideen - change an order's status in Order.txt.
     bool changeOrderStatus(QString filePath, QString orderId,
         QString status, QString& error)
@@ -369,27 +541,7 @@ namespace Pos
 
         for (const Order& order : orders)
         {
-            QString customerName = order.customerName;
-            customerName.replace(' ', '_');
-
-            QString merchant = order.merchant.isEmpty()
-                ? "-" : order.merchant;
-
-            merchant.replace(' ', '_');
-
-            QStringList fields;
-
-            fields << order.id
-                << order.date
-                << order.time
-                << customerName
-                << (order.customerContact.isEmpty() ? "-" : order.customerContact)
-                << order.status
-                << QString::number(order.paymentAmount, 'f', 2)
-                << order.paymentMode
-                << merchant;
-
-            output << makeRecord(fields) << '\n';
+            output << makeRecord(serializeOrder(order)) << '\n';
         }
 
         output.flush();

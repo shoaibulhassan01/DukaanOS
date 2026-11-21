@@ -11,11 +11,11 @@
 
 namespace Pos
 {
-// Owner: Ahad. Calculates and fills one product row for the bill.
-bool calculateBillLine(QString billId, Order order, Product product,
-    int quantity, Bill &bill, QString &error);
+// Calculates a product's contribution to the bill and its BillDetail record.
+bool calculateBillLine(QString billId, Product product, int quantity,
+    BillLine &line, QString &error);
 
-// Owner: Ahad. NEW. One bill row per cart item (uses calculateBillLine).
+// Builds a single Bill header and one detail record per cart item.
 bool buildBill(QString billId, Order order, QVector<CartItem> items,
-    QVector<Bill> &rows, QString &error);
+    Bill &bill, QString &error);
 }

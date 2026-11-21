@@ -6,8 +6,8 @@
 // manager and one cashier; every product passes validateProduct, ids and
 // barcodes are unique and the barcode picture exists; order ids are unique;
 // every order item points to a real order and product (same barcode); every
-// bill row belongs to an order and its total adds up; a paid order's amount
-// equals the total of its bill.
+// each bill header and detail belongs together and totals add up; a paid
+// order's amount equals the total of its bill.
 
 #include "../bill/bill.h"
 #include "../common/record_codec.h"
@@ -21,6 +21,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QHash>
+#include <QRegularExpression>
 #include <QSet>
 #include <QTextStream>
 
@@ -165,21 +166,64 @@ int main(int argc, char *argv[])
         check(ordersWithItems.contains(order.id),
             QStringLiteral("Order %1 has no items in OrderDetail.txt.").arg(order.id));
 
-    // -------------------------------------------------------------- Bill.txt
-    QHash<QString, double> billTotalByOrder;
-    for (const QStringList &row : readRecords(data.filePath(QStringLiteral("Bill.txt")), 12))
+        // -------------------------------------------------------------- Bill.txt
+        QHash<QString, double> billTotalByOrder;
+        QHash<QString, QStringList> billById;
+        QSet<QString> billIds;
+        for (const QStringList &row : readRecords(data.filePath(QStringLiteral("Bill.txt")), 14))
     {
         const QString &billId = row.at(0);
         const QString &orderId = row.at(2);
+            check(QRegularExpression(QStringLiteral("^\\d{9}$")).match(billId).hasMatch(),
+                QStringLiteral("Bill ID %1 must contain 9 digits.").arg(billId));
+            check(!billIds.contains(billId),
+                QStringLiteral("Bill ID %1 appears more than once.").arg(billId));
+            billIds.insert(billId);
         check(orderById.contains(orderId),
             QStringLiteral("Bill %1 belongs to order %2, which is not in Order.txt.").arg(billId, orderId));
-        const double withoutTax = row.at(7).toDouble();
-        const double tax = row.at(8).toDouble();
-        const double discount = row.at(9).toDouble();
-        const double payable = row.at(10).toDouble();
+            const double withoutTax = row.at(3).toDouble();
+            const double tax = row.at(4).toDouble();
+            const double discount = row.at(5).toDouble();
+            const double payable = row.at(6).toDouble();
         check(sameMoney(withoutTax + tax - discount, payable),
-            QStringLiteral("Bill %1: %2 + %3 - %4 is not %5.").arg(billId, row.at(7), row.at(8), row.at(9), row.at(10)));
+                QStringLiteral("Bill %1: %2 + %3 - %4 is not %5.")
+                    .arg(billId, row.at(3), row.at(4), row.at(5), row.at(6)));
+            if (row.at(9) == QStringLiteral("paid"))
+            {
+                check(sameMoney(row.at(7).toDouble() - row.at(8).toDouble(), payable),
+                    QStringLiteral("Bill %1 amount received minus balance returned is not payable.")
+                        .arg(billId));
+            }
         billTotalByOrder[orderId] += payable;
+            billById.insert(billId, row);
+        }
+        QHash<QString, double> detailSubtotalByBill;
+        QHash<QString, double> detailDiscountByBill;
+        QSet<QString> billsWithDetails;
+        for (const QStringList &row : readRecords(
+                 data.filePath(QStringLiteral("BillDetail.txt")), 5))
+        {
+            const QString &billId = row.at(0);
+            const double unitPrice = row.at(2).toDouble();
+            const int quantity = row.at(3).toInt();
+            const double discount = row.at(4).toDouble();
+            check(billById.contains(billId),
+                QStringLiteral("BillDetail.txt references unknown bill %1.").arg(billId));
+            check(quantity > 0 && unitPrice >= 0 && discount >= 0
+                    && discount <= unitPrice * quantity,
+                QStringLiteral("Bill %1 has invalid product detail amounts.").arg(billId));
+            detailSubtotalByBill[billId] += unitPrice * quantity;
+            detailDiscountByBill[billId] += discount;
+            billsWithDetails.insert(billId);
+        }
+        for (auto it = billById.cbegin(); it != billById.cend(); ++it)
+        {
+            check(billsWithDetails.contains(it.key()),
+                QStringLiteral("Bill %1 has no BillDetail rows.").arg(it.key()));
+            check(sameMoney(detailSubtotalByBill.value(it.key()), it.value().at(3).toDouble()),
+                QStringLiteral("Bill %1 subtotal does not match BillDetail.txt.").arg(it.key()));
+            check(sameMoney(detailDiscountByBill.value(it.key()), it.value().at(5).toDouble()),
+                QStringLiteral("Bill %1 discount does not match BillDetail.txt.").arg(it.key()));
     }
     for (const Pos::Order &order : orders)
     {

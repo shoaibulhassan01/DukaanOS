@@ -1,7 +1,7 @@
-P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 Data/barcodes/100001.png#
-P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 35 Data/barcodes/100002.png#
-P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 12 Data/barcodes/100003.png#
+P0001 100001 APL Apple_juice count 250.00 12.50 10.00 36 Data/barcodes/100001.png#
+P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 30 Data/barcodes/100002.png#
+P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 10 Data/barcodes/100003.png#
 P1 123456 GTEA Green_Tea count 2855380.00 0.00 387131.00 0 Data/barcodes/123456.png#
 P11 456789 Sh Shampoo weight 300.00 20.00 4.00 1 Data/barcodes/456789.png#
-P1114 567890 Mil Milk weight 260.00 0.20 0.10 3 Data/barcodes/567890.png#
+P1114 567890 Mil Milk weight 260.00 0.20 0.10 1 Data/barcodes/567890.png#
 P1145 345678 BB Biscuit count 60.00 0.10 0.01 1 Data/barcodes/345678.png#
