@@ -105,6 +105,17 @@ git add <files> && git commit -m "message"
 git push -u origin feature/<name>
 ```
 
+## Pull Request Checks
+
+Every pull request to `main` automatically runs a basic Windows CI check:
+
+- Qt and CMake configure
+- DukaanOS application build
+- Existing POS tests
+- Barcode encoder, generator, scanner, and decoder round-trip test
+
+A pull request should only be merged when the CI check passes. Detailed manual tests such as camera hardware, PDF appearance, reports, and end-to-end sales are completed separately before release.
+
 ## License
 
 Released under the terms of the `LICENSE` file.
