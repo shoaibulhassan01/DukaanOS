@@ -34,7 +34,6 @@ qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
     ui/theme.cpp
-    ui/theme.cpp
     ui/pages/login_page.cpp
     ui/pages/dashboard_page.cpp
     ui/pages/new_order_page.cpp
