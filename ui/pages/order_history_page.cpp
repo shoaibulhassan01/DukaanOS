@@ -1,4 +1,5 @@
 #include "order_history_page.h"
+#include "../theme.h"
 #include "bill_page.h"
 #include "saved_bill.h"
 
@@ -110,10 +111,10 @@ protected:
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(QColor(QStringLiteral("#ECEEFF")));
+        painter.setBrush(UiTheme::surfaceColor(QColor(QStringLiteral("#ECEEFF"))));
         painter.drawEllipse(rect());
         painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(QColor(kNavy), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setPen(QPen(UiTheme::textColor(QColor(kNavy)), 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         painter.drawRoundedRect(QRectF(24, 17, 25, 36), 4, 4);
         painter.drawLine(QPointF(30, 27), QPointF(43, 27));
         painter.drawLine(QPointF(30, 34), QPointF(43, 34));
@@ -385,10 +386,10 @@ private:
                 if (column == 5)
                 {
                     const QString status = rows_.at(row).at(column);
-                    cell->setForeground(QColor(status == QStringLiteral("Paid")
+                    cell->setForeground(UiTheme::textColor(QColor(status == QStringLiteral("Paid")
                         ? QStringLiteral("#18764A")
                         : status == QStringLiteral("On hold")
-                            ? QStringLiteral("#B7791F") : QStringLiteral("#B42318")));
+                            ? QStringLiteral("#B7791F") : QStringLiteral("#B42318"))));
                 }
                 table_->setItem(row, column, cell);
             }
