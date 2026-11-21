@@ -98,8 +98,8 @@ void testBillIds(const QTemporaryDir &dir)
         QStringLiteral("The first bill ID of the day must be 261121001, got '%1'.").arg(id));
 
     writeFile(file,
-        QStringLiteral("261120009 A 00000120 APL 1 0 1 1 0 0 1 paid#\n"
-                       "261121004 B 00000221 APL 1 0 1 1 0 0 1 paid#\n"));
+        QStringLiteral("261120009 A 00000120 1.00 0.00 0.00 1.00 1.00 0.00 paid 0.00 0.00 2026-11-20 10:00:00#\n"
+                       "261121004 B 00000221 1.00 0.00 0.00 1.00 1.00 0.00 paid 0.00 0.00 2026-11-21 10:00:00#\n"));
     check(Pos::generateBillId(file, day, id, error) && id == QStringLiteral("261121005"),
         QStringLiteral("The bill ID must continue today's numbers (261121005), got '%1'.").arg(id));
     check(Pos::generateBillId(file, QDate(2026, 11, 22), id, error) && id == QStringLiteral("261122001"),

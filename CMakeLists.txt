@@ -22,6 +22,7 @@ set(POS_LOGIC_SOURCES
     POS/product/product_service.cpp
     POS/product/barcode_image.cpp
     POS/order/order_repository.cpp
+    POS/order/order_service.cpp
     POS/payment/payment_methods.cpp
     POS/bill/bill_repository.cpp
     POS/bill/bill_service.cpp
@@ -47,7 +48,6 @@ set(DUKAANOS_UI_SOURCES
     ui/pages/saved_bill.cpp
     ${POS_LOGIC_SOURCES}
     POS/scanner/pos_barcode_scanner.cpp
-    POS/order/order_service.cpp
     BarCode/scanner/scanner.cpp
     BarCode/decoder/decoder.cpp
     BarCode/camera/camera_scanner.cpp

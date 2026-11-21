@@ -1,22 +1,33 @@
 #pragma once
 
 #include "../bill/bill.h"
+#include "cart_item.h"
+#include "order.h"
+
+#include <QString>
+#include <QVector>
 
 namespace Pos
 {
-// Owner: Abdul Ahad - check stock and add a scanned item to the cart.
-bool addProductToOrder(QString barcode, int quantity, QString &error);
+struct OrderSession
+{
+    QString orderId;
+    QString customerName = QStringLiteral("Walk-in");
+    QString customerContact;
+    QVector<CartItem> items;
+};
 
-// Owner: Abdul Ahad - remove an item from the cart.
-bool removeProductFromOrder(QString productId, QString &error);
+bool readHeldOrders(QVector<Order> &orders, QString &error);
 
-// Owner: Abdul Ahad - save the current order with status "on-hold".
-bool holdOrder(QString &error);
+bool addProductToOrder(OrderSession &session, QString barcode, int quantity,
+    QString &error);
+bool removeProductFromOrder(OrderSession &session, QString productId,
+    QString &error);
 
-// Owner: Abdul Ahad - load a held order back into the cart.
-bool resumeOrder(QString orderId, QString &error);
+bool holdOrder(OrderSession &session, QString &error);
 
-// Owner: Abdul Ahad, with Anas for payment - complete checkout and create bill rows.
-bool completePayment(QString paymentMode, QString merchant,
-    double amountPaid, QVector<Bill> &billRows, QString &error);
+bool resumeOrder(QString orderId, OrderSession &session, QString &error);
+
+bool completePayment(OrderSession &session, QString paymentMode,
+    QString merchant, double amountPaid, Bill &bill, QString &error);
 }

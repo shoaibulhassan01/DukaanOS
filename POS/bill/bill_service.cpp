@@ -1,126 +1,122 @@
-
 #include "bill_service.h"
 
 #include <cmath>
 
 namespace Pos
 {
-    namespace
+namespace
+{
+double round2(double value)
+{
+    return std::round(value * 100.0) / 100.0;
+}
+}
+
+bool calculateBillLine(QString billId, Product product, int quantity,
+    BillLine &line, QString &error)
+{
+    error.clear();
+    line = BillLine{};
+
+    if (quantity <= 0)
     {
-        double round2(double value)
-        {
-            return std::round(value * 100.0) / 100.0;
-        }
+        error = QStringLiteral("Quantity must be at least 1.");
+        return false;
     }
 
-    // totalWithoutTax = unitPrice x qty, totalTax = tax x qty,
-    // totalDiscount = discount x qty, totalPayable = without tax + tax - discount.
-
-    bool calculateBillLine(QString billId, Order order, Product product,
-        int quantity, Bill &bill, QString &error)
+    if (product.acronym.trimmed().isEmpty()
+        || !std::isfinite(product.unitPrice)
+        || !std::isfinite(product.tax)
+        || !std::isfinite(product.discountPerUnit)
+        || product.unitPrice < 0
+        || product.tax < 0
+        || product.discountPerUnit < 0
+        || product.discountPerUnit > product.unitPrice)
     {
-        error.clear();
-        bill = Bill{};
+        error = QStringLiteral(
+            "Product acronym, price, tax or discount is invalid.");
+        return false;
+    }
 
-        if (quantity <= 0)
-        {
-            error = QStringLiteral("Quantity must be at least 1.");
-            return false;
-        }
+    BillLine calculated;
+    calculated.detail.billId = billId;
+    calculated.detail.productAcronym = product.acronym;
+    calculated.detail.unitPrice = round2(product.unitPrice);
+    calculated.detail.quantity = quantity;
+    calculated.detail.totalDiscount =
+        round2(round2(product.discountPerUnit) * quantity);
+    calculated.totalWithoutTax =
+        round2(calculated.detail.unitPrice * quantity);
+    calculated.totalTax = round2(round2(product.tax) * quantity);
+    calculated.totalPayable = round2(calculated.totalWithoutTax
+        + calculated.totalTax - calculated.detail.totalDiscount);
 
-        if (!std::isfinite(product.unitPrice)
-            || !std::isfinite(product.tax)
-            || !std::isfinite(product.discountPerUnit)
-            || product.unitPrice < 0
-            || product.tax < 0
-            || product.discountPerUnit < 0)
+    if (!std::isfinite(calculated.totalWithoutTax)
+        || !std::isfinite(calculated.totalTax)
+        || !std::isfinite(calculated.detail.totalDiscount)
+        || !std::isfinite(calculated.totalPayable)
+        || calculated.totalPayable < 0)
+    {
+        error = QStringLiteral("Bill totals are outside the supported range.");
+        return false;
+    }
+
+    line = calculated;
+    return true;
+}
+
+bool buildBill(QString billId, Order order, QVector<CartItem> items,
+    Bill &bill, QString &error)
+{
+    error.clear();
+    bill = Bill{};
+    if (items.isEmpty())
+    {
+        error = QStringLiteral("Cannot build a bill from an empty cart.");
+        return false;
+    }
+
+    Bill built;
+    built.id = billId;
+    built.customerName = order.customerName;
+    built.orderId = order.id;
+    built.paymentStatus = order.status;
+
+    for (const CartItem &item : items)
+    {
+        if (item.product.id.trimmed().isEmpty()
+            || item.product.barcode.trimmed().isEmpty())
         {
             error = QStringLiteral(
-                "Product price, tax and discount must be finite and non-negative."
-            );
-
+                "Cart item is missing its product ID or barcode.");
             return false;
         }
 
-        Bill line;
-
-        line.id = billId;
-        line.customerName = order.customerName;
-        line.orderId = order.id;
-        line.productAcronym = product.acronym;
-        line.unitPrice = round2(product.unitPrice);
-        line.discountPerUnit = round2(product.discountPerUnit);
-        line.quantity = quantity;
-
-        line.totalWithoutTax = round2(line.unitPrice * quantity);
-        line.totalTax = round2(round2(product.tax) * quantity);
-        line.totalDiscount = round2(line.discountPerUnit * quantity);
-
-        line.totalPayable = round2(
-            line.totalWithoutTax + line.totalTax - line.totalDiscount
-        );
-
-        if (!std::isfinite(line.totalWithoutTax)
-            || !std::isfinite(line.totalTax)
-            || !std::isfinite(line.totalDiscount)
-            || !std::isfinite(line.totalPayable)
-            || line.totalPayable < 0)
-        {
-            error = QStringLiteral(
-                "Bill totals are outside the supported range."
-            );
-
+        BillLine line;
+        if (!calculateBillLine(billId, item.product, item.quantity, line, error))
             return false;
-        }
 
-        line.paymentStatus = order.status;
-
-        bill = line;
-
-        return true;
+        built.details.append(line.detail);
+        built.totalWithoutTax += line.totalWithoutTax;
+        built.totalTax += line.totalTax;
+        built.totalDiscount += line.detail.totalDiscount;
     }
 
-    bool buildBill(QString billId, Order order, QVector<CartItem> items,
-        QVector<Bill> &rows, QString &error)
+    built.totalWithoutTax = round2(built.totalWithoutTax);
+    built.totalTax = round2(built.totalTax);
+    built.totalDiscount = round2(built.totalDiscount);
+    built.totalPayable = round2(
+        built.totalWithoutTax + built.totalTax - built.totalDiscount);
+    if (!std::isfinite(built.totalWithoutTax)
+        || !std::isfinite(built.totalTax)
+        || !std::isfinite(built.totalDiscount)
+        || !std::isfinite(built.totalPayable))
     {
-        error.clear();
-        rows.clear();
-
-        if (items.isEmpty())
-        {
-            error = QStringLiteral("Cannot build a bill from an empty cart.");
-            return false;
-        }
-
-        QVector<Bill> built;
-
-        for (const CartItem &item : items)
-        {
-            if (item.product.id.trimmed().isEmpty()
-                || item.product.barcode.trimmed().isEmpty()
-                || item.product.acronym.trimmed().isEmpty())
-            {
-                error = QStringLiteral(
-                    "Cart item is missing its product ID, barcode or acronym."
-                );
-
-                return false;
-            }
-
-            Bill line;
-
-            if (!calculateBillLine(
-                    billId, order, item.product, item.quantity,
-                    line, error))
-            {
-                return false;
-            }
-
-            built.append(line);
-        }
-
-        rows = built;
-
-        return true;
+        error = QStringLiteral("Bill totals are outside the supported range.");
+        return false;
     }
+
+    bill = built;
+    return true;
+}
 }

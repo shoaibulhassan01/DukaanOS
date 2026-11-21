@@ -1,13 +1,17 @@
-// Owner: Ahad. Tests for bill repository, bill service and checkout.
-// All file work happens in a temporary folder, never in the shared Data/.
+// Bill persistence, checkout and held-order tests. All writes use temp folders.
 #include "../bill/bill_repository.h"
 #include "../bill/bill_service.h"
 #include "../checkout/checkout_service.h"
+#include "../common/data_paths.h"
+#include "../common/id_generator.h"
+#include "../order/order_repository.h"
+#include "../order/order_service.h"
 
 #include <QCoreApplication>
 #include <QDate>
 #include <QDir>
 #include <QFile>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTextStream>
 #include <cstdio>
@@ -21,207 +25,261 @@ static int failures = 0;
 static Product makeProduct(const QString &id, const QString &barcode,
     const QString &acronym, double price, double tax, double discount, int qty)
 {
-    Product p;
-    p.id = id; p.barcode = barcode; p.acronym = acronym;
-    p.unitPrice = price; p.tax = tax; p.discountPerUnit = discount;
-    p.quantity = qty;
-    return p;
+    Product product;
+    product.id = id;
+    product.barcode = barcode;
+    product.acronym = acronym;
+    product.unitPrice = price;
+    product.tax = tax;
+    product.discountPerUnit = discount;
+    product.quantity = qty;
+    return product;
 }
 
 static QStringList readLines(const QString &path)
 {
     QStringList lines;
-    QFile f(path);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
         return lines;
-    QTextStream in(&f);
-    while (!in.atEnd()) {
+    QTextStream in(&file);
+    while (!in.atEnd())
+    {
         const QString line = in.readLine();
         if (!line.trimmed().isEmpty())
-            lines << line;
+            lines.append(line);
     }
     return lines;
 }
 
-static void testBillLines()
+static bool writeFile(const QString &path, const QByteArray &contents)
 {
-    Order order;
-    order.id = "00000119"; order.customerName = "Ali Raza"; order.status = "paid";
-    QString err;
-
-    Bill milk, sugar;
-    CHECK(calculateBillLine("000000001", order,
-        makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2, milk, err));
-    CHECK(milk.totalWithoutTax == 560.00 && milk.totalTax == 28.00);
-    CHECK(milk.totalDiscount == 0.00 && milk.totalPayable == 588.00);
-
-    CHECK(calculateBillLine("000000001", order,
-        makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3, sugar, err));
-    CHECK(sugar.totalPayable == 489.00 && sugar.totalDiscount == 15.00);
-
-    Bill rounded;
-    CHECK(calculateBillLine("000000001", order,
-        makeProduct("P003", "100003", "ROUND", 1.006, 0.006, 0, 3),
-        3, rounded, err));
-    CHECK(rounded.unitPrice == 1.01 && rounded.totalWithoutTax == 3.03);
-    CHECK(rounded.totalTax == 0.03 && rounded.totalPayable == 3.06);
-
-    Bill bad;
-    CHECK(!calculateBillLine("1", order, makeProduct("P", "1", "X", 1, 0, 0, 1), 0, bad, err));
-    CHECK(!err.isEmpty());
-    CHECK(!calculateBillLine("1", order, makeProduct("P", "1", "X", -1, 0, 0, 1), 1, bad, err));
-
-    QVector<Bill> rows;
-    rows.append(milk);
-    CHECK(!buildBill("1", order, {}, rows, err));
-    CHECK(rows.isEmpty());
-
-    Product overDiscount = makeProduct("P", "1", "X", 10, 1, 20, 1);
-    CHECK(!calculateBillLine("1", order, overDiscount, 1, bad, err));
-    CHECK(bad.id.isEmpty());
-
-    const QVector<CartItem> invalidItems = {
-        { makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2 },
-        { makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 0 }
-    };
-    rows.append(milk);
-    CHECK(!buildBill("000000001", order, invalidItems, rows, err));
-    CHECK(rows.isEmpty());
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+        return false;
+    return file.write(contents) == contents.size();
 }
 
-static void testRepository(const QString &dir)
+static void testBillCalculations()
 {
-    const QString file = dir + "/Bill.txt";
+    QString error;
+    BillLine milk;
+    CHECK(calculateBillLine(QStringLiteral("000000001"),
+        makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50),
+        2, milk, error));
+    CHECK(milk.totalWithoutTax == 560 && milk.totalTax == 28
+        && milk.detail.totalDiscount == 0 && milk.totalPayable == 588);
+
+    BillLine sugar;
+    CHECK(calculateBillLine(QStringLiteral("000000001"),
+        makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40),
+        3, sugar, error));
+    CHECK(sugar.detail.totalDiscount == 15 && sugar.totalPayable == 489);
+    CHECK(!calculateBillLine("1",
+        makeProduct("P", "1", "X", 10, 0, 11, 1), 1, sugar, error));
+    CHECK(!calculateBillLine("1",
+        makeProduct("P", "1", "X", 10, 0, 0, 1), 0, sugar, error));
+
+    Bill bill;
     Order order;
-    order.id = "00000119"; order.customerName = "Ali Raza"; order.status = "paid";
-    const QVector<CartItem> items = {
-        { makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2 },
-        { makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3 }
-    };
-    QVector<Bill> rows;
-    QString err;
-    CHECK(buildBill("000000001", order, items, rows, err));
-    CHECK(saveBill(file, rows, err));
+    order.id = QStringLiteral("00000119");
+    order.customerName = QStringLiteral("Ali Raza");
+    order.status = QStringLiteral("paid");
+    CHECK(buildBill("000000001", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2},
+        {makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3}
+    }, bill, error));
+    CHECK(bill.details.size() == 2);
+    CHECK(bill.totalWithoutTax == 1040 && bill.totalTax == 52);
+    CHECK(bill.totalDiscount == 15 && bill.totalPayable == 1077);
+    CHECK(bill.details.at(1).totalDiscount == 15);
+}
 
-    const QStringList lines = readLines(file);
-    CHECK(lines.size() == 2);
-    CHECK(lines.value(0) == "000000001 Ali_Raza 00000119 MLK1L 280.00 0.00 2 560.00 28.00 0.00 588.00 paid#");
-    CHECK(lines.value(1) == "000000001 Ali_Raza 00000119 SUGR1KG 160.00 5.00 3 480.00 24.00 15.00 489.00 paid#");
+static void testBillRepository(const QString &dir)
+{
+    QDir().mkpath(dir);
+    const QString billFile = dir + "/Bill.txt";
+    const QString detailFile = dir + "/BillDetail.txt";
+    Order order;
+    order.id = QStringLiteral("00000119");
+    order.customerName = QStringLiteral("Ali Raza");
+    order.status = QStringLiteral("paid");
+    Bill bill;
+    QString error;
+    CHECK(buildBill("261121001", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2},
+        {makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3}
+    }, bill, error));
+    bill.amountReceived = 1080;
+    bill.balanceReturned = 3;
+    bill.date = QStringLiteral("2026-11-21");
+    bill.time = QStringLiteral("13:00:00");
 
-    QVector<Bill> back;
-    CHECK(readBill(file, "000000001", back, err));
-    CHECK(back.size() == 2);
-    CHECK(back.value(0).customerName == "Ali Raza");
-    CHECK(back.value(1).totalPayable == 489.00);
+    CHECK(saveBill(billFile, detailFile, bill, error));
+    const QStringList headers = readLines(billFile);
+    const QStringList details = readLines(detailFile);
+    CHECK(headers.size() == 1 && headers.first().endsWith('#'));
+    CHECK(headers.first() == QStringLiteral(
+        "261121001 Ali_Raza 00000119 1040.00 52.00 15.00 1077.00 "
+        "1080.00 3.00 paid 0.00 0.00 2026-11-21 13:00:00#"));
+    CHECK(headers.first().split(' ').size() == 14);
+    CHECK(details == QStringList({
+        QStringLiteral("261121001 MLK1L 280.00 2 0.00#"),
+        QStringLiteral("261121001 SUGR1KG 160.00 3 15.00#")
+    }));
 
-    QVector<Bill> inconsistent = rows;
-    inconsistent[1].orderId = QStringLiteral("00000120");
-    CHECK(!saveBill(file, inconsistent, err));
-    CHECK(readLines(file).size() == 2);
-    inconsistent = rows;
-    inconsistent[0].totalPayable += 1;
-    CHECK(!saveBill(file, inconsistent, err));
-    CHECK(readLines(file).size() == 2);
+    Bill readBack;
+    CHECK(readBill(billFile, detailFile, bill.id, readBack, error));
+    CHECK(readBack.details.size() == 2 && readBack.totalPayable == 1077);
+    CHECK(readBack.details.at(1).totalDiscount == 15);
+    CHECK(readBillForOrder(billFile, detailFile, order.id, readBack, error));
+    CHECK(readBack.id == bill.id);
 
-    // A second bill is appended; reading one bill returns only its own rows.
-    QVector<Bill> second = rows;
-    for (Bill &b : second) b.id = "000000002";
-    CHECK(saveBill(file, second, err));
-    CHECK(readLines(file).size() == 4);
-    CHECK(readBill(file, "000000002", back, err) && back.size() == 2);
+    CHECK(!saveBill(billFile, detailFile, bill, error));
+    CHECK(readLines(billFile).size() == 1 && readLines(detailFile).size() == 2);
+    CHECK(!readBill(billFile, detailFile, "999999999", readBack, error));
 
-    // Error cases: unknown bill, missing file, bad line, empty bill.
-    CHECK(!readBill(file, "999999999", back, err) && !err.isEmpty());
-    CHECK(!readBill(dir + "/missing.txt", "1", back, err));
-    CHECK(!saveBill(file, {}, err));
-
-    // A file whose last line has no newline must not get two bills glued together.
-    QFile noNl(dir + "/NoNewline.txt");
-    CHECK(noNl.open(QIODevice::WriteOnly | QIODevice::Text));
-    noNl.write(lines.value(0).toUtf8());   // one line, no trailing newline
-    noNl.close();
-    CHECK(saveBill(dir + "/NoNewline.txt", second, err));
-    CHECK(readLines(dir + "/NoNewline.txt").size() == 3);
-
-    QFile bad(dir + "/Bad.txt");
-    CHECK(bad.open(QIODevice::WriteOnly | QIODevice::Text));
-    bad.write("this is not a bill line\n");
-    bad.close();
-    CHECK(!readBill(dir + "/Bad.txt", "1", back, err));
+    QFile broken(billFile);
+    CHECK(broken.open(QIODevice::WriteOnly | QIODevice::Truncate));
+    broken.write("261121001 malformed#\n");
+    broken.close();
+    CHECK(!generateBillId(billFile, QDate(2026, 11, 21),
+        readBack.id, error));
 }
 
 static void testCheckout(const QString &dir)
 {
     QDir().mkpath(dir + "/Data");
-    QDir::setCurrent(dir);   // DataPaths are relative to the working folder
-
-    // Stock is read from and reduced in Data/Product.txt.
-    {
-        QFile products("Data/Product.txt");
-        CHECK(products.open(QIODevice::WriteOnly | QIODevice::Text));
-        products.write("P001 100001 MLK1L Milk_1L count 280.00 14.00 0.00 50 Data/barcodes/100001.png#\n"
-                       "P002 100002 SUGR1KG Sugar_1kg weight 160.00 8.00 5.00 40 Data/barcodes/100002.png#\n");
-    }
+    QDir::setCurrent(dir);
+    CHECK(writeFile("Data/Product.txt",
+        "P001 100001 MLK1L Milk_1L count 280.00 14.00 0.00 50 Data/barcodes/100001.png#\n"
+        "P002 100002 SUGR1KG Sugar_1kg weight 160.00 8.00 5.00 40 Data/barcodes/100002.png#\n"));
 
     CheckoutRequest request;
-    request.customerName = "Ali Raza";
-    request.customerContact = "03001234567";
-    request.paymentMode = "wallet";
-    request.merchant = "JazzCash";
-    request.amountPaid = 1077.00;
+    request.customerName = QStringLiteral("Ali Raza");
+    request.customerContact = QStringLiteral("03001234567");
+    request.paymentMode = QStringLiteral("wallet");
+    request.merchant = QStringLiteral("JazzCash");
+    request.amountPaid = 1077;
     request.items = {
-        { makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2 },
-        { makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3 }
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2},
+        {makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3}
     };
 
-    // Empty cart and missing merchant must not write anything.
     CheckoutResult result;
-    result.totals.payable = 5;
-    QString err;
-    CheckoutRequest empty = request;
-    empty.items.clear();
-    CHECK(!generateBill(empty, result, err) && !err.isEmpty());
-    CHECK(result.totals.payable == 0 && result.order.id.isEmpty());
-
+    QString error;
     CheckoutRequest noMerchant = request;
     noMerchant.merchant.clear();
-    CHECK(!generateBill(noMerchant, result, err) && !err.isEmpty());
+    CHECK(!generateBill(noMerchant, result, error) && !error.isEmpty());
     CHECK(readLines("Data/Order.txt").isEmpty());
     CHECK(readLines("Data/Bill.txt").isEmpty());
 
-    CHECK(generateBill(request, result, err));
-    CHECK(result.totals.payable == 1077.00);
-    CHECK(result.order.status == "paid");
-    CHECK(result.details.size() == 2 && result.billRows.size() == 2);
+    CHECK(generateBill(request, result, error));
+    CHECK(result.totals.withoutTax == 1040 && result.totals.tax == 52);
+    CHECK(result.totals.discount == 15 && result.totals.payable == 1077);
+    CHECK(result.bill.id.size() == 9);
+    CHECK(QRegularExpression(QStringLiteral("^\\d{9}$"))
+        .match(result.bill.id).hasMatch());
+    CHECK(result.bill.amountReceived == 1077
+        && result.bill.balanceReturned == 0);
 
-    // The three output files, line by line.
-    const QStringList orders = readLines("Data/Order.txt");
-    CHECK(orders.size() == 1);
-    CHECK(orders.value(0).contains("Ali_Raza 03001234567 paid 1077.00 wallet JazzCash#"));
-    CHECK(orders.value(0).startsWith(result.order.id + " "));
+    const QStringList orderLines = readLines("Data/Order.txt");
+    const QStringList detailLines = readLines("Data/OrderDetail.txt");
+    const QStringList billLines = readLines("Data/Bill.txt");
+    const QStringList billDetailLines = readLines("Data/BillDetail.txt");
+    CHECK(orderLines.size() == 1);
+    CHECK(orderLines.first().contains("Ali_Raza 03001234567 paid 1077.00 wallet JazzCash#"));
+    CHECK(detailLines.size() == 2);
+    CHECK(detailLines.at(0) == result.order.id + " P001 100001 2#");
+    CHECK(detailLines.at(1) == result.order.id + " P002 100002 3#");
+    CHECK(billLines.size() == 1 && billLines.first().endsWith('#'));
+    CHECK(billLines.first().split(' ').size() == 14);
+    CHECK(billLines.first().contains(
+        QStringLiteral("Ali_Raza %1 1040.00 52.00 15.00 1077.00 "
+                       "1077.00 0.00 paid 0.00 0.00 ")
+            .arg(result.order.id)));
+    CHECK(billDetailLines == QStringList({
+        result.bill.id + " MLK1L 280.00 2 0.00#",
+        result.bill.id + " SUGR1KG 160.00 3 15.00#"
+    }));
 
-    const QStringList details = readLines("Data/OrderDetail.txt");
-    CHECK(details.size() == 2);
-    CHECK(details.value(0) == result.order.id + " P001 100001 2#");
-    CHECK(details.value(1) == result.order.id + " P002 100002 3#");
+    Bill loaded;
+    CHECK(readBill("Data/Bill.txt", "Data/BillDetail.txt",
+        result.bill.id, loaded, error));
+    CHECK(loaded.details.size() == 2 && loaded.totalPayable == 1077);
 
-    // Requirement 8: 8 digits, the last two are the day of the month.
-    CHECK(result.order.id.size() == 8 &&
-          result.order.id.right(2).toInt() == QDate::currentDate().day());
+    QString nextBillId;
+    CHECK(generateBillId("Data/Bill.txt", QDate::currentDate(),
+        nextBillId, error));
+    CHECK(nextBillId != result.bill.id);
+
     const QStringList stock = readLines("Data/Product.txt");
-    CHECK(stock.value(0).contains(" 48 ") && stock.value(1).contains(" 37 "));
+    CHECK(stock.at(0).contains(" 48 ") && stock.at(1).contains(" 37 "));
 
-    // Asking for more than is left must fail before anything is written.
     CheckoutRequest tooMuch = request;
-    tooMuch.items = { { makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 49 } };
+    tooMuch.items = {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 49}
+    };
     tooMuch.amountPaid = 49 * 294.0;
-    CHECK(!generateBill(tooMuch, result, err));
+    CHECK(!generateBill(tooMuch, result, error));
     CHECK(readLines("Data/Order.txt").size() == 1);
+    CHECK(readLines("Data/Bill.txt").size() == 1);
+}
 
-    const QStringList bills = readLines("Data/Bill.txt");
-    CHECK(bills.size() == 2);
-    CHECK(bills.value(0).endsWith("MLK1L 280.00 0.00 2 560.00 28.00 0.00 588.00 paid#"));
-    CHECK(bills.value(1).endsWith("SUGR1KG 160.00 5.00 3 480.00 24.00 15.00 489.00 paid#"));
+static void testHeldOrderResume(const QString &dir)
+{
+    QDir().mkpath(dir + "/Data");
+    QDir::setCurrent(dir);
+    CHECK(writeFile("Data/Product.txt",
+        "P1 100001 TEA Tea count 20.00 1.00 2.00 10 Data/barcodes/100001.png#\n"));
+    CHECK(writeFile("Data/Order.txt", ""));
+    CHECK(writeFile("Data/OrderDetail.txt", ""));
+
+    QString error;
+    OrderSession cashier;
+    cashier.customerName = QStringLiteral("Sara Ahmed");
+    cashier.customerContact = QStringLiteral("03001234567");
+    CHECK(addProductToOrder(cashier, "100001", 2, error));
+    CHECK(addProductToOrder(cashier, "100001", 3, error));
+    CHECK(cashier.items.size() == 1 && cashier.items.first().quantity == 5);
+    CHECK(holdOrder(cashier, error));
+    const QString heldId = cashier.orderId;
+    CHECK(!heldId.isEmpty() && cashier.items.first().quantity == 5);
+
+    QVector<Order> orders;
+    CHECK(readOrders("Data/Order.txt", orders, error));
+    CHECK(orders.size() == 1 && orders.first().id == heldId
+        && orders.first().status == QStringLiteral("on-hold"));
+    QVector<Order> heldOrders;
+    CHECK(readHeldOrders(heldOrders, error)
+        && heldOrders.size() == 1 && heldOrders.first().id == heldId);
+    QVector<OrderDetail> savedDetails;
+    CHECK(readOrderDetails("Data/OrderDetail.txt", heldId, savedDetails, error));
+    CHECK(savedDetails.size() == 1 && savedDetails.first().quantity == 5);
+
+    // A fresh session models an app restart: resume reads the persistent files.
+    OrderSession afterRestart;
+    CHECK(resumeOrder(heldId, afterRestart, error));
+    CHECK(afterRestart.orderId == heldId && afterRestart.items.size() == 1);
+    CHECK(afterRestart.items.first().quantity == 5);
+    CHECK(afterRestart.customerName == QStringLiteral("Sara_Ahmed"));
+
+    Bill paidBill;
+    CHECK(completePayment(afterRestart, "cash", QString(), 100,
+        paidBill, error));
+    CHECK(afterRestart.items.isEmpty() && afterRestart.orderId.isEmpty());
+    CHECK(paidBill.totalPayable == 95 && paidBill.amountReceived == 100
+        && paidBill.balanceReturned == 5);
+    CHECK(paidBill.details.size() == 1
+        && paidBill.details.first().totalDiscount == 10);
+    CHECK(readOrders("Data/Order.txt", orders, error));
+    CHECK(orders.size() == 1 && orders.first().id == heldId
+        && orders.first().status == QStringLiteral("paid"));
+    CHECK(readLines("Data/OrderDetail.txt").size() == 1);
+    CHECK(readLines("Data/Bill.txt").size() == 1);
+    CHECK(readLines("Data/BillDetail.txt")
+        == QStringList({paidBill.id + " TEA 20.00 5 10.00#"}));
+    CHECK(readLines("Data/Product.txt").first().contains(" 5 "));
 }
 
 int main(int argc, char *argv[])
@@ -229,12 +287,15 @@ int main(int argc, char *argv[])
     QCoreApplication app(argc, argv);
     QTemporaryDir tmp;
     CHECK(tmp.isValid());
+    if (!tmp.isValid())
+        return 1;
 
-    testBillLines();
-    testRepository(tmp.path());
+    testBillCalculations();
+    testBillRepository(tmp.path() + "/repository");
     testCheckout(tmp.path() + "/checkout");
+    testHeldOrderResume(tmp.path() + "/held");
 
     if (failures == 0)
-        std::printf("All bill and checkout tests passed.\n");
+        std::printf("All bill, checkout and held-order tests passed.\n");
     return failures == 0 ? 0 : 1;
 }

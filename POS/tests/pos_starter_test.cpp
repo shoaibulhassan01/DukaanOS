@@ -220,16 +220,12 @@ int main(int argc, char *argv[])
     pricedProduct.unitPrice = 10;
     pricedProduct.tax = 1.5;
     pricedProduct.discountPerUnit = 1;
-    Pos::Order order;
-    order.id = QStringLiteral("00000001");
-    order.customerName = QStringLiteral("Demo");
-    order.status = QStringLiteral("paid");
-    Pos::Bill bill;
-    if (!Pos::calculateBillLine(QStringLiteral("000000001"), order,
-            pricedProduct, 2, bill, error))
+    Pos::BillLine billLine;
+    if (!Pos::calculateBillLine(QStringLiteral("000000001"),
+            pricedProduct, 2, billLine, error))
         return fail(error);
-    if (bill.totalWithoutTax != 20 || bill.totalTax != 3 ||
-        bill.totalDiscount != 2 || bill.totalPayable != 21)
+    if (billLine.totalWithoutTax != 20 || billLine.totalTax != 3 ||
+        billLine.detail.totalDiscount != 2 || billLine.totalPayable != 21)
         return fail(QStringLiteral("Bill totals do not match the per-unit amounts."));
 
     QTextStream(stdout) << "PosStarterTest passed" << Qt::endl;
