@@ -5,6 +5,7 @@
 #include "../checkout/checkout_service.h"
 
 #include <QCoreApplication>
+#include <QDate>
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -154,6 +155,14 @@ static void testCheckout(const QString &dir)
     QDir().mkpath(dir + "/Data");
     QDir::setCurrent(dir);   // DataPaths are relative to the working folder
 
+    // Stock is read from and reduced in Data/Product.txt.
+    {
+        QFile products("Data/Product.txt");
+        CHECK(products.open(QIODevice::WriteOnly | QIODevice::Text));
+        products.write("P001 100001 MLK1L Milk_1L count 280.00 14.00 0.00 50 Data/barcodes/100001.png#\n"
+                       "P002 100002 SUGR1KG Sugar_1kg weight 160.00 8.00 5.00 40 Data/barcodes/100002.png#\n");
+    }
+
     CheckoutRequest request;
     request.customerName = "Ali Raza";
     request.customerContact = "03001234567";
@@ -195,6 +204,19 @@ static void testCheckout(const QString &dir)
     CHECK(details.size() == 2);
     CHECK(details.value(0) == result.order.id + " P001 100001 2#");
     CHECK(details.value(1) == result.order.id + " P002 100002 3#");
+
+    // Requirement 8: 8 digits, the last two are the day of the month.
+    CHECK(result.order.id.size() == 8 &&
+          result.order.id.right(2).toInt() == QDate::currentDate().day());
+    const QStringList stock = readLines("Data/Product.txt");
+    CHECK(stock.value(0).contains(" 48 ") && stock.value(1).contains(" 37 "));
+
+    // Asking for more than is left must fail before anything is written.
+    CheckoutRequest tooMuch = request;
+    tooMuch.items = { { makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 49 } };
+    tooMuch.amountPaid = 49 * 294.0;
+    CHECK(!generateBill(tooMuch, result, err));
+    CHECK(readLines("Data/Order.txt").size() == 1);
 
     const QStringList bills = readLines("Data/Bill.txt");
     CHECK(bills.size() == 2);

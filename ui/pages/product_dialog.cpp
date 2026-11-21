@@ -4,13 +4,18 @@
 
 #include <QComboBox>
 #include <QDialog>
-#include <QDoubleSpinBox>
+#include <QDoubleValidator>
 #include <QFormLayout>
+#include <QFrame>
+#include <QGuiApplication>
+#include <QIntValidator>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QPushButton>
-#include <QSpinBox>
+#include <QScrollArea>
+#include <QScreen>
 #include <QVBoxLayout>
 
 namespace
@@ -21,10 +26,10 @@ const QString kMuted = QStringLiteral("#777B91");
 const QString kLine = QStringLiteral("#E7E9F3");
 
 const QString kInputStyle = QStringLiteral(
-    "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox { background: #FAFAFD; color: %1;"
+    "QLineEdit, QComboBox { background: #FAFAFD; color: %1;"
     " border: 1px solid %2; border-radius: 7px; padding: 0 9px; min-height: 32px;"
     " font-size: 11px; }"
-    "QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus"
+    "QLineEdit:focus, QComboBox:focus"
     " { background: white; border: 1px solid %3; }"
     "QLineEdit:disabled, QComboBox:disabled { color: %4; background: #F1F2F7; }")
     .arg(kInk, kLine, kNavy, kMuted);
@@ -54,7 +59,7 @@ public:
         root->addWidget(title);
 
         auto *hint = new QLabel(mode == Mode::Add
-            ? QStringLiteral("All fields are saved to Product.txt. Barcode: 6 digits, not starting with 0.")
+            ? QStringLiteral("All fields are saved to Product.txt. Barcode: 6 digits, not starting with 0. The barcode picture is created for you.")
             : QStringLiteral("Only the price, discount and available stock can be changed."), this);
         hint->setWordWrap(true);
         hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
@@ -80,11 +85,13 @@ public:
         price_ = moneyBox();
         tax_ = moneyBox();
         discount_ = moneyBox();
-        quantity_ = new QSpinBox(this);
-        quantity_->setRange(0, 1000000);
-        quantity_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        quantity_ = new QLineEdit(this);
+        quantity_->setPlaceholderText(QStringLiteral("e.g. 10"));
+        quantity_->setValidator(new QIntValidator(0, 1000000, quantity_));
         image_ = new QLineEdit(this);
-        image_->setPlaceholderText(QStringLiteral("Filled in from the barcode"));
+        image_->setPlaceholderText(QStringLiteral("Created from the barcode"));
+        image_->setReadOnly(true);
+        image_->setToolTip(QStringLiteral("The barcode picture is generated automatically when the product is added"));
 
         form->addRow(label(QStringLiteral("Product id")), id_);
         form->addRow(label(QStringLiteral("Barcode")), barcode_);
@@ -96,7 +103,15 @@ public:
         form->addRow(label(QStringLiteral("Discount per unit (PKR)")), discount_);
         form->addRow(label(QStringLiteral("Available quantity")), quantity_);
         form->addRow(label(QStringLiteral("Barcode image")), image_);
-        root->addLayout(form);
+
+        auto *formContent = new QWidget(this);
+        formContent->setLayout(form);
+        auto *formScroll = new QScrollArea(this);
+        formScroll->setWidgetResizable(true);
+        formScroll->setFrameShape(QFrame::NoFrame);
+        formScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+        formScroll->setWidget(formContent);
+        root->addWidget(formScroll, 1);
 
         error_ = new QLabel(this);
         error_->setWordWrap(true);
@@ -128,6 +143,13 @@ public:
         buttons->addWidget(save);
         root->addLayout(buttons);
 
+        if (QScreen *screen = QGuiApplication::primaryScreen())
+        {
+            const int maxHeight = qMax(360, screen->availableGeometry().height() * 9 / 10);
+            setMaximumHeight(maxHeight);
+            resize(qMax(width(), 500), qMin(700, maxHeight));
+        }
+
         connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
         connect(save, &QPushButton::clicked, this, [this]() { trySave(); });
 
@@ -137,7 +159,7 @@ public:
             connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
                 if (!imageEdited_)
                     image_->setText(text.trimmed().isEmpty()
-                        ? QString() : QStringLiteral("barcodes/%1.bmp").arg(text.trimmed()));
+                        ? QString() : QStringLiteral("Data/barcodes/%1.png").arg(text.trimmed()));
             });
             connect(image_, &QLineEdit::textEdited, this, [this]() { imageEdited_ = true; });
         }
@@ -161,12 +183,14 @@ private:
         return l;
     }
 
-    QDoubleSpinBox *moneyBox()
+    QLineEdit *moneyBox()
     {
-        auto *box = new QDoubleSpinBox(this);
-        box->setRange(0, 10000000);
-        box->setDecimals(2);
-        box->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        auto *box = new QLineEdit(this);
+        box->setPlaceholderText(QStringLiteral("e.g. 250.00"));
+        auto *validator = new QDoubleValidator(0.0, 10000000.0, 2, box);
+        validator->setNotation(QDoubleValidator::StandardNotation);
+        validator->setLocale(QLocale::c());
+        box->setValidator(validator);
         return box;
     }
 
@@ -178,37 +202,92 @@ private:
         QString name = p.name;
         name_->setText(name.replace(QLatin1Char('_'), QLatin1Char(' ')));
         unit_->setCurrentText(p.unit);
-        price_->setValue(p.unitPrice);
-        tax_->setValue(p.tax);
-        discount_->setValue(p.discountPerUnit);
-        quantity_->setValue(p.quantity);
+        price_->setText(QString::number(p.unitPrice, 'f', 2));
+        tax_->setText(QString::number(p.tax, 'f', 2));
+        discount_->setText(QString::number(p.discountPerUnit, 'f', 2));
+        quantity_->setText(QString::number(p.quantity));
         image_->setText(p.barcodeImage);
     }
 
-    Pos::Product productFromForm() const
+    bool productFromForm(Pos::Product &p, QString &error) const
     {
-        Pos::Product p;
         p.id = id_->text().trimmed();
         p.barcode = barcode_->text().trimmed();
         p.acronym = acronym_->text().trimmed();
         // Product.txt is space separated, so spaces in a name are stored as _.
         p.name = name_->text().simplified().replace(QLatin1Char(' '), QLatin1Char('_'));
         p.unit = unit_->currentText();
-        p.unitPrice = price_->value();
-        p.tax = tax_->value();
-        p.discountPerUnit = discount_->value();
-        p.quantity = quantity_->value();
         p.barcodeImage = image_->text().trimmed();
-        return p;
+
+        const QString priceText = price_->text().trimmed();
+        const QString taxText = tax_->text().trimmed();
+        const QString discountText = discount_->text().trimmed();
+        const QString quantityText = quantity_->text().trimmed();
+        bool valid = true;
+        if (!priceText.isEmpty())
+            p.unitPrice = QLocale::c().toDouble(priceText, &valid);
+        if (!valid)
+        {
+            error = QStringLiteral("Unit price must be a valid amount.");
+            return false;
+        }
+        if (!taxText.isEmpty())
+            p.tax = QLocale::c().toDouble(taxText, &valid);
+        if (!valid)
+        {
+            error = QStringLiteral("Tax must be a valid amount.");
+            return false;
+        }
+        if (!discountText.isEmpty())
+            p.discountPerUnit = QLocale::c().toDouble(discountText, &valid);
+        if (!valid)
+        {
+            error = QStringLiteral("Discount must be a valid amount.");
+            return false;
+        }
+        if (!quantityText.isEmpty())
+            p.quantity = quantityText.toInt(&valid);
+        if (!valid)
+        {
+            error = QStringLiteral("Quantity must be a whole number.");
+            return false;
+        }
+        error.clear();
+        return true;
     }
 
     void trySave()
     {
         QString error;
-        const bool ok = mode_ == Mode::Add
-            ? Pos::addProduct(productFile_, productFromForm(), error)
-            : Pos::updateProduct(productFile_, original_.id, price_->value(),
-                  discount_->value(), quantity_->value(), error);
+        bool ok = false;
+        if (mode_ == Mode::Add)
+        {
+            Pos::Product product;
+            if (!productFromForm(product, error))
+            {
+                error_->setText(error);
+                error_->show();
+                return;
+            }
+            ok = Pos::addProduct(productFile_, product, error);
+        }
+        else
+        {
+            bool validPrice = false;
+            bool validDiscount = false;
+            bool validQuantity = false;
+            const double price = QLocale::c().toDouble(price_->text().trimmed(), &validPrice);
+            const double discount = QLocale::c().toDouble(
+                discount_->text().trimmed(), &validDiscount);
+            const int quantity = quantity_->text().trimmed().toInt(&validQuantity);
+            if (!validPrice || !validDiscount || !validQuantity)
+            {
+                error_->setText(QStringLiteral("Enter valid price, discount and quantity values."));
+                error_->show();
+                return;
+            }
+            ok = Pos::updateProduct(productFile_, original_.id, price, discount, quantity, error);
+        }
         if (ok)
         {
             accept();
@@ -227,10 +306,10 @@ private:
     QLineEdit *acronym_ = nullptr;
     QLineEdit *name_ = nullptr;
     QComboBox *unit_ = nullptr;
-    QDoubleSpinBox *price_ = nullptr;
-    QDoubleSpinBox *tax_ = nullptr;
-    QDoubleSpinBox *discount_ = nullptr;
-    QSpinBox *quantity_ = nullptr;
+    QLineEdit *price_ = nullptr;
+    QLineEdit *tax_ = nullptr;
+    QLineEdit *discount_ = nullptr;
+    QLineEdit *quantity_ = nullptr;
     QLineEdit *image_ = nullptr;
     QLabel *error_ = nullptr;
 };

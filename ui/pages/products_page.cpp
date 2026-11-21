@@ -1,4 +1,5 @@
 #include "products_page.h"
+#include "../theme.h"
 
 #include "../../POS/product/product.h"
 #include "../../POS/product/product_repository.h"
@@ -201,7 +202,7 @@ public:
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
         table_->setStyleSheet(QStringLiteral(
-            "QTableWidget { background: white; border: none; color: %1; }"
+            "QTableWidget { background: white; border: none; color: %1; outline: 0; }"
             "QTableWidget::item { padding: 5px 8px; border-bottom: 1px solid #F0F1F6; }"
             "QTableWidget::item:selected { background: #F0F0FF; color: %2; }"
             "QHeaderView::section { background: #F8F8FC; color: %3; border: none;"
@@ -330,8 +331,8 @@ private:
                 .arg(product.quantity).arg(product.unit));
             stock->setFlags(stock->flags() & ~Qt::ItemIsEditable);
             stock->setTextAlignment(Qt::AlignCenter);
-            stock->setForeground(QColor(isLowStock
-                ? QStringLiteral("#B7791F") : QStringLiteral("#18764A")));
+            stock->setForeground(UiTheme::textColor(QColor(isLowStock
+                ? QStringLiteral("#B7791F") : QStringLiteral("#18764A"))));
             table_->setItem(row, 6, stock);
             table_->setRowHeight(row, 58);
         }

@@ -2,7 +2,9 @@
 
 #include <QDateTime>
 #include <QColor>
+#include <QDialog>
 #include <QFileDialog>
+#include <QScrollArea>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -68,8 +70,9 @@ bool exportBillPdf(const OrderPreview &order, const QString &path)
         drawText(QRect(left, 84, pageWidth - 2 * left, 24), Qt::AlignLeft | Qt::AlignVCenter,
             QStringLiteral("SALES RECEIPT"));
         drawText(QRect(left, 110, pageWidth - 2 * left, 22), Qt::AlignLeft | Qt::AlignVCenter,
-            QStringLiteral("Bill: %1").arg(order.id.isEmpty()
-                ? QStringLiteral("PREVIEW") : order.id));
+            QStringLiteral("Bill: %1    Order: %2").arg(order.id.isEmpty()
+                ? QStringLiteral("PREVIEW") : order.id,
+                order.orderId.isEmpty() ? QStringLiteral("-") : order.orderId));
 
         const QString date = order.createdAt.isEmpty()
             ? QDateTime::currentDateTime().toString(QStringLiteral("dd MMM yyyy, hh:mm AP"))
@@ -197,7 +200,8 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
         QStringLiteral("color: %1; font-size: 19px; font-weight: 800; background: transparent;")
             .arg(kNavy), receipt));
     brandRow->addStretch(1);
-    brandRow->addWidget(makeLabel(QStringLiteral("PAYMENT PREVIEW"),
+    brandRow->addWidget(makeLabel(order.orderId.isEmpty() ? QStringLiteral("PAYMENT PREVIEW")
+        : (order.status.isEmpty() ? QStringLiteral("paid") : order.status).toUpper(),
         QStringLiteral("color: #18764A; background: #E8F8F0; border-radius: 8px;"
                        " padding: 7px 10px; font-size: 9px; font-weight: 700;"), receipt));
     layout->addLayout(brandRow);
@@ -232,6 +236,11 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
     {
         details->addWidget(makeLabel(QStringLiteral("PHONE"), keyStyle, receipt), 4, 0);
         details->addWidget(makeLabel(order.phone.toHtmlEscaped(), valueStyle, receipt), 5, 0);
+    }
+    if (!order.orderId.isEmpty())
+    {
+        details->addWidget(makeLabel(QStringLiteral("ORDER ID"), keyStyle, receipt), 4, 1);
+        details->addWidget(makeLabel(order.orderId, valueStyle, receipt), 5, 1);
     }
     layout->addLayout(details);
     layout->addSpacing(22);
@@ -295,7 +304,8 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
     divider->setFrameShape(QFrame::HLine);
     divider->setStyleSheet(QStringLiteral("color: %1;").arg(kLine));
     totals->addWidget(divider, 3, 0, 1, 2);
-    auto *totalLabel = makeLabel(QStringLiteral("TOTAL PAID"),
+    auto *totalLabel = makeLabel(order.status.isEmpty() || order.status == QStringLiteral("paid")
+            ? QStringLiteral("TOTAL PAID") : QStringLiteral("TOTAL"),
         QStringLiteral("color: %1; font-size: 11px; font-weight: 800; background: transparent;")
             .arg(kInk), receipt);
     auto *totalValue = makeLabel(money(order.total),
@@ -313,6 +323,36 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
     footer->setAlignment(Qt::AlignCenter);
     layout->addWidget(footer);
     return receipt;
+}
+
+// Asks where to save, writes the PDF and reports the result.
+void downloadBillPdf(const OrderPreview &order, QWidget *parent)
+{
+    QString fileName = order.id.isEmpty() ? QStringLiteral("DukaanOS-Bill")
+                                          : QStringLiteral("DukaanOS-%1").arg(order.id);
+    for (QChar &character : fileName)
+    {
+        if (!character.isLetterOrNumber() && character != QLatin1Char('-') &&
+            character != QLatin1Char('_'))
+            character = QLatin1Char('_');
+    }
+    const QString path = QFileDialog::getSaveFileName(parent,
+        QStringLiteral("Download bill as PDF"), fileName + QStringLiteral(".pdf"),
+        QStringLiteral("PDF files (*.pdf)"));
+    if (path.isEmpty())
+        return;
+
+    QString pdfPath = path;
+    if (!pdfPath.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
+        pdfPath += QStringLiteral(".pdf");
+    if (!exportBillPdf(order, pdfPath))
+    {
+        QMessageBox::critical(parent, QStringLiteral("Download failed"),
+            QStringLiteral("The bill PDF could not be written to:\n%1").arg(pdfPath));
+        return;
+    }
+    QMessageBox::information(parent, QStringLiteral("Bill downloaded"),
+        QStringLiteral("Your bill was saved as a PDF:\n%1").arg(pdfPath));
 }
 
 class BillPage : public QWidget
@@ -369,35 +409,61 @@ public:
                 onNewOrder();
         });
         connect(download, &QPushButton::clicked, this, [this, order]() {
-            QString fileName = order.id.isEmpty() ? QStringLiteral("DukaanOS-Bill")
-                                                  : QStringLiteral("DukaanOS-%1").arg(order.id);
-            for (QChar &character : fileName)
-            {
-                if (!character.isLetterOrNumber() && character != QLatin1Char('-') &&
-                    character != QLatin1Char('_'))
-                    character = QLatin1Char('_');
-            }
-            const QString path = QFileDialog::getSaveFileName(this,
-                QStringLiteral("Download bill as PDF"), fileName + QStringLiteral(".pdf"),
-                QStringLiteral("PDF files (*.pdf)"));
-            if (path.isEmpty())
-                return;
-
-            QString pdfPath = path;
-            if (!pdfPath.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive))
-                pdfPath += QStringLiteral(".pdf");
-            if (!exportBillPdf(order, pdfPath))
-            {
-                QMessageBox::critical(this, QStringLiteral("Download failed"),
-                    QStringLiteral("The bill PDF could not be written to:\n%1")
-                        .arg(pdfPath));
-                return;
-            }
-            QMessageBox::information(this, QStringLiteral("Bill downloaded"),
-                QStringLiteral("Your bill was saved as a PDF:\n%1").arg(pdfPath));
+            downloadBillPdf(order, this);
         });
     }
 };
+}
+
+void UiPages::showBillDialog(const OrderPreview &order, QWidget *parent)
+{
+    QDialog dialog(parent);
+    dialog.setWindowTitle(order.id.isEmpty() ? QStringLiteral("Bill")
+                                             : QStringLiteral("Bill %1").arg(order.id));
+    dialog.setStyleSheet(QStringLiteral("QDialog { background: #F6F7FB; }"));
+    dialog.resize(560, 760);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(18, 18, 18, 16);
+    layout->setSpacing(12);
+
+    auto *scroll = new QScrollArea(&dialog);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scroll->setStyleSheet(QStringLiteral("QScrollArea { background: transparent; border: none; }"));
+    auto *holder = new QWidget;
+    holder->setStyleSheet(QStringLiteral("background: transparent;"));
+    auto *holderLayout = new QVBoxLayout(holder);
+    holderLayout->setContentsMargins(0, 0, 0, 0);
+    holderLayout->addWidget(createBillContents(order, holder));
+    scroll->setWidget(holder);
+    layout->addWidget(scroll, 1);
+
+    auto *buttons = new QHBoxLayout;
+    buttons->addStretch(1);
+    auto *download = new QPushButton(QStringLiteral("Download PDF"), &dialog);
+    download->setCursor(Qt::PointingHandCursor);
+    download->setFixedHeight(38);
+    download->setStyleSheet(QStringLiteral(
+        "QPushButton { background: white; color: %1; border: 1px solid %2;"
+        " border-radius: 9px; padding: 0 16px; font-size: 11px; font-weight: 600; }"
+        "QPushButton:hover { background: #F8F8FC; }").arg(kNavy, kLine));
+    auto *close = new QPushButton(QStringLiteral("Close"), &dialog);
+    close->setCursor(Qt::PointingHandCursor);
+    close->setFixedHeight(38);
+    close->setDefault(true);
+    close->setStyleSheet(QStringLiteral(
+        "QPushButton { background: %1; color: white; border: none; border-radius: 9px;"
+        " padding: 0 22px; font-size: 11px; font-weight: 700; }"
+        "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
+    buttons->addWidget(download);
+    buttons->addWidget(close);
+    layout->addLayout(buttons);
+
+    QObject::connect(download, &QPushButton::clicked, &dialog,
+        [&dialog, order]() { downloadBillPdf(order, &dialog); });
+    QObject::connect(close, &QPushButton::clicked, &dialog, &QDialog::accept);
+    dialog.exec();
 }
 
 QWidget *UiPages::createBillPage(const OrderPreview &order, QWidget *parent,

@@ -202,6 +202,47 @@ namespace Pos
         return true;
     }
 
+    // Reads every row of Bill.txt that belongs to this order.
+    bool readBillForOrder(QString filePath, QString orderId, QVector<Bill> &rows,
+        QString &error)
+    {
+        rows.clear();
+        error.clear();
+
+        QFile file(filePath);
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        {
+            error = QStringLiteral("Cannot open bill file: %1").arg(filePath);
+            return false;
+        }
+
+        QTextStream in(&file);
+        int lineNumber = 0;
+        while (!in.atEnd())
+        {
+            const QString line = in.readLine();
+            ++lineNumber;
+            if (line.trimmed().isEmpty())
+                continue;
+
+            Bill bill;
+            if (!parseLine(line, bill))
+            {
+                error = QStringLiteral("Bad line %1 in %2").arg(lineNumber).arg(filePath);
+                return false;
+            }
+            if (bill.orderId == orderId)
+                rows.append(bill);
+        }
+
+        if (rows.isEmpty())
+        {
+            error = QStringLiteral("No bill is saved for order %1.").arg(orderId);
+            return false;
+        }
+        return true;
+    }
+
     // Appends one line per product row to Bill.txt (creates the file if missing).
     bool saveBill(QString filePath, QVector<Bill> rows, QString &error)
     {

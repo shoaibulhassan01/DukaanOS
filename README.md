@@ -27,7 +27,7 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 | Name | Responsibility |
 |---|---|
-| Shoaib Ul Hassan (Team Leader) | UI, final integration, AuthService login and dashboard role routing |
+| Shoaib Ul Hassan | UI, final integration, AuthService login and dashboard role routing |
 | Umar Khan | Product features/data and user repository; product search, add/edit price, discount and stock, low-stock list, and Users.txt reading |
 | Zain Ul Abideen | Order storage, order/bill IDs, POS barcode scanner adapter, barcode encoding/image generation and image-file handling |
 | Anas | Payment processing, including card payments |
@@ -104,6 +104,17 @@ git merge main
 git add <files> && git commit -m "message"
 git push -u origin feature/<name>
 ```
+
+## Pull Request Checks
+
+Every pull request to `main` automatically runs a basic Windows CI check:
+
+- Qt and CMake configure
+- DukaanOS application build
+- Existing POS tests
+- Barcode encoder, generator, scanner, and decoder round-trip test
+
+A pull request should only be merged when the CI check passes. Detailed manual tests such as camera hardware, PDF appearance, reports, and end-to-end sales are completed separately before release.
 
 ## License
 

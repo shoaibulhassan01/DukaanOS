@@ -1,4 +1,5 @@
 #include "login_page.h"
+#include "../theme.h"
 
 #include "../../POS/user/auth_service.h"
 #include "../../POS/user/user.h"
@@ -20,6 +21,7 @@
 #include <QPixmap>
 #include <QPolygonF>
 #include <QPushButton>
+#include <QShowEvent>
 #include <QRandomGenerator>
 #include <QResizeEvent>
 #include <QVBoxLayout>
@@ -187,8 +189,9 @@ protected:
         shape.addRoundedRect(box, 14, 14);
 
         QLinearGradient background(box.topLeft(), box.bottomRight());
-        background.setColorAt(0.0, QColor(0xF1, 0xF5, 0xFF));
-        background.setColorAt(1.0, QColor(0xE2, 0xEA, 0xFF));
+        const bool dark = UiTheme::isDark();
+        background.setColorAt(0.0, dark ? QColor(0x22, 0x26, 0x39) : QColor(0xF1, 0xF5, 0xFF));
+        background.setColorAt(1.0, dark ? QColor(0x26, 0x2A, 0x55) : QColor(0xE2, 0xEA, 0xFF));
         painter.fillPath(shape, background);
 
         painter.save();
@@ -205,7 +208,7 @@ protected:
         }
         painter.restore();
 
-        painter.setPen(QPen(QColor(0xCF, 0xD9, 0xF2), 1));
+        painter.setPen(QPen(dark ? QColor(0x2D, 0x32, 0x50) : QColor(0xCF, 0xD9, 0xF2), 1));
         painter.setBrush(Qt::NoBrush);
         painter.drawRoundedRect(box, 14, 14);
 
@@ -230,7 +233,7 @@ protected:
                 painter.save();
                 painter.translate(x + advance / 2.0, height() / 2.0 + glyphs_.at(i).offset);
                 painter.rotate(glyphs_.at(i).angle);
-                painter.setPen(ch.isDigit() ? QColor(0x0B, 0x1F, 0x5C) : QColor(0x15, 0x56, 0xE8));
+                painter.setPen(UiTheme::textColor(ch.isDigit() ? QColor(0x0B, 0x1F, 0x5C) : QColor(0x15, 0x56, 0xE8)));
                 painter.drawText(QPointF(-advance / 2.0, (metrics.ascent() - metrics.descent()) / 2.0),
                                  QString(ch));
                 painter.restore();
@@ -262,6 +265,10 @@ public:
         logo_.load(QStringLiteral(":/assets/dukaanos_logo.png"));
         if (background_.isNull())
             qWarning() << "Could not load login background image.";
+
+        // Light / dark mode button, top-right corner (placed in resizeEvent).
+        themeButton_ = UiTheme::createToggleButton(this, false);
+        themeButton_->raise();
         if (logo_.isNull())
             qWarning() << "Could not load DukaanOS logo.";
 
@@ -277,6 +284,11 @@ protected:
     void resizeEvent(QResizeEvent *event) override
     {
         QWidget::resizeEvent(event);
+        if (themeButton_)
+        {
+            themeButton_->move(width() - themeButton_->width() - 24, 20);
+            themeButton_->raise();   // above the form panel added later
+        }
         if (!background_.isNull())
         {
             scaledBackground_ = background_.scaled(
@@ -314,7 +326,7 @@ protected:
         painter.fillRect(left, overlay);
 
         // White form side.
-        painter.fillRect(right, Qt::white);
+        painter.fillRect(right, UiTheme::surfaceColor(QColor(Qt::white)));
     }
 
 private:
@@ -380,7 +392,7 @@ private:
             form->addSpacing(6);
         }
 
-        auto *title = new QLabel(QStringLiteral("Welcome Back!"), formWidget);
+        auto *title = new QLabel(QStringLiteral("Welcome to DukaanOS"), formWidget);
         title->setAlignment(Qt::AlignCenter);
         title->setStyleSheet(QStringLiteral(
             "color: #0B1F5C; font-size: 32px; font-weight: 800;"));
@@ -398,7 +410,7 @@ private:
             " padding: 0 12px; color: #0F1B3D; font-size: 14px;"
             " selection-background-color: #1556E8; }"
             "QLineEdit:focus { background: white; border: 2px solid #1556E8; }");
-        const QColor iconColor(0x1B, 0x3A, 0x8C);
+        const QColor iconColor = UiTheme::isDark() ? QColor(0x8A, 0xB0, 0xFF) : QColor(0x1B, 0x3A, 0x8C);
 
         usernameEdit_ = new QLineEdit(formWidget);
         usernameEdit_->setPlaceholderText(QStringLiteral("Username"));
@@ -495,6 +507,22 @@ private:
         notice_->setText(text);
     }
 
+protected:
+    // Shown again after a logout: forget the previous user, so the next
+    // person does not see "Welcome, <name>" or a filled-in username.
+    void showEvent(QShowEvent *event) override
+    {
+        QWidget::showEvent(event);
+        if (event->spontaneous())
+            return;   // window restored from minimise, not a logout
+        usernameEdit_->clear();
+        passwordEdit_->clear();
+        notice_->clear();
+        newQuestion();
+        usernameEdit_->setFocus();
+    }
+
+private:
     void newQuestion()
     {
         captcha_->regenerate();
@@ -551,6 +579,7 @@ private:
     }
 
     QPixmap background_;
+    QPushButton *themeButton_ = nullptr;
     QPixmap scaledBackground_;
     QPixmap logo_;
     QLabel *logoLabel_ = nullptr;
@@ -567,4 +596,4 @@ QWidget *UiPages::createLoginPage(QWidget *parent,
     std::function<void(const QString &)> onAuthenticated)
 {
     return new LoginPage(parent, std::move(onAuthenticated));
-}
+}

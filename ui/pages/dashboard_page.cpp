@@ -1,9 +1,11 @@
 #include "dashboard_page.h"
+#include "../theme.h"
 #include "bill_page.h"
 #include "held_orders_page.h"
 #include "new_order_page.h"
 #include "order_history_page.h"
 #include "products_page.h"
+#include "scan_product_page.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -225,8 +227,11 @@ public:
                 break;
             }
         }
-        if (initialRoleIndex >= 0)
-            roleCombo_->setCurrentIndex(initialRoleIndex);
+        // Access control: the role is the one from Users.txt for the user
+        // who logged in, and it cannot be changed here. An unknown role gets
+        // the least access (Cashier).
+        roleCombo_->setCurrentIndex(initialRoleIndex >= 0 ? initialRoleIndex : 0);
+        roleCombo_->setEnabled(false);
         updateRole();
     }
 
@@ -257,6 +262,17 @@ private:
         layout->addWidget(logo);
         layout->addStretch(1);
 
+        // Light / dark mode (sun / moon). After switching, rebuild the page so
+        // colours set in code (icons, status text) follow too; New Order is
+        // left as it is so the cart is not lost.
+        auto *themeButton = UiTheme::createToggleButton(header, true);
+        connect(themeButton, &QPushButton::clicked, this, [this]() {
+            if (currentPage_ != QStringLiteral("New Order"))
+                navigateTo(currentPage_);
+        });
+        layout->addWidget(themeButton);
+        layout->addSpacing(18);
+
         // Role (right)
         auto *roleIcon = new QLabel(header);
         roleIcon->setFixedSize(22, 22);
@@ -275,13 +291,16 @@ private:
         roleCombo_ = new QComboBox(header);
         roleCombo_->addItems({QStringLiteral("Cashier"), QStringLiteral("Manager")});
         roleCombo_->setFixedSize(140, 40);
-        roleCombo_->setCursor(Qt::PointingHandCursor);
+        roleCombo_->setToolTip(QStringLiteral("Your role comes from your login. Log out to sign in as another user."));
+        // The role is fixed by the login (see the constructor), so the box is
+        // shown read-only: no hover effect and no drop-down arrow.
         roleCombo_->setStyleSheet(QStringLiteral(
-            "QComboBox { background: rgba(255,255,255,30); color: white;"
+            "QComboBox, QComboBox:disabled { background: rgba(255,255,255,30); color: white;"
             " border: 1px solid rgba(255,255,255,60); border-radius: 10px;"
             " padding: 0 12px; font-size: 12px; font-weight: 600; }"
-            "QComboBox:hover { background: rgba(255,255,255,46); }"
-            "QComboBox::drop-down { border: none; width: 26px; }"
+            "QComboBox::drop-down { border: none; width: 0px; }"
+            "QComboBox::down-arrow { image: none; width: 0px; }"
+            "QToolTip { background: #20233B; color: white; border: none; padding: 5px 8px; }"
             "QComboBox QAbstractItemView { background: white; color: %1;"
             " selection-background-color: #EEF0FF; selection-color: %2;"
             " border: 1px solid %3; outline: 0; }")
@@ -371,6 +390,8 @@ private:
             dashboard,
             {QStringLiteral("New Order"), QStringLiteral("cart"),
                 QStringLiteral("Start a sale"), QStringLiteral("#F97316"), QStringLiteral("#FFEDE0")},
+            {QStringLiteral("Scan Product"), QStringLiteral("scan"),
+                QStringLiteral("Look up an item"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")},
             heldOrders,
             history
         };
@@ -434,7 +455,7 @@ private:
         headerTitle_->setText(currentPage_);
         headerSubtitle_->setText(currentPage_ == QStringLiteral("Dashboard")
             ? QStringLiteral("Here is your store at a glance.")
-            : QStringLiteral("%1 preview  •  %2").arg(role, currentPage_));
+            : QStringLiteral("%1  •  %2").arg(role, currentPage_));
 
         clearContent();
         if (currentPage_ == QStringLiteral("Dashboard"))
@@ -444,13 +465,10 @@ private:
             const OrderPreview *initialOrder = hasResumeOrder_ ? &resumeOrder_ : nullptr;
             contentLayout_->addWidget(UiPages::createNewOrderPage(contentHost_, initialOrder,
                 [this](const OrderPreview &order) {
-                    billPreview_ = order;
-                    billPreview_.id = QStringLiteral("BILL-%1")
-                        .arg(++billCounter_, 6, 10, QLatin1Char('0'));
-                    billPreview_.createdAt = QDateTime::currentDateTime()
-                        .toString(QStringLiteral("dd MMM yyyy, hh:mm AP"));
-                    hasBillPreview_ = true;
-                    navigateTo(QStringLiteral("Bill"));
+                    // The bill is already saved; show it in a pop-up, then
+                    // start a fresh order when it is closed.
+                    UiPages::showBillDialog(order, this);
+                    navigateTo(QStringLiteral("New Order"));
                 },
                 [this](const OrderPreview &order) {
                     OrderPreview heldOrder = order;
@@ -469,6 +487,8 @@ private:
         else if (currentPage_ == QStringLiteral("Order History"))
             contentLayout_->addWidget(UiPages::createOrderHistoryPage(contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
+        else if (currentPage_ == QStringLiteral("Scan Product"))
+            contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
@@ -517,7 +537,7 @@ private:
         layout->addStretch(1);
 
         auto *cta = new QPushButton(QStringLiteral("  ") + primary.title, banner);
-        cta->setIcon(QIcon(drawIcon(primary.icon, QColor(kNavy), 20)));
+        cta->setIcon(QIcon(drawIcon(primary.icon, UiTheme::textColor(QColor(kNavy)), 20)));
         cta->setIconSize(QSize(20, 20));
         cta->setCursor(Qt::PointingHandCursor);
         cta->setFixedSize(170, 46);
@@ -545,7 +565,7 @@ private:
         auto *tile = new QLabel(card);
         tile->setFixedSize(54, 54);
         tile->setAlignment(Qt::AlignCenter);
-        tile->setPixmap(drawIcon(iconName, QColor(accent), 26));
+        tile->setPixmap(drawIcon(iconName, UiTheme::textColor(QColor(accent)), 26));
         tile->setStyleSheet(QStringLiteral("background: %1; border-radius: 15px;").arg(tint));
         layout->addWidget(tile);
 
@@ -585,7 +605,7 @@ private:
         auto *tile = new QLabel(button);
         tile->setFixedSize(52, 52);
         tile->setAlignment(Qt::AlignCenter);
-        tile->setPixmap(drawIcon(item.icon, QColor(item.accent), 26));
+        tile->setPixmap(drawIcon(item.icon, UiTheme::textColor(QColor(item.accent)), 26));
         tile->setStyleSheet(QStringLiteral("background: %1; border-radius: 15px;").arg(item.tint));
         layout->addWidget(tile);
 
@@ -604,7 +624,7 @@ private:
         layout->addLayout(texts, 1);
 
         auto *chevron = new QLabel(button);
-        chevron->setPixmap(drawIcon(QStringLiteral("chevron"), QColor(kMuted), 18));
+        chevron->setPixmap(drawIcon(QStringLiteral("chevron"), UiTheme::textColor(QColor(kMuted)), 18));
         chevron->setStyleSheet(QStringLiteral("background: transparent;"));
         layout->addWidget(chevron);
 
@@ -742,7 +762,6 @@ private:
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
     int heldOrderCounter_ = 0;
-    int billCounter_ = 0;
     bool hasResumeOrder_ = false;
     bool hasBillPreview_ = false;
 };
@@ -751,4 +770,4 @@ private:
 QWidget *UiPages::createDashboardPage(QWidget *parent, const QString &initialRole)
 {
     return new DashboardWindow(parent, initialRole);
-}
+}

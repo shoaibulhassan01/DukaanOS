@@ -31,8 +31,10 @@ bool reduceStock(QString productFile, QVector<CartItem> soldItems, QString &erro
 bool validateProduct(Product product, QString &error);
 
 // Owner: Umar Khan - add a new product to Product.txt (Manager, Add Product).
-// Validates it and checks that its id and barcode are not already used.
-// Product.txt is created if it does not exist yet.
+// Validates it, checks that its id and barcode are not already used, creates
+// its barcode picture (barcodes/<barcode>.png next to Product.txt, using the
+// Increment 1 encoder and generator) and stores "Data/barcodes/<barcode>.png"
+// as the 10th field. Product.txt is created if it does not exist yet.
 bool addProduct(QString productFile, Product product, QString &error);
 
 // Owner: Umar Khan - edit the price, discount per unit and available
