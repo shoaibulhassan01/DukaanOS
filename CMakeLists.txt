@@ -34,6 +34,7 @@ qt_add_executable(DukaanOS
     main.cpp
     ui/ui.cpp
     ui/theme.cpp
+    ui/theme.cpp
     ui/pages/login_page.cpp
     ui/pages/dashboard_page.cpp
     ui/pages/new_order_page.cpp
@@ -86,12 +87,14 @@ if(BUILD_TESTING)
     endforeach()
 
     qt_add_executable(CameraScannerTest
+        BarCode/tests/barcode_roundtrip_test.cpp
         BarCode/encoder/encoder.cpp
         BarCode/generator/generator.cpp
         BarCode/decoder/decoder.cpp
+        BarCode/scanner/scanner.cpp
         BarCode/camera/camera_scanner.cpp
     )
     target_include_directories(CameraScannerTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
-    target_link_libraries(CameraScannerTest PRIVATE Qt6::Multimedia)
+    target_link_libraries(CameraScannerTest PRIVATE Qt6::Gui Qt6::Multimedia)
     add_test(NAME CameraScannerTest COMMAND CameraScannerTest)
 endif()
