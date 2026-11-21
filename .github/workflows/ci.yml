@@ -27,6 +27,11 @@ jobs:
           arch: win64_msvc2022_64
           modules: qtmultimedia
 
+      - name: Set up MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Configure and build
         run: |
           cmake -S . -B build-ci `
