@@ -121,9 +121,21 @@ if(BUILD_TESTING)
     set_target_properties(DataFilesTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME DataFilesTest COMMAND DataFilesTest)
 
+    # File names and formats of every data file, checked line by line against
+    # the Increment 3 requirements. One test per file group; a group whose file
+    # does not exist yet (PCategory.txt, Seasons.txt) is reported as Skipped.
+    qt_add_executable(FileFormatTest POS/tests/file_format_test.cpp POS/tests/data_format_checker.cpp)
+    target_compile_definitions(FileFormatTest PRIVATE DUKAANOS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(FileFormatTest PRIVATE Qt6::Core)
+    set_target_properties(FileFormatTest PROPERTIES WIN32_EXECUTABLE OFF)
+    foreach(format_group FileNames Users Products ProductCategories PCategory Orders Bills BillDetails Seasons)
+        add_test(NAME FileFormat.${format_group} COMMAND FileFormatTest ${format_group})
+        set_tests_properties(FileFormat.${format_group} PROPERTIES SKIP_RETURN_CODE 77)
+    endforeach()
+
     # Opens every screen offscreen: login checks, role lock, light/dark mode,
     # and a cashier sale (hold, resume, pay). Uses a temporary copy of Data/.
-    qt_add_executable(UiSmokeTest ui/tests/ui_smoke_test.cpp ${DUKAANOS_UI_SOURCES})
+    qt_add_executable(UiSmokeTest ui/tests/ui_smoke_test.cpp POS/tests/data_format_checker.cpp ${DUKAANOS_UI_SOURCES})
     qt_add_resources(UiSmokeTest ui_smoke_assets
         PREFIX "/assets"
         BASE "${CMAKE_CURRENT_SOURCE_DIR}/ui/assets"

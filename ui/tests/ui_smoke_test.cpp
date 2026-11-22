@@ -14,6 +14,7 @@
 #include "../pages/dashboard_page.h"
 #include "../pages/saved_bill.h"
 
+#include "../../POS/tests/data_format_checker.h"
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
@@ -597,6 +598,13 @@ int main(int argc, char *argv[])
     testRoles(stack);
     testCashierAccountCreation(stack);
     testSale(stack);
+
+    // The files the app has just written (sale, held order, stock change)
+    // must follow the required formats, not only the sample data.
+    DataFormat::Report formats;
+    if (DataFormat::runAll(work.path(), formats) == DataFormat::Result::Failed)
+        for (const QString &problem : formats.problems)
+            check(false, QStringLiteral("File written by the app is in the wrong format: %1").arg(problem));
 
     delete window;
     QDir::setCurrent(startFolder);   // Windows cannot delete the current folder
