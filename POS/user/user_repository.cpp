@@ -1,10 +1,29 @@
 #include "user_repository.h"
 
 #include <QFile>
+#include <QSaveFile>
 #include <QTextStream>
 
 namespace Pos
 {
+namespace
+{
+bool isValidCredential(const QString &value)
+{
+    if (value.isEmpty() || value == QStringLiteral("-")
+        || value.contains(QLatin1Char('#')))
+    {
+        return false;
+    }
+    for (const QChar ch : value)
+    {
+        if (ch.isSpace())
+            return false;
+    }
+    return true;
+}
+}
+
 // Owner: Umar Khan - read user records from Users.txt (shared with Shoaib's login feature).
 bool readUsers(QString filePath, QVector<User> &users, QString &error)
 {
@@ -66,5 +85,52 @@ bool findUser(QVector<User> users, QString username, User &user)
         }
     }
     return false;
+}
+
+bool createCashierAccount(QString filePath, QString username, QString password,
+    QString &error)
+{
+    username = username.trimmed();
+    if (!isValidCredential(username) || !isValidCredential(password))
+    {
+        error = QStringLiteral(
+            "Username and password must be non-empty and cannot contain spaces or #.");
+        return false;
+    }
+
+    QVector<User> users;
+    if (!readUsers(filePath, users, error))
+        return false;
+    for (const User &user : users)
+    {
+        if (user.username == username)
+        {
+            error = QStringLiteral("That username already exists.");
+            return false;
+        }
+    }
+
+    QSaveFile file(filePath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot update %1: %2")
+            .arg(filePath, file.errorString());
+        return false;
+    }
+
+    QTextStream output(&file);
+    for (const User &user : users)
+        output << user.username << ' ' << user.password << ' ' << user.role << "#\n";
+    output << username << ' ' << password << " cashier#\n";
+    output.flush();
+    if (output.status() != QTextStream::Ok || !file.commit())
+    {
+        error = QStringLiteral("Could not save %1: %2")
+            .arg(filePath, file.errorString());
+        return false;
+    }
+
+    error.clear();
+    return true;
 }
 }
