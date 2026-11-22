@@ -37,6 +37,7 @@ set(DUKAANOS_UI_SOURCES
     ui/theme.cpp
     ui/pages/login_page.cpp
     ui/pages/dashboard_page.cpp
+    ui/pages/cashier_accounts_page.cpp
     ui/pages/new_order_page.cpp
     ui/pages/held_orders_page.cpp
     ui/pages/order_history_page.cpp

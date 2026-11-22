@@ -55,6 +55,26 @@ int main(int argc, char *argv[])
             authenticatedUser, error))
         return fail(QStringLiteral("Login accepted an empty username."));
 
+    if (!Pos::createCashierAccount(usersPath, QStringLiteral("newcashier"),
+            QStringLiteral("newpass123"), error))
+        return fail(error);
+    if (!Pos::login(usersPath, QStringLiteral("newcashier"),
+            QStringLiteral("newpass123"), authenticatedUser, error)
+        || authenticatedUser.role != QStringLiteral("cashier"))
+    {
+        return fail(QStringLiteral("New account did not log in as a cashier."));
+    }
+    if (Pos::createCashierAccount(usersPath, QStringLiteral("newcashier"),
+            QStringLiteral("anotherpass"), error))
+    {
+        return fail(QStringLiteral("User repository accepted a duplicate username."));
+    }
+    if (Pos::createCashierAccount(usersPath, QStringLiteral("bad name"),
+            QStringLiteral("pass123"), error))
+    {
+        return fail(QStringLiteral("User repository accepted a username containing spaces."));
+    }
+
     QFile malformedFile(usersPath);
     if (!malformedFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
         return fail(QStringLiteral("Could not write malformed test data."));

@@ -18,6 +18,7 @@
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
+#include "../../POS/user/auth_service.h"
 
 #include <QAbstractItemModel>
 #include <QAbstractItemView>
@@ -280,7 +281,8 @@ void testRoles(QStackedWidget *stack)
 {
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
     check(sidebarPages(manager) == QStringList({QStringLiteral("Dashboard"), QStringLiteral("Scan Product"),
-                                                QStringLiteral("Products"), QStringLiteral("Order History")}),
+                                                QStringLiteral("Products"), QStringLiteral("Order History"),
+                                                QStringLiteral("Cashier Accounts")}),
         QStringLiteral("Manager sees the wrong pages: %1").arg(sidebarPages(manager).join(", ")));
     for (QComboBox *box : manager->findChildren<QComboBox *>())
         if (box->findText(QStringLiteral("Manager")) >= 0 && box->findText(QStringLiteral("Cashier")) >= 0)
@@ -308,11 +310,46 @@ void testRoles(QStackedWidget *stack)
         QStringLiteral("Cashier sees the wrong pages: %1").arg(sidebarPages(cashier).join(", ")));
     check(!sidebarPages(cashier).contains(QStringLiteral("Products")),
         QStringLiteral("A cashier must not be able to open Products."));
+    check(!sidebarPages(cashier).contains(QStringLiteral("Cashier Accounts")),
+        QStringLiteral("A cashier must not be able to open Cashier Accounts."));
     visitAllPages(cashier, QStringLiteral("Cashier"));
 
     QWidget *unknown = openDashboard(stack, QStringLiteral("admin"));
     check(sidebarPages(unknown) == cashierPages,
         QStringLiteral("An unknown role must get the least access (Cashier)."));
+}
+
+void testCashierAccountCreation(QStackedWidget *stack)
+{
+    QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
+    QPushButton *accounts = button(manager, QStringLiteral("Cashier Accounts"));
+    check(accounts, QStringLiteral("Manager has no Cashier Accounts page."));
+    if (!accounts)
+        return;
+    accounts->click();
+    settle();
+
+    QLineEdit *username = field(manager, QStringLiteral("Enter username"));
+    QLineEdit *password = field(manager, QStringLiteral("Enter password"));
+    QLineEdit *confirmPassword = field(manager, QStringLiteral("Enter confirm password"));
+    QPushButton *create = button(manager, QStringLiteral("Create account"));
+    check(username && password && confirmPassword && create,
+        QStringLiteral("Cashier account form is incomplete."));
+    if (!username || !password || !confirmPassword || !create)
+        return;
+
+    username->setText(QStringLiteral("smoke_cashier"));
+    password->setText(QStringLiteral("smoke123"));
+    confirmPassword->setText(QStringLiteral("smoke123"));
+    create->click();
+    settle();
+
+    Pos::User user;
+    QString error;
+    check(Pos::login(Pos::DataPaths::users(), QStringLiteral("smoke_cashier"),
+            QStringLiteral("smoke123"), user, error)
+        && user.role == QStringLiteral("cashier"),
+        QStringLiteral("Created account cannot log in as a cashier: %1").arg(error));
 }
 
 void testSale(QStackedWidget *stack)
@@ -559,6 +596,7 @@ int main(int argc, char *argv[])
 
     testLogin(window);
     testRoles(stack);
+    testCashierAccountCreation(stack);
     testSale(stack);
 
     // The files the app has just written (sale, held order, stock change)

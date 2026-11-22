@@ -1,6 +1,7 @@
 #include "dashboard_page.h"
 #include "../theme.h"
 #include "bill_page.h"
+#include "cashier_accounts_page.h"
 #include "held_orders_page.h"
 #include "new_order_page.h"
 #include "order_history_page.h"
@@ -387,7 +388,9 @@ private:
                     QStringLiteral("Look up an item"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")},
                 {QStringLiteral("Products"), QStringLiteral("box"),
                     QStringLiteral("Manage inventory"), QStringLiteral("#F59E0B"), QStringLiteral("#FEF3DC")},
-                history
+                history,
+                {QStringLiteral("Cashier Accounts"), QStringLiteral("user"),
+                    QStringLiteral("Create cashier logins"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")}
             };
         }
         return {
@@ -501,6 +504,8 @@ private:
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Cashier Accounts"))
+            contentLayout_->addWidget(UiPages::createCashierAccountsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
             contentLayout_->addWidget(UiPages::createBillPage(billPreview_, contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
