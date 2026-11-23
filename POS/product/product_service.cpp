@@ -218,6 +218,17 @@ bool generateNextProductBarcode(const QString &productFile,
     return false;
 }
 
+QString unitLabel(const QString &unit)
+{
+    return unit == QStringLiteral("weight") ? QStringLiteral("weight (kg)") : unit;
+}
+
+QString quantityText(int quantity, const QString &unit)
+{
+    return unit == QStringLiteral("weight") ? QStringLiteral("%1 kg").arg(quantity)
+                                             : QStringLiteral("%1 %2").arg(quantity).arg(unit).trimmed();
+}
+
 // Owner: Umar Khan - validate, check uniqueness, then save.
 bool addProduct(QString productFile, Product product, QString &error)
 {

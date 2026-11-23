@@ -56,6 +56,13 @@ QVector<Product> searchProducts(QVector<Product> products, QString text);
 bool deleteProduct(QString productFile, QString orderDetailFile, QString productId,
     QString &error);
 
+// Owner: Umar Khan - how a unit is shown on screen. Product.txt stores
+// "count" or "weight"; weight is in kilograms.
+//   unitLabel("count") -> "count"      unitLabel("weight") -> "weight (kg)"
+//   quantityText(36, "count") -> "36 count"   quantityText(100, "weight") -> "100 kg"
+QString unitLabel(const QString &unit);
+QString quantityText(int quantity, const QString &unit);
+
 // Owner: Umar Khan - products with this quantity or less (low-stock list).
 QVector<Product> lowStockProducts(QVector<Product> products, int threshold = 10);
 }

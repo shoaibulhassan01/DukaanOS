@@ -349,9 +349,8 @@ private:
 
             setCell(row, 1, product.barcode);
             const QString categoryId = product.categoryId;   // stored 11th field (req 2)
-            auto *category = new QTableWidgetItem(categoryNames_.contains(categoryId)
-                ? QStringLiteral("%1 \u00B7 %2").arg(categoryId, categoryNames_.value(categoryId))
-                : QStringLiteral("%1 \u00B7 not found").arg(categoryId));
+            auto *category = new QTableWidgetItem(categoryNames_.value(categoryId,
+                QStringLiteral("Not found")));
             category->setFlags(category->flags() & ~Qt::ItemIsEditable);
             if (!categoryNames_.contains(categoryId))
             {
@@ -360,13 +359,12 @@ private:
                     "No category %1 in PCategory.txt. Add it on the Categories page.").arg(categoryId));
             }
             table_->setItem(row, 2, category);
-            setCell(row, 3, product.unit);
+            setCell(row, 3, Pos::unitLabel(product.unit));
             setCell(row, 4, QStringLiteral("PKR %1").arg(product.unitPrice, 0, 'f', 2));
             setCell(row, 5, QStringLiteral("PKR %1").arg(product.tax, 0, 'f', 2));
             setCell(row, 6, QStringLiteral("PKR %1").arg(product.discountPerUnit, 0, 'f', 2));
 
-            auto *stock = new QTableWidgetItem(QStringLiteral("%1 %2")
-                .arg(product.quantity).arg(product.unit));
+            auto *stock = new QTableWidgetItem(Pos::quantityText(product.quantity, product.unit));
             stock->setFlags(stock->flags() & ~Qt::ItemIsEditable);
             stock->setTextAlignment(Qt::AlignCenter);
             stock->setForeground(UiTheme::textColor(QColor(isLowStock
