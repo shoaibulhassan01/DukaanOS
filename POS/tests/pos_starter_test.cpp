@@ -4,6 +4,7 @@
 #include "../product/product_service.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -79,7 +80,7 @@ int main(int argc, char *argv[])
     QFile saved(productFile);
     if (!saved.open(QIODevice::ReadOnly | QIODevice::Text) ||
         QString::fromUtf8(saved.readLine()).trimmed() !=
-            QStringLiteral("P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100001.bmp#"))
+            QStringLiteral("P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100001.bmp 10#"))
         return fail(QStringLiteral("saveProducts did not write the required record format."));
     saved.close();
 

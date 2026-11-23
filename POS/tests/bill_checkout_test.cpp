@@ -6,6 +6,7 @@
 #include "../common/id_generator.h"
 #include "../order/order_repository.h"
 #include "../order/order_service.h"
+#include "../product/product_repository.h"
 
 #include <QCoreApplication>
 #include <QDate>

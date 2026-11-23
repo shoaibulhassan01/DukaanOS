@@ -10,7 +10,7 @@
 
 int main()
 {
-    const std::string digits = "100001";
+    const std::string digits = "100004";
     const std::vector<std::string> patterns = encodeText(digits);
     if (patterns.empty())
     {

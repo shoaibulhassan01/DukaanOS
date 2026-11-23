@@ -17,5 +17,6 @@ struct Product
     double discountPerUnit = 0;
     int quantity = 0;
     QString barcodeImage;
+    QString categoryId;
 };
 }

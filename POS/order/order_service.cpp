@@ -1,13 +1,18 @@
 #include "order_service.h"
 
 #include "../checkout/checkout_service.h"
+#include "../bill/bill_repository.h"
 #include "../common/data_paths.h"
 #include "../common/date_format.h"
 #include "../common/id_generator.h"
 #include "../order/order_repository.h"
 #include "../product/product_repository.h"
+#include "../product/product_service.h"
 
+#include <QDate>
 #include <QDateTime>
+#include <QHash>
+#include <cmath>
 
 namespace Pos
 {
@@ -31,6 +36,46 @@ bool findOrder(const QString &orderId, Order &order, QString &error)
     return false;
 }
 
+bool checkEditPermission(const Order &order, bool managerApproved,
+    QString &error)
+{
+    if (order.status == QStringLiteral("on-hold"))
+    {
+        error.clear();
+        return true;
+    }
+    if (order.status != QStringLiteral("paid"))
+    {
+        error = QStringLiteral("Only paid or on-hold orders can be edited.");
+        return false;
+    }
+
+    Bill bill;
+    if (!readBillForOrder(DataPaths::bills(), DataPaths::billDetails(),
+            order.id, bill, error))
+        return false;
+    if (bill.paymentStatus != QStringLiteral("paid"))
+    {
+        error = QStringLiteral("The order does not have a paid bill.");
+        return false;
+    }
+
+    const QDate paidDate = QDate::fromString(bill.date, Qt::ISODate);
+    const qint64 daysSincePayment = paidDate.daysTo(QDate::currentDate());
+    if (!paidDate.isValid() || daysSincePayment < 0 || daysSincePayment > 7)
+    {
+        error = QStringLiteral("Paid orders can only be edited within 7 days of payment.");
+        return false;
+    }
+    if (!managerApproved)
+    {
+        error = QStringLiteral("Manager approval is required to edit a paid order.");
+        return false;
+    }
+    error.clear();
+    return true;
+}
+
 QVector<OrderDetail> orderDetails(const QString &orderId,
     const QVector<CartItem> &items)
 {
@@ -47,6 +92,42 @@ QVector<OrderDetail> orderDetails(const QString &orderId,
     }
     return details;
 }
+
+bool readOrderReport(bool completed, OrderReport &report, QString &error)
+{
+    QVector<Order> allOrders;
+    if (!readOrders(DataPaths::orders(), allOrders, error))
+        return false;
+
+    OrderReport result;
+    for (const Order &order : allOrders)
+    {
+        const bool isCompleted = order.status == QStringLiteral("paid")
+            || order.status == QStringLiteral("archived");
+        if (isCompleted != completed)
+            continue;
+        result.orders.append(order);
+        result.totalAmount += order.paymentAmount;
+        if (!std::isfinite(result.totalAmount))
+        {
+            error = QStringLiteral("Order report total is outside the supported range.");
+            return false;
+        }
+    }
+    report = result;
+    error.clear();
+    return true;
+}
+}
+
+bool readIncompleteOrdersReport(OrderReport &report, QString &error)
+{
+    return readOrderReport(false, report, error);
+}
+
+bool readCompletedOrdersReport(OrderReport &report, QString &error)
+{
+    return readOrderReport(true, report, error);
 }
 
 bool readHeldOrders(QVector<Order> &orders, QString &error)
@@ -187,26 +268,25 @@ bool holdOrder(OrderSession &session, QString &error)
     return true;
 }
 
-bool resumeOrder(QString orderId, OrderSession &session, QString &error)
+bool openOrderForEditing(QString orderId, bool managerApproved,
+    OrderSession &session, QString &error)
 {
+    session = OrderSession{};
     error.clear();
     Order order;
-    if (!findOrder(orderId, order, error))
+    if (!findOrder(orderId, order, error)
+        || !checkEditPermission(order, managerApproved, error))
         return false;
-    if (order.status != QStringLiteral("on-hold"))
-    {
-        error = QStringLiteral("Order %1 is not on hold.").arg(orderId);
-        return false;
-    }
 
     QVector<OrderDetail> details;
     if (!readOrderDetails(DataPaths::orderDetail(), orderId, details, error))
         return false;
     if (details.isEmpty())
     {
-        error = QStringLiteral("Held order %1 has no saved products.").arg(orderId);
+        error = QStringLiteral("Order %1 has no saved products.").arg(orderId);
         return false;
     }
+
     QVector<Product> products;
     if (!readProducts(DataPaths::products(), products, error))
         return false;
@@ -229,11 +309,11 @@ bool resumeOrder(QString orderId, OrderSession &session, QString &error)
         }
         if (found < 0)
         {
-            error = QStringLiteral(
-                "Product %1 from held order %2 is no longer available.")
+            error = QStringLiteral("Product %1 from order %2 is no longer available.")
                 .arg(detail.productId, orderId);
             return false;
         }
+
         Product product = products.at(found);
         bool merged = false;
         for (CartItem &item : restored.items)
@@ -250,6 +330,158 @@ bool resumeOrder(QString orderId, OrderSession &session, QString &error)
     }
 
     session = restored;
+    error.clear();
+    return true;
+}
+
+bool resumeOrder(QString orderId, OrderSession &session, QString &error)
+{
+    Order order;
+    if (!findOrder(orderId, order, error))
+        return false;
+    if (order.status != QStringLiteral("on-hold"))
+    {
+        error = QStringLiteral("Order %1 is not on hold.").arg(orderId);
+        return false;
+    }
+    return openOrderForEditing(orderId, false, session, error);
+}
+
+bool saveOrderEdits(OrderSession &session, bool managerApproved,
+    QString &error)
+{
+    if (session.orderId.trimmed().isEmpty() || session.items.isEmpty())
+    {
+        error = QStringLiteral("Choose an existing order with at least one product.");
+        return false;
+    }
+
+    Order order;
+    if (!findOrder(session.orderId, order, error)
+        || !checkEditPermission(order, managerApproved, error))
+        return false;
+
+    QVector<OrderDetail> previousDetails;
+    if (!readOrderDetails(DataPaths::orderDetail(), order.id, previousDetails, error))
+        return false;
+    if (previousDetails.isEmpty())
+    {
+        error = QStringLiteral("Order %1 has no saved products to replace.").arg(order.id);
+        return false;
+    }
+
+    QVector<Product> products;
+    if (!readProducts(DataPaths::products(), products, error))
+        return false;
+
+    QHash<QString, int> productIndex;
+    for (int i = 0; i < products.size(); ++i)
+    {
+        if (productIndex.contains(products.at(i).id))
+        {
+            error = QStringLiteral("Product ID %1 is duplicated in Product.txt.")
+                .arg(products.at(i).id);
+            return false;
+        }
+        productIndex.insert(products.at(i).id, i);
+    }
+
+    QHash<QString, int> previousQuantity;
+    for (const OrderDetail &detail : previousDetails)
+    {
+        const int index = productIndex.value(detail.productId, -1);
+        if (index < 0 || products.at(index).barcode != detail.barcode)
+        {
+            error = QStringLiteral("Product %1 from order %2 is no longer available.")
+                .arg(detail.productId, order.id);
+            return false;
+        }
+        previousQuantity[detail.productId] += detail.quantity;
+    }
+
+    QVector<CartItem> updatedItems;
+    QHash<QString, int> updatedQuantity;
+    for (const CartItem &item : session.items)
+    {
+        if (item.quantity <= 0)
+        {
+            error = QStringLiteral("Every product quantity must be greater than zero.");
+            return false;
+        }
+        const int index = productIndex.value(item.product.id, -1);
+        if (index < 0 || products.at(index).barcode != item.product.barcode)
+        {
+            error = QStringLiteral("Product %1 is no longer available.")
+                .arg(item.product.id);
+            return false;
+        }
+        updatedQuantity[item.product.id] += item.quantity;
+    }
+
+    for (auto it = updatedQuantity.cbegin(); it != updatedQuantity.cend(); ++it)
+    {
+        const int index = productIndex.value(it.key());
+        const int oldQuantity = previousQuantity.value(it.key());
+        const int currentStock = products.at(index).quantity;
+        const int available = order.status == QStringLiteral("paid")
+            ? currentStock + oldQuantity : currentStock;
+        if (it.value() > available)
+        {
+            error = QStringLiteral("Only %1 of %2 are available for this edit.")
+                .arg(available).arg(it.key());
+            return false;
+        }
+    }
+
+    for (int i = 0; i < session.items.size(); ++i)
+    {
+        const CartItem &item = session.items.at(i);
+        const int index = productIndex.value(item.product.id);
+        bool merged = false;
+        for (CartItem &updated : updatedItems)
+        {
+            if (updated.product.id == item.product.id)
+            {
+                updated.quantity += item.quantity;
+                merged = true;
+                break;
+            }
+        }
+        if (!merged)
+            updatedItems.append(CartItem{products.at(index), item.quantity});
+    }
+
+    QVector<Product> updatedProducts = products;
+    if (order.status == QStringLiteral("paid"))
+    {
+        for (int i = 0; i < updatedProducts.size(); ++i)
+        {
+            const QString &productId = updatedProducts.at(i).id;
+            updatedProducts[i].quantity += previousQuantity.value(productId)
+                - updatedQuantity.value(productId);
+        }
+        if (!saveProducts(DataPaths::products(), updatedProducts, error))
+            return false;
+    }
+
+    order.customerName = session.customerName.trimmed().isEmpty()
+        ? order.customerName : session.customerName.trimmed();
+    order.customerContact = session.customerContact.trimmed();
+    const QVector<OrderDetail> details = orderDetails(order.id, updatedItems);
+    if (!updateOrder(DataPaths::orders(), DataPaths::orderDetail(), order,
+            details, error))
+    {
+        if (order.status == QStringLiteral("paid"))
+        {
+            QString rollbackError;
+            if (!saveProducts(DataPaths::products(), products, rollbackError))
+                error += QStringLiteral(" Inventory rollback also failed: %1").arg(rollbackError);
+        }
+        return false;
+    }
+
+    session.items = updatedItems;
+    error.clear();
     return true;
 }
 

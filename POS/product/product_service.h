@@ -24,17 +24,19 @@ bool reduceStock(QString productFile, QVector<CartItem> soldItems, QString &erro
 
 // Owner: Umar Khan - check one product before it is saved. Rules:
 //   id, name and barcode image path present; no field contains a space or '#';
-//   barcode is exactly 6 digits with a first digit of 1-9 (what the
-//   Increment 1 encoder and scanner support); acronym is 1-8 characters;
+//   barcode is exactly 6 digits and its first two digits match the Category Id;
+//   acronym is 1-8 characters;
 //   unit is "count" or "weight"; price is above 0; tax, discount and
 //   quantity are not negative; discount is not more than the price.
 bool validateProduct(Product product, QString &error);
 
 // Owner: Umar Khan - add a new product to Product.txt (Manager, Add Product).
-// Validates it, checks that its id and barcode are not already used, creates
-// its barcode picture (barcodes/<barcode>.png next to Product.txt, using the
-// Increment 1 encoder and generator) and stores "Data/barcodes/<barcode>.png"
-// as the 10th field. Product.txt is created if it does not exist yet.
+// When barcode is empty, categoryId must name a configured category; a unique
+// category-prefixed barcode and its image are generated before saving.
+// A supplied barcode remains supported for legacy callers. Product.txt is
+// created if it does not exist yet.
+bool generateNextProductBarcode(const QString &productFile,
+    const QString &categoryId, QString &barcode, QString &error);
 bool addProduct(QString productFile, Product product, QString &error);
 
 // Owner: Umar Khan - edit the price, discount per unit and available

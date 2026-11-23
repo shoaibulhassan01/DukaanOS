@@ -1,0 +1,6 @@
+10 Drinks DRK#
+12 Tea TEA#
+34 Bakery BAK#
+45 Personal_Care PER#
+56 Dairy DAI#
+66 Snacks SNK#

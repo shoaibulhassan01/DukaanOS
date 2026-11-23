@@ -465,6 +465,14 @@ namespace Pos
         QVector<OrderDetail> allDetails;
         if (!readAllOrderDetails(detailFile, allDetails, error))
             return false;
+        QStringList originalDetailRecords;
+        for (const OrderDetail& detail : allDetails)
+        {
+            originalDetailRecords.append(makeRecord({
+                detail.orderId, detail.productId, detail.barcode,
+                QString::number(detail.quantity)
+            }));
+        }
         QVector<OrderDetail> replacedDetails;
         for (const OrderDetail& detail : allDetails)
         {
@@ -489,7 +497,16 @@ namespace Pos
         for (const Order& existing : orders)
             orderRecords.append(makeRecord(serializeOrder(existing)));
         if (!writeRecords(orderFile, orderRecords, error))
+        {
+            const QString saveError = error;
+            QString rollbackError;
+            if (!writeRecords(detailFile, originalDetailRecords, rollbackError))
+                error = QStringLiteral("%1 Order details could not be restored: %2")
+                    .arg(saveError, rollbackError);
+            else
+                error = saveError;
             return false;
+        }
 
         error.clear();
         return true;

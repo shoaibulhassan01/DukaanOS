@@ -3,6 +3,7 @@
 #include "../common/record_codec.h"
 
 #include <QFile>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QTextStream>
 
@@ -36,9 +37,9 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
 
         const QStringList fields = line.left(line.size() - 1)
             .split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        if (fields.size() != 10)
+        if (fields.size() != 10 && fields.size() != 11)
         {
-            error = QStringLiteral("Product.txt line %1 must contain 10 fields.")
+            error = QStringLiteral("Product.txt line %1 must contain 10 legacy fields or 11 fields with a Category Id.")
                 .arg(lineNumber);
             return false;
         }
@@ -58,6 +59,16 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
         product.discountPerUnit = fields.at(7).toDouble(&validDiscount);
         product.quantity = fields.at(8).toInt(&validQuantity);
         product.barcodeImage = fields.at(9);
+        product.categoryId = fields.size() == 11
+            ? fields.at(10) : product.barcode.left(2);
+        static const QRegularExpression categoryPattern(QStringLiteral("^\\d{2}$"));
+        if (!categoryPattern.match(product.categoryId).hasMatch()
+            || !product.barcode.startsWith(product.categoryId))
+        {
+            error = QStringLiteral("Product.txt line %1 has a Category Id that does not match the barcode.")
+                .arg(lineNumber);
+            return false;
+        }
         if (!validPrice || !validTax || !validDiscount || !validQuantity)
         {
             error = QStringLiteral("Product.txt line %1 has an invalid price, tax, discount or quantity.")
@@ -104,6 +115,16 @@ bool saveProducts(QString filePath, QVector<Product> products, QString &error)
             return false;
         }
 
+        const QString categoryId = product.categoryId.isEmpty()
+            ? product.barcode.left(2) : product.categoryId;
+        static const QRegularExpression categoryPattern(QStringLiteral("^\\d{2}$"));
+        if (!categoryPattern.match(categoryId).hasMatch()
+            || !product.barcode.startsWith(categoryId))
+        {
+            error = QStringLiteral("Product %1 must have a 2-digit Category Id matching its barcode.")
+                .arg(product.id);
+            return false;
+        }
         lines.append(makeRecord({
             product.id,
             product.barcode,
@@ -114,7 +135,8 @@ bool saveProducts(QString filePath, QVector<Product> products, QString &error)
             money(product.tax),
             money(product.discountPerUnit),
             QString::number(product.quantity),
-            product.barcodeImage }));
+            product.barcodeImage,
+            categoryId }));
     }
 
     // QSaveFile writes to a temporary file and only replaces Product.txt

@@ -1,10 +1,13 @@
 #include "product_dialog.h"
 
 #include "../../POS/product/product_service.h"
+#include "../../POS/product/product_category.h"
 
 #include <QComboBox>
 #include <QDialog>
+#include <QDir>
 #include <QDoubleValidator>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGuiApplication>
@@ -17,6 +20,10 @@
 #include <QScrollArea>
 #include <QScreen>
 #include <QVBoxLayout>
+#include <QTableWidget>
+#include <QHeaderView>
+#include <QMessageBox>
+#include <QRegularExpression>
 
 namespace
 {
@@ -59,7 +66,7 @@ public:
         root->addWidget(title);
 
         auto *hint = new QLabel(mode == Mode::Add
-            ? QStringLiteral("All fields are saved to Product.txt. Barcode: 6 digits, not starting with 0. The barcode picture is created for you.")
+            ? QStringLiteral("Choose a configured category. Its 2-digit ID starts your generated barcode.")
             : QStringLiteral("Only the price, discount and available stock can be changed."), this);
         hint->setWordWrap(true);
         hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
@@ -72,9 +79,19 @@ public:
 
         id_ = new QLineEdit(this);
         id_->setPlaceholderText(QStringLiteral("e.g. P0004"));
+        category_ = new QComboBox(this);
+        QVector<Pos::ProductCategory> categories;
+        const QString categoryFile = QFileInfo(productFile_).absoluteDir()
+            .filePath(QStringLiteral("PCategory.txt"));
+        if (Pos::readProductCategories(categoryFile, categories, categoryLoadError_))
+        {
+            for (const Pos::ProductCategory &category : categories)
+                category_->addItem(QStringLiteral("%1 - %2 (%3)")
+                    .arg(category.id, category.name, category.acronym), category.id);
+        }
         barcode_ = new QLineEdit(this);
-        barcode_->setPlaceholderText(QStringLiteral("e.g. 100004"));
-        barcode_->setMaxLength(6);
+        barcode_->setPlaceholderText(QStringLiteral("Generated from the category"));
+        barcode_->setReadOnly(true);
         acronym_ = new QLineEdit(this);
         acronym_->setPlaceholderText(QStringLiteral("Up to 8 characters"));
         acronym_->setMaxLength(8);
@@ -94,7 +111,8 @@ public:
         image_->setToolTip(QStringLiteral("The barcode picture is generated automatically when the product is added"));
 
         form->addRow(label(QStringLiteral("Product id")), id_);
-        form->addRow(label(QStringLiteral("Barcode")), barcode_);
+        form->addRow(label(QStringLiteral("Category")), category_);
+        form->addRow(label(QStringLiteral("Generated barcode")), barcode_);
         form->addRow(label(QStringLiteral("Acronym")), acronym_);
         form->addRow(label(QStringLiteral("Name")), name_);
         form->addRow(label(QStringLiteral("Unit")), unit_);
@@ -155,21 +173,17 @@ public:
 
         if (mode == Mode::Add)
         {
-            // Suggest the image path from the barcode; it can still be edited.
-            connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
-                if (!imageEdited_)
-                    image_->setText(text.trimmed().isEmpty()
-                        ? QString() : QStringLiteral("Data/barcodes/%1.png").arg(text.trimmed()));
-            });
-            connect(image_, &QLineEdit::textEdited, this, [this]() { imageEdited_ = true; });
+            connect(category_, qOverload<int>(&QComboBox::currentIndexChanged),
+                this, [this]() { updateBarcodePreview(); });
+            updateBarcodePreview();
         }
         else
         {
             fill(product);
-            for (QWidget *locked : { static_cast<QWidget *>(id_), static_cast<QWidget *>(barcode_),
-                     static_cast<QWidget *>(acronym_), static_cast<QWidget *>(name_),
-                     static_cast<QWidget *>(unit_), static_cast<QWidget *>(tax_),
-                     static_cast<QWidget *>(image_) })
+            for (QWidget *locked : { static_cast<QWidget *>(id_), static_cast<QWidget *>(category_),
+                     static_cast<QWidget *>(barcode_), static_cast<QWidget *>(acronym_),
+                     static_cast<QWidget *>(name_), static_cast<QWidget *>(unit_),
+                     static_cast<QWidget *>(tax_), static_cast<QWidget *>(image_) })
                 locked->setEnabled(false);
             price_->setFocus();
         }
@@ -194,9 +208,27 @@ private:
         return box;
     }
 
+    void updateBarcodePreview()
+    {
+        const QString categoryId = category_->currentData().toString();
+        QString barcode;
+        QString error;
+        if (Pos::generateNextProductBarcode(productFile_, categoryId, barcode, error))
+        {
+            barcode_->setText(barcode);
+            image_->setText(QStringLiteral("Data/barcodes/%1.png").arg(barcode));
+        }
+        else
+        {
+            barcode_->clear();
+            image_->clear();
+        }
+    }
+
     void fill(const Pos::Product &p)
     {
         id_->setText(p.id);
+        category_->setCurrentIndex(category_->findData(p.categoryId));
         barcode_->setText(p.barcode);
         acronym_->setText(p.acronym);
         QString name = p.name;
@@ -212,7 +244,8 @@ private:
     bool productFromForm(Pos::Product &p, QString &error) const
     {
         p.id = id_->text().trimmed();
-        p.barcode = barcode_->text().trimmed();
+        p.categoryId = category_->currentData().toString();
+        p.barcode.clear();
         p.acronym = acronym_->text().trimmed();
         // Product.txt is space separated, so spaces in a name are stored as _.
         p.name = name_->text().simplified().replace(QLatin1Char(' '), QLatin1Char('_'));
@@ -269,7 +302,10 @@ private:
                 error_->show();
                 return;
             }
-            ok = Pos::addProduct(productFile_, product, error);
+            if (!categoryLoadError_.isEmpty())
+                error = categoryLoadError_;
+            else
+                ok = Pos::addProduct(productFile_, product, error);
         }
         else
         {
@@ -298,10 +334,11 @@ private:
     }
 
     QString productFile_;
+    QString categoryLoadError_;
     Mode mode_;
     Pos::Product original_;
-    bool imageEdited_ = false;
     QLineEdit *id_ = nullptr;
+    QComboBox *category_ = nullptr;
     QLineEdit *barcode_ = nullptr;
     QLineEdit *acronym_ = nullptr;
     QLineEdit *name_ = nullptr;
@@ -325,5 +362,120 @@ bool UiPages::showEditProductDialog(QWidget *parent, const QString &productFile,
     const Pos::Product &product)
 {
     ProductDialog dialog(parent, productFile, Mode::Edit, product);
+    return dialog.exec() == QDialog::Accepted;
+}
+
+bool UiPages::showProductCategoryDialog(QWidget *parent, const QString &productFile)
+{
+    const QString categoryFile = QFileInfo(productFile).absoluteDir()
+        .filePath(QStringLiteral("PCategory.txt"));
+    QVector<Pos::ProductCategory> categories;
+    QString error;
+    if (!Pos::readProductCategories(categoryFile, categories, error))
+    {
+        QMessageBox::warning(parent, QStringLiteral("Cannot load categories"), error);
+        return false;
+    }
+
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QStringLiteral("Configure product categories"));
+    dialog.setModal(true);
+    dialog.setMinimumWidth(520);
+    auto *root = new QVBoxLayout(&dialog);
+    root->setContentsMargins(20, 18, 20, 16);
+    root->setSpacing(10);
+
+    auto *hint = new QLabel(QStringLiteral(
+        "Category IDs are exactly two digits and become the first two barcode digits. "
+        "Use underscores instead of spaces."), &dialog);
+    hint->setWordWrap(true);
+    root->addWidget(hint);
+
+    auto *table = new QTableWidget(&dialog);
+    table->setColumnCount(3);
+    table->setHorizontalHeaderLabels({QStringLiteral("CATEGORY ID"),
+        QStringLiteral("CATEGORY NAME"), QStringLiteral("ACRONYM")});
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->verticalHeader()->hide();
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    root->addWidget(table, 1);
+
+    auto appendCategory = [table](const Pos::ProductCategory &category) {
+        const int row = table->rowCount();
+        table->insertRow(row);
+        table->setItem(row, 0, new QTableWidgetItem(category.id));
+        table->setItem(row, 1, new QTableWidgetItem(category.name));
+        table->setItem(row, 2, new QTableWidgetItem(category.acronym));
+    };
+    for (const Pos::ProductCategory &category : categories)
+        appendCategory(category);
+
+    auto *fields = new QHBoxLayout;
+    auto *id = new QLineEdit(&dialog);
+    id->setMaxLength(2);
+    id->setPlaceholderText(QStringLiteral("ID (00-99)"));
+    auto *name = new QLineEdit(&dialog);
+    name->setPlaceholderText(QStringLiteral("Name"));
+    auto *acronym = new QLineEdit(&dialog);
+    acronym->setPlaceholderText(QStringLiteral("Acronym"));
+    fields->addWidget(id);
+    fields->addWidget(name, 2);
+    fields->addWidget(acronym);
+    root->addLayout(fields);
+
+    auto *buttons = new QHBoxLayout;
+    auto *add = new QPushButton(QStringLiteral("Add category"), &dialog);
+    auto *cancel = new QPushButton(QStringLiteral("Cancel"), &dialog);
+    auto *save = new QPushButton(QStringLiteral("Save categories"), &dialog);
+    buttons->addWidget(add);
+    buttons->addStretch(1);
+    buttons->addWidget(cancel);
+    buttons->addWidget(save);
+    root->addLayout(buttons);
+
+    const QRegularExpression idPattern(QStringLiteral("^\\d{2}$"));
+    QObject::connect(add, &QPushButton::clicked, &dialog, [&]() {
+        Pos::ProductCategory category{id->text().trimmed(), name->text().trimmed(),
+            acronym->text().trimmed()};
+        if (!idPattern.match(category.id).hasMatch()
+            || category.name.isEmpty() || category.acronym.isEmpty()
+            || category.name.contains(QLatin1Char(' '))
+            || category.acronym.contains(QLatin1Char(' '))
+            || category.name.contains(QLatin1Char('\t'))
+            || category.acronym.contains(QLatin1Char('\t'))
+            || category.name.contains(QLatin1Char('#'))
+            || category.acronym.contains(QLatin1Char('#')))
+        {
+            QMessageBox::warning(&dialog, QStringLiteral("Invalid category"),
+                QStringLiteral("Enter a 2-digit ID, a name and an acronym. "
+                    "Text fields cannot contain spaces or #."));
+            return;
+        }
+        for (const Pos::ProductCategory &existing : categories)
+        {
+            if (existing.id == category.id)
+            {
+                QMessageBox::warning(&dialog, QStringLiteral("Duplicate category"),
+                    QStringLiteral("Category ID %1 is already configured.").arg(category.id));
+                return;
+            }
+        }
+        categories.append(category);
+        appendCategory(category);
+        id->clear();
+        name->clear();
+        acronym->clear();
+        id->setFocus();
+    });
+    QObject::connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
+    QObject::connect(save, &QPushButton::clicked, &dialog, [&]() {
+        if (!Pos::saveProductCategories(categoryFile, categories, error))
+        {
+            QMessageBox::warning(&dialog, QStringLiteral("Cannot save categories"), error);
+            return;
+        }
+        dialog.accept();
+    });
+
     return dialog.exec() == QDialog::Accepted;
 }
