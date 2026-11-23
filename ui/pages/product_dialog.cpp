@@ -35,7 +35,11 @@ const QString kInputStyle = QStringLiteral(
     " font-size: 11px; }"
     "QLineEdit:focus, QComboBox:focus"
     " { background: white; border: 1px solid %3; }"
-    "QLineEdit:disabled, QComboBox:disabled { color: %4; background: #F1F2F7; }")
+    "QLineEdit:disabled, QComboBox:disabled { color: %4; background: #F1F2F7; }"
+    // The arrow sits inside the field: no separate box or divider around it.
+    "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
+    " width: 28px; border: none; background: transparent; }"
+    "QComboBox::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }")
     .arg(kInk, kLine, kNavy, kMuted);
 
 enum class Mode { Add, Edit };

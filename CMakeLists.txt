@@ -65,6 +65,7 @@ set(DUKAANOS_ASSETS
     ui/assets/dukaanos_wordmark.png
     ui/assets/market_background.jpg
     ui/assets/checkbox_check.png
+    ui/assets/combo_arrow.png
 )
 
 qt_add_executable(DukaanOS
