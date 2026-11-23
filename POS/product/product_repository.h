@@ -11,7 +11,7 @@ namespace Pos
 bool readProducts(QString filePath, QVector<Product> &products, QString &error);
 
 // Owner: Umar Khan - save all products back to Product.txt, one record per
-// line in the required 10-field order. The old file is only replaced once
-// every line has been written, so a failure never leaves a half-written file.
+// line. Legacy 10-field records are still read; writes include the Category Id
+// as the final field. The old file is replaced only after a complete write.
 bool saveProducts(QString filePath, QVector<Product> products, QString &error);
 }

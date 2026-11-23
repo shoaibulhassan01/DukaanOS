@@ -156,6 +156,15 @@ public:
             .arg(kLine));
         heading->addWidget(deleteButton_);
 
+        auto *categoryButton = new QPushButton(QStringLiteral("Manage categories"), card);
+        categoryButton->setCursor(Qt::PointingHandCursor);
+        categoryButton->setFixedHeight(36);
+        categoryButton->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
+        heading->addWidget(categoryButton);
+
         auto *addButton = new QPushButton(QStringLiteral("+ Add product"), card);
         addButton->setCursor(Qt::PointingHandCursor);
         addButton->setFixedHeight(36);
@@ -240,6 +249,9 @@ public:
         connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int, int) { editSelected(); });
         connect(editButton_, &QPushButton::clicked, this, [this]() { editSelected(); });
         connect(deleteButton_, &QPushButton::clicked, this, [this]() { deleteSelected(); });
+        connect(categoryButton, &QPushButton::clicked, this, [this]() {
+            UiPages::showProductCategoryDialog(this, productFilePath());
+        });
         connect(addButton, &QPushButton::clicked, this, [this]() {
             if (UiPages::showAddProductDialog(this, productFilePath()))
             {

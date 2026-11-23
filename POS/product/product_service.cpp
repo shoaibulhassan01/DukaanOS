@@ -1,11 +1,14 @@
 #include "product_service.h"
 
 #include "product_repository.h"
+#include "product_category.h"
 #include "barcode_image.h"
 #include "../category/category_service.h"
 #include "../common/record_codec.h"
 
 #include <QFile>
+#include <QSet>
+#include <QRegularExpression>
 #include <QFileInfo>
 #include <QDir>
 #include <QRegularExpression>
@@ -101,14 +104,8 @@ bool hasNoSpaceOrHash(const QString &value)
 
 bool isSixDigitBarcode(const QString &barcode)
 {
-    if (barcode.size() != 6 || barcode.at(0) == QLatin1Char('0'))
-        return false;
-    for (const QChar c : barcode)
-    {
-        if (!c.isDigit())
-            return false;
-    }
-    return true;
+    static const QRegularExpression pattern(QStringLiteral("^\\d{6}$"));
+    return pattern.match(barcode).hasMatch();
 }
 
 int indexOfId(const QVector<Product> &products, const QString &id)
@@ -148,7 +145,12 @@ bool validateProduct(Product product, QString &error)
     if (!productIdPattern().match(product.id).hasMatch())
         error = QStringLiteral("Product id must be P followed by 4 digits, e.g. P0016.");
     else if (!isSixDigitBarcode(product.barcode))
-        error = QStringLiteral("Barcode must be exactly 6 digits and cannot start with 0.");
+        error = QStringLiteral("Barcode must be exactly 6 digits.");
+    else if ((!product.categoryId.isEmpty() && product.categoryId.size() != 2)
+        || (!product.categoryId.isEmpty() && !product.barcode.startsWith(product.categoryId)))
+        error = QStringLiteral("Category Id must be 2 digits and match the barcode prefix.");
+    else if (product.categoryId.isEmpty() && product.barcode.startsWith(QLatin1Char('0')))
+        error = QStringLiteral("Category Id is required for a barcode starting with 0.");
     else if (product.acronym.isEmpty() || product.acronym.size() > 8)
         error = QStringLiteral("Acronym must be 1 to 8 characters.");
     else if (product.name.isEmpty())
@@ -175,6 +177,52 @@ bool validateProduct(Product product, QString &error)
         error.clear();
         return true;
     }
+    return false;
+}
+
+bool generateNextProductBarcode(const QString &productFile,
+    const QString &categoryId, QString &barcode, QString &error)
+{
+    barcode.clear();
+    static const QRegularExpression categoryPattern(QStringLiteral("^\\d{2}$"));
+    if (!categoryPattern.match(categoryId).hasMatch())
+    {
+        error = QStringLiteral("Select a valid 2-digit product category first.");
+        return false;
+    }
+
+    QVector<ProductCategory> categories;
+    const QString categoryFile = QFileInfo(productFile).absoluteDir()
+        .filePath(QStringLiteral("PCategory.txt"));
+    if (!readProductCategories(categoryFile, categories, error))
+        return false;
+    bool configured = false;
+    for (const ProductCategory &category : categories)
+        configured = configured || category.id == categoryId;
+    if (!configured)
+    {
+        error = QStringLiteral("Category %1 is not configured in PCategory.txt.").arg(categoryId);
+        return false;
+    }
+
+    QVector<Product> products;
+    if (!loadForEdit(productFile, products, error))
+        return false;
+    QSet<QString> used;
+    for (const Product &product : products)
+        used.insert(product.barcode);
+    for (int sequence = 1; sequence <= 9999; ++sequence)
+    {
+        const QString candidate = categoryId
+            + QStringLiteral("%1").arg(sequence, 4, 10, QLatin1Char('0'));
+        if (!used.contains(candidate))
+        {
+            barcode = candidate;
+            error.clear();
+            return true;
+        }
+    }
+    error = QStringLiteral("No barcode numbers remain for category %1.").arg(categoryId);
     return false;
 }
 
@@ -216,6 +264,16 @@ bool addProduct(QString productFile, Product product, QString &error, QString *a
     if (!nextProductId(productFile, product.id, error))
         return false;
     product.barcode = product.barcode.trimmed();
+    if (product.barcode.isEmpty())
+    {
+        if (!generateNextProductBarcode(productFile, product.categoryId,
+                product.barcode, error))
+            return false;
+    }
+    else if (product.categoryId.isEmpty() && isSixDigitBarcode(product.barcode))
+    {
+        product.categoryId = product.barcode.left(2);
+    }
     product.barcodeImage = QStringLiteral("Data/barcodes/%1.png").arg(product.barcode);
     if (!validateProduct(product, error))
         return false;

@@ -83,13 +83,20 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 
 | File | Fields |
 |---|---|
-| Product.txt | id, barcode, acronym (max 8), name, unit, unit price, tax (PKR), discount per unit, available quantity, barcode image path |
+| PCategory.txt | category id (2 digits), category name, category acronym |
+| Product.txt | id, barcode (category id + 4-digit sequence), acronym (max 8), name, unit, unit price, tax (PKR), discount per unit, available quantity, barcode image path, category id |
 | Order.txt | order id (8 digits), date, time, customer name, contact, status, payment amount, payment mode, merchant |
 | OrderDetail.txt | order id, product id, barcode, quantity |
 | Bill.txt | bill id (9 digits), customer name, order id, acronym, unit price, discount per unit, quantity, total without tax, total tax, total discount, total payable, status |
 | Users.txt | username, password, role |
 
 Order status: `in-progress`, `on-hold`, `paid`, `archived`. Payment mode: `cash`, `card`, `wallet`.
+
+### Order reports and editing (POS service API)
+
+Shoaib's UI can call `readIncompleteOrdersReport(report, error)` and `readCompletedOrdersReport(report, error)`. Each `OrderReport` has the matching `orders` and their summed `totalAmount` (from `Order.txt`).
+
+For editing, call `openOrderForEditing(orderId, false, session, error)`. On-hold orders open without approval. For a paid order, the service returns an approval message if it was paid within 7 days; after the UI authenticates a manager, retry with `managerApproved=true`. The UI then edits `session.items` and calls `saveOrderEdits(session, managerApproved, error)`. Paid edits adjust stock by the quantity difference; on-hold edits do not change stock. Orders paid more than 7 days ago are refused even with approval.
 
 `Users.txt` credentials are plain-text demonstration data for local UI testing only. Do not use real or reused passwords.
 
@@ -112,8 +119,10 @@ Every pull request to `main` automatically runs a basic Windows CI check:
 - Qt and CMake configure
 - DukaanOS application build
 - Existing POS tests
+- `ZainRequirementsTest` for category-prefixed barcode images, order reports, and edit rules
 - Barcode encoder, generator, scanner, and decoder round-trip test
 
+Run the full local suite with `ctest --test-dir build/<configured-build-directory> --output-on-failure`.
 A pull request should only be merged when the CI check passes. Detailed manual tests such as camera hardware, PDF appearance, reports, and end-to-end sales are completed separately before release.
 
 ## License

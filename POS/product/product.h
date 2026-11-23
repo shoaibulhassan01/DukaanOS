@@ -17,9 +17,7 @@ struct Product
     double discountPerUnit = 0;
     int quantity = 0;
     QString barcodeImage;
-    // Increment 3, req 2: the product's category (PCategory.txt), stored as
-    // the 11th field of Product.txt. Always the first two digits of the
-    // barcode (req 1).
+    // Stored as the 11th Product.txt field and matches the barcode prefix.
     QString categoryId;
 };
 }

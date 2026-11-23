@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
+get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
 
 qt_standard_project_setup()
 
@@ -19,6 +20,7 @@ set(POS_LOGIC_SOURCES
     POS/user/user_repository.cpp
     POS/user/auth_service.cpp
     POS/product/product_repository.cpp
+    POS/product/product_category.cpp
     POS/product/product_service.cpp
     POS/product/barcode_image.cpp
     POS/category/category_repository.cpp
@@ -100,8 +102,20 @@ if(BUILD_TESTING)
         add_test(NAME ${test_name} COMMAND ${test_name})
     endforeach()
 
+    qt_add_executable(ZainRequirementsTest
+        POS/tests/zain_requirements_test.cpp
+        ${POS_LOGIC_SOURCES}
+        BarCode/decoder/decoder.cpp
+        BarCode/scanner/scanner.cpp
+    )
+    target_include_directories(ZainRequirementsTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
+    target_link_libraries(ZainRequirementsTest PRIVATE Qt6::Gui)
+    set_target_properties(ZainRequirementsTest PROPERTIES WIN32_EXECUTABLE OFF)
+    add_test(NAME ZainRequirementsTest COMMAND ZainRequirementsTest)
+
     qt_add_executable(CameraScannerTest
         BarCode/tests/barcode_roundtrip_test.cpp
+        POS/product/barcode_image.cpp
         BarCode/encoder/encoder.cpp
         BarCode/generator/generator.cpp
         BarCode/decoder/decoder.cpp
@@ -167,5 +181,6 @@ if(BUILD_TESTING)
     target_link_libraries(UiSmokeTest PRIVATE Qt6::Widgets Qt6::Multimedia)
     set_target_properties(UiSmokeTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME UiSmokeTest COMMAND UiSmokeTest)
-    set_tests_properties(UiSmokeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    set_tests_properties(UiSmokeTest PROPERTIES ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORM_PLUGIN_PATH=${QT_INSTALL_PREFIX}/plugins/platforms")
 endif()

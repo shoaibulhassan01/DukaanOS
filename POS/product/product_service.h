@@ -25,27 +25,24 @@ bool reduceStock(QString productFile, QVector<CartItem> soldItems, QString &erro
 // Owner: Umar Khan - check one product before it is saved. Rules:
 //   id is P followed by exactly 4 digits (P0001-P9999, capital P);
 //   name and barcode image path present; no field contains a space or '#';
-//   barcode is exactly 6 digits with a first digit of 1-9 (what the
-//   Increment 1 encoder and scanner support); acronym is 1-8 characters;
+//   barcode is exactly 6 digits with a first digit of 1-9 and its first two
+//   digits match the Category Id; acronym is 1-8 characters;
 //   unit is "count" or "weight"; price is above 0; tax, discount and
 //   quantity are not negative; discount is not more than the price.
 bool validateProduct(Product product, QString &error);
 
-// Owner: Umar Khan - the Id the next new product gets: one more than the
-// highest Id in productFile, as P + 4 digits (P0001 for a missing or empty
-// file). Gaps are not filled. Only a never-ordered product can be deleted, so
-// even if the highest Id is deleted and given again, no old order points at
-// it. Fails once P9999 is used.
+// Generate the next unused barcode for a configured category.
+bool generateNextProductBarcode(const QString &productFile,
+    const QString &categoryId, QString &barcode, QString &error);
+
+// Return the next product ID: one more than the highest ID, or P0001 for an
+// empty file. Gaps are not filled; fails once P9999 is used.
 bool nextProductId(const QString &productFile, QString &id, QString &error);
 
-// Owner: Umar Khan - add a new product to Product.txt (Manager, Add Product).
-// The product id is assigned here with nextProductId (any id passed in is
-// ignored) and returned in assignedId when it is given. Validates it, checks that the category its barcode starts with exists in
-// PCategory.txt (next to Product.txt, req 1), that its id and barcode are not
-// already used, stores the Category Id (req 2), creates
-// its barcode picture (barcodes/<barcode>.png next to Product.txt, using the
-// Increment 1 encoder and generator) and stores "Data/barcodes/<barcode>.png"
-// as the 10th field. Product.txt is created if it does not exist yet.
+// Add a product with an automatically assigned ID. Validates it, requires its
+// barcode category to exist in PCategory.txt, stores the category ID, generates
+// its barcode image and creates Product.txt if needed. Returns the assigned ID
+// when requested.
 bool addProduct(QString productFile, Product product, QString &error,
     QString *assignedId = nullptr);
 

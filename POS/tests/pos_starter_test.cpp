@@ -4,6 +4,7 @@
 #include "../product/product_service.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
 #include <QTextStream>
