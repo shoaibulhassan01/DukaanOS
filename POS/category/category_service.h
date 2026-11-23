@@ -58,6 +58,11 @@ bool findCategoryById(QString categoryFile, QString categoryId, Category &catego
 bool findCategoryForBarcode(QString categoryFile, QString barcode, Category &category,
     QString &error);
 
+// Owner: Umar Khan - categories whose Id, name or acronym contains the
+// search text (not case sensitive; spaces match the underscores used in
+// names). Empty text returns every category.
+QVector<Category> searchCategories(const QVector<Category> &categories, QString text);
+
 // Ids of the saved products in productFile whose stored Category Id (11th
 // field) is categoryId. A missing product file means none.
 bool productsInCategory(QString productFile, QString categoryId, QStringList &productIds,

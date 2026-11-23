@@ -7,6 +7,7 @@
 #include <QDialog>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
@@ -192,6 +193,16 @@ public:
         heading->addWidget(addButton);
         layout->addLayout(heading);
 
+        search_ = new QLineEdit(card);
+        search_->setPlaceholderText(QStringLiteral("Search by name, ID or acronym"));
+        search_->setFixedHeight(40);
+        search_->setStyleSheet(QStringLiteral(
+            "QLineEdit { background: #FAFAFD; color: %1; border: 1px solid %2;"
+            " border-radius: 8px; padding: 0 12px; font-size: 11px; }"
+            "QLineEdit:focus { background: white; border: 1px solid %3; }")
+            .arg(kInk, kLine, kNavy));
+        layout->addWidget(search_);
+
         table_ = new QTableWidget(card);
         table_->setColumnCount(4);
         table_->setHorizontalHeaderLabels({QStringLiteral("CATEGORY ID"), QStringLiteral("NAME"),
@@ -231,6 +242,7 @@ public:
         note_->setWordWrap(true);
         root->addWidget(note_);
 
+        connect(search_, &QLineEdit::textChanged, this, [this]() { showRows(); });
         connect(table_, &QTableWidget::itemSelectionChanged, this, [this]() {
             editButton_->setEnabled(selectedRow() >= 0);
             deleteButton_->setEnabled(selectedRow() >= 0);
@@ -255,6 +267,7 @@ private:
         if (!Pos::readCategories(Pos::DataPaths::categories(), categories_, error))
         {
             categories_.clear();
+            visible_.clear();
             table_->hide();
             emptyLabel_->setText(QStringLiteral("Categories could not be loaded."));
             emptyLabel_->show();
@@ -262,32 +275,53 @@ private:
             return;
         }
 
-        table_->clearSelection();
-        table_->setRowCount(categories_.size());
-        for (int row = 0; row < categories_.size(); ++row)
+        productCounts_.clear();
+        for (const Pos::Category &category : categories_)
         {
-            const Pos::Category &category = categories_.at(row);
             QStringList products;
             QString productError;
             Pos::productsInCategory(Pos::DataPaths::products(), category.id, products, productError);
+            productCounts_.insert(category.id, products.size());
+        }
+        showRows();
+        showNote(QStringLiteral("Categories are saved in Data/PCategory.txt."), false, true);
+    }
+
+    // The categories that match the search box (search rules live in
+    // category_service, not in the UI).
+    void showRows()
+    {
+        visible_ = Pos::searchCategories(categories_, search_->text());
+        table_->clearSelection();
+        table_->setRowCount(visible_.size());
+        for (int row = 0; row < visible_.size(); ++row)
+        {
+            const Pos::Category &category = visible_.at(row);
             setCell(row, 0, category.id);
             setCell(row, 1, display(category.name));
             setCell(row, 2, display(category.acronym));
-            setCell(row, 3, QString::number(products.size()));
+            setCell(row, 3, QString::number(productCounts_.value(category.id)));
             table_->setRowHeight(row, 44);
         }
-        table_->setVisible(!categories_.isEmpty());
-        emptyLabel_->setVisible(categories_.isEmpty());
-        countLabel_->setText(QStringLiteral("%1 categor%2")
-            .arg(categories_.size()).arg(categories_.size() == 1 ? QStringLiteral("y") : QStringLiteral("ies")));
-        showNote(QStringLiteral("Categories are saved in Data/PCategory.txt."), false, true);
+        table_->setVisible(!visible_.isEmpty());
+        emptyLabel_->setVisible(visible_.isEmpty());
+        emptyLabel_->setText(categories_.isEmpty()
+            ? QStringLiteral("No categories yet. Add a category before adding products:\n"
+                  "its 2-digit Id becomes the first two digits of their barcodes.")
+            : QStringLiteral("No categories match your search."));
+        const QString noun = categories_.size() == 1 ? QStringLiteral("category") : QStringLiteral("categories");
+        countLabel_->setText(search_->text().trimmed().isEmpty()
+            ? QStringLiteral("%1 %2").arg(categories_.size()).arg(noun)
+            : QStringLiteral("Showing %1 of %2 %3").arg(visible_.size()).arg(categories_.size()).arg(noun));
+        editButton_->setEnabled(false);
+        deleteButton_->setEnabled(false);
     }
 
     int selectedRow() const
     {
         const QModelIndexList rows = table_->selectionModel()
             ? table_->selectionModel()->selectedRows() : QModelIndexList();
-        if (rows.isEmpty() || rows.first().row() >= categories_.size())
+        if (rows.isEmpty() || rows.first().row() >= visible_.size())
             return -1;
         return rows.first().row();
     }
@@ -297,7 +331,7 @@ private:
         const int row = selectedRow();
         if (row < 0)
             return;
-        const Pos::Category category = categories_.at(row);
+        const Pos::Category category = visible_.at(row);
         if (showCategoryDialog(this, &category))
         {
             load();
@@ -310,7 +344,7 @@ private:
         const int row = selectedRow();
         if (row < 0)
             return;
-        const Pos::Category category = categories_.at(row);
+        const Pos::Category category = visible_.at(row);
         const auto answer = QMessageBox::question(this, QStringLiteral("Delete category"),
             QStringLiteral("Delete category %1 (%2) from PCategory.txt?")
                 .arg(category.id, display(category.name)),
@@ -345,7 +379,10 @@ private:
         table_->setItem(row, column, cell);
     }
 
-    QVector<Pos::Category> categories_;
+    QVector<Pos::Category> categories_;   // everything in PCategory.txt
+    QVector<Pos::Category> visible_;      // the rows shown (search applied)
+    QHash<QString, int> productCounts_;   // Category Id -> products using it
+    QLineEdit *search_ = nullptr;
     QTableWidget *table_ = nullptr;
     QLabel *emptyLabel_ = nullptr;
     QLabel *countLabel_ = nullptr;

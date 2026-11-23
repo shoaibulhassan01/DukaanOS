@@ -156,6 +156,24 @@ bool findCategoryById(QString categoryFile, QString categoryId, Category &catego
     return false;
 }
 
+QVector<Category> searchCategories(const QVector<Category> &categories, QString text)
+{
+    text = text.trimmed();
+    if (text.isEmpty())
+        return categories;
+    text.replace(QLatin1Char(' '), QLatin1Char('_'));
+
+    QVector<Category> matches;
+    for (const Category &category : categories)
+    {
+        if (category.id.contains(text, Qt::CaseInsensitive) ||
+            category.name.contains(text, Qt::CaseInsensitive) ||
+            category.acronym.contains(text, Qt::CaseInsensitive))
+            matches.append(category);
+    }
+    return matches;
+}
+
 bool productsInCategory(QString productFile, QString categoryId, QStringList &productIds,
     QString &error)
 {

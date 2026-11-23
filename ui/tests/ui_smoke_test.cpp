@@ -457,6 +457,31 @@ void testCategoriesPage(QStackedWidget *stack)
     check(fileText(categoryFile) == original + QStringLiteral("90 Frozen_food FRZ#\n"),
         QStringLiteral("A refused duplicate must not change PCategory.txt."));
 
+    // Search box: filters the table, and clearing it shows every category.
+    QLineEdit *categorySearch = field(manager, QStringLiteral("Search by name, ID or acronym"));
+    check(categorySearch, QStringLiteral("Categories page: no search box."));
+    if (categorySearch)
+    {
+        auto visibleRows = [manager]() {
+            for (QTableWidget *t : manager->findChildren<QTableWidget *>())
+                if (t->isVisible())
+                    return t->rowCount();
+            return 0;
+        };
+        const int allRows = visibleRows();
+        categorySearch->setText(QStringLiteral("frozen"));
+        settle();
+        check(visibleRows() == 1 && showsText(manager, QStringLiteral("Frozen food")),
+            QStringLiteral("Searching 'frozen' must show only Frozen food, rows: %1").arg(visibleRows()));
+        categorySearch->setText(QStringLiteral("zzz"));
+        settle();
+        check(visibleRows() == 0 && showsText(manager, QStringLiteral("No categories match your search.")),
+            QStringLiteral("A search with no match must show an empty-search message."));
+        categorySearch->clear();
+        settle();
+        check(visibleRows() == allRows, QStringLiteral("Clearing the search must show every category again."));
+    }
+
     // Products 100001-100004 belong to category 10 (first row), so it cannot
     // be deleted; the new, unused category 90 (last row) can.
     QTableWidget *table = nullptr;
