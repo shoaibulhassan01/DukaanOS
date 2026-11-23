@@ -2,6 +2,7 @@
 
 #include "../../POS/category/category_repository.h"
 #include "../../POS/common/data_paths.h"
+#include "../../POS/product/product_service.h"
 #include "../../POS/report/report_service.h"
 
 #include <QComboBox>
@@ -37,7 +38,8 @@ struct ReportDefinition
 {
     QString title;
     QString description;
-    std::function<bool(ReportTable &table, QString &error)> build;
+    // unit: "" for all items, "count" or "weight" for the unit filter.
+    std::function<bool(ReportTable &table, QString &error, const QString &unit)> build;
 };
 
 QString display(QString field)
@@ -71,11 +73,11 @@ QVector<ReportDefinition> reports()
         {QStringLiteral("Top 10 most sold items"),
          QStringLiteral("Items sold in paid orders, most sold first, with the stock that is left. "
                         "Held and archived orders are not counted."),
-         [](ReportTable &table, QString &error) {
+         [](ReportTable &table, QString &error, const QString &unit) {
              // Owner: Umar Khan
              QVector<Pos::SoldItem> items;
              if (!Pos::topSoldProducts(Pos::DataPaths::products(), Pos::DataPaths::orders(),
-                     Pos::DataPaths::orderDetail(), 10, items, error))
+                     Pos::DataPaths::orderDetail(), 10, items, error, unit))
                  return false;
              const QHash<QString, QString> names = categoryNames();
              table.columns = {QStringLiteral("#"), QStringLiteral("PRODUCT"), QStringLiteral("CATEGORY"),
@@ -90,22 +92,25 @@ QVector<ReportDefinition> reports()
                      QString::number(i + 1),
                      QStringLiteral("%1  (%2)").arg(display(item.product.name), item.product.id),
                      item.inProductFile ? categoryText(names, item.product.categoryId) : QStringLiteral("-"),
-                     QStringLiteral("%1 %2").arg(item.quantitySold).arg(item.product.unit).trimmed(),
+                     Pos::quantityText(item.quantitySold, item.product.unit),
                      item.inProductFile
-                         ? QStringLiteral("%1 %2").arg(item.product.quantity).arg(item.product.unit)
+                         ? Pos::quantityText(item.product.quantity, item.product.unit)
                          : QStringLiteral("no longer in Product.txt")});
              }
+             // A total only makes sense when every row has the same unit.
              table.footer = items.isEmpty() ? QString()
-                 : QStringLiteral("%1 item(s) shown \u00B7 %2 units sold in total").arg(items.size()).arg(total);
+                 : unit.isEmpty() ? QStringLiteral("%1 item(s) shown").arg(items.size())
+                 : QStringLiteral("%1 item(s) shown \u00B7 %2 sold in total").arg(items.size())
+                       .arg(Pos::quantityText(total, unit));
              table.emptyText = QStringLiteral("Nothing has been sold yet: there are no paid orders.");
              return true;
          }},
         {QStringLiteral("Top 10 items by remaining stock"),
          QStringLiteral("Items with the most stock left, highest first, so that purchase of these is not initiated."),
-         [](ReportTable &table, QString &error) {
+         [](ReportTable &table, QString &error, const QString &unit) {
              // Owner: Umar Khan
              QVector<Pos::Product> products;
-             if (!Pos::topStockProducts(Pos::DataPaths::products(), 10, products, error))
+             if (!Pos::topStockProducts(Pos::DataPaths::products(), 10, products, error, unit))
                  return false;
              const QHash<QString, QString> names = categoryNames();
              table.columns = {QStringLiteral("#"), QStringLiteral("PRODUCT"), QStringLiteral("CATEGORY"),
@@ -118,7 +123,7 @@ QVector<ReportDefinition> reports()
                      QString::number(i + 1),
                      QStringLiteral("%1  (%2)").arg(display(product.name), product.id),
                      categoryText(names, product.categoryId),
-                     QStringLiteral("%1 %2").arg(product.quantity).arg(product.unit)});
+                     Pos::quantityText(product.quantity, product.unit)});
              }
              table.footer = products.isEmpty() ? QString()
                  : QStringLiteral("%1 item(s) shown").arg(products.size());
@@ -161,6 +166,17 @@ public:
         for (const ReportDefinition &report : reports_)
             selector_->addItem(report.title);
         heading->addWidget(selector_);
+
+        // Counts and kilograms cannot be compared, so items can be ranked
+        // per unit. "All items" is the list the requirement asks for.
+        unitFilter_ = new QComboBox(card);
+        unitFilter_->setObjectName(QStringLiteral("reportUnitFilter"));
+        unitFilter_->setFixedSize(170, 40);
+        unitFilter_->setCursor(Qt::PointingHandCursor);
+        unitFilter_->addItem(QStringLiteral("All items"), QString());
+        unitFilter_->addItem(QStringLiteral("Counted items"), QStringLiteral("count"));
+        unitFilter_->addItem(QStringLiteral("Weighed items (kg)"), QStringLiteral("weight"));
+        heading->addWidget(unitFilter_);
         layout->addLayout(heading);
 
         description_ = new QLabel(card);
@@ -201,6 +217,7 @@ public:
         root->addWidget(card, 1);
 
         connect(selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() { refreshReport(); });
+        connect(unitFilter_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() { refreshReport(); });
         refreshReport();
     }
 
@@ -215,7 +232,7 @@ private:
 
         ReportTable result;
         QString error;
-        const bool ok = report.build(result, error);
+        const bool ok = report.build(result, error, unitFilter_->currentData().toString());
         table_->clear();
         table_->setRowCount(0);
         if (!ok)
@@ -256,6 +273,7 @@ private:
 
     QVector<ReportDefinition> reports_;
     QComboBox *selector_ = nullptr;
+    QComboBox *unitFilter_ = nullptr;
     QLabel *description_ = nullptr;
     QTableWidget *table_ = nullptr;
     QLabel *emptyLabel_ = nullptr;

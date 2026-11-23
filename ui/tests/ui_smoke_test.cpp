@@ -524,6 +524,19 @@ void testCategoriesPage(QStackedWidget *stack)
                 shown.contains(QStringLiteral("Grains and pulses")),
             QStringLiteral("Products page: the CATEGORY column must show category names, got: %1")
                 .arg(shown.join(QStringLiteral(", "))));
+        // Weight is shown in kg: Tea leaves (P0003) is sold by weight.
+        for (int r = 0; productList && r < productList->rowCount(); ++r)
+        {
+            QWidget *nameCell = productList->cellWidget(r, 0);
+            bool isTea = false;
+            for (QLabel *label : nameCell ? nameCell->findChildren<QLabel *>() : QList<QLabel *>())
+                isTea = isTea || label->text().contains(QStringLiteral("P0003"));
+            if (!isTea)
+                continue;
+            check(productList->item(r, 3) && productList->item(r, 3)->text() == QStringLiteral("weight (kg)") &&
+                    productList->item(r, 7) && productList->item(r, 7)->text().endsWith(QStringLiteral(" kg")),
+                QStringLiteral("Products page: a weighed product must show unit 'weight (kg)' and stock in kg."));
+        }
         check(!shown.contains(QStringLiteral("Not found")) && !shown.join(QString()).contains(QStringLiteral("\u00B7")),
             QStringLiteral("Products page: every sample product has a category, shown by name only, got: %1")
                 .arg(shown.join(QStringLiteral(", "))));
@@ -612,6 +625,44 @@ void testCategoriesPage(QStackedWidget *stack)
         for (const Pos::Product &product : products)
             added = added || product.id == QStringLiteral("P0099");
         check(!added, QStringLiteral("A product without a category must not be saved to Product.txt."));
+
+        // A product added as "weight (kg)" is saved as "weight" in Product.txt.
+        QStringList unitChoices;
+        popupHandler = [&unitChoices](QWidget *popup) {
+            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
+            if (!barcode)
+                return false;
+            barcode->setText(QStringLiteral("100098"));
+            field(popup, QStringLiteral("e.g. P0004"))->setText(QStringLiteral("P0098"));
+            field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("SGR"));
+            field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Sugar"));
+            for (QComboBox *unit : popup->findChildren<QComboBox *>())
+            {
+                for (int i = 0; i < unit->count(); ++i)
+                    unitChoices << unit->itemText(i);
+                unit->setCurrentIndex(unit->findText(QStringLiteral("weight (kg)")));
+            }
+            for (QLineEdit *money : popup->findChildren<QLineEdit *>())
+                if (money->placeholderText() == QStringLiteral("e.g. 250.00"))
+                    money->setText(QStringLiteral("1.00"));
+            for (QLineEdit *quantity : popup->findChildren<QLineEdit *>())
+                if (quantity->placeholderText() == QStringLiteral("e.g. 10"))
+                    quantity->setText(QStringLiteral("2"));
+            if (QPushButton *save = button(popup, QStringLiteral("Add product")))
+                save->click();
+            popupHandler = nullptr;
+            return true;
+        };
+        if (QPushButton *addProduct = button(manager, QStringLiteral("+ Add product")))
+            addProduct->click();
+        settle();
+        popupHandler = nullptr;
+        check(unitChoices == QStringList({QStringLiteral("count"), QStringLiteral("weight (kg)")}),
+            QStringLiteral("Add product: units must be offered as 'count' and 'weight (kg)', got: %1")
+                .arg(unitChoices.join(QStringLiteral(", "))));
+        check(fileText(QStringLiteral("Data/Product.txt")).contains(
+                  QStringLiteral("P0098 100098 SGR Sugar weight 1.00 1.00 1.00 2 Data/barcodes/100098.png 10#")),
+            QStringLiteral("A product added as 'weight (kg)' must be saved with unit 'weight' in Product.txt."));
     }
 
 }
@@ -677,6 +728,36 @@ void testReportsPage(QStackedWidget *stack)
                 cell(row, 3).startsWith(QString::number(stock.at(row).quantity) + QLatin1Char(' ')),
             QStringLiteral("Top stock row %1 shows '%2 | %3', expected %4 with %5.")
                 .arg(row + 1).arg(cell(row, 1), cell(row, 3), stock.at(row).id).arg(stock.at(row).quantity));
+
+    // Unit filter: counts and kilograms ranked separately.
+    QComboBox *units = manager->findChild<QComboBox *>(QStringLiteral("reportUnitFilter"));
+    check(units && units->count() == 3 && units->itemText(0) == QStringLiteral("All items") &&
+            units->findText(QStringLiteral("Counted items")) >= 0 && units->findText(QStringLiteral("Weighed items (kg)")) >= 0,
+        QStringLiteral("Reports: the unit filter must offer All items, Counted items and Weighed items (kg)."));
+    if (!units)
+        return;
+    units->setCurrentIndex(units->findText(QStringLiteral("Weighed items (kg)")));
+    settle();
+    Pos::topStockProducts(QStringLiteral("Data/Product.txt"), 10, stock, error, QStringLiteral("weight"));
+    check(!stock.isEmpty() && table->rowCount() == stock.size(),
+        QStringLiteral("Weighed items: %1 rows expected, %2 shown.").arg(stock.size()).arg(table->rowCount()));
+    for (int row = 0; row < table->rowCount(); ++row)
+        check(cell(row, 3).endsWith(QStringLiteral(" kg")) && cell(row, 1).contains(stock.value(row).id),
+            QStringLiteral("Weighed items row %1 must be %2 in kg, shows '%3 | %4'.")
+                .arg(row + 1).arg(stock.value(row).id, cell(row, 1), cell(row, 3)));
+    units->setCurrentIndex(units->findText(QStringLiteral("Counted items")));
+    settle();
+    for (int row = 0; row < table->rowCount(); ++row)
+        check(cell(row, 3).endsWith(QStringLiteral(" count")),
+            QStringLiteral("Counted items row %1 must be a count, shows '%2'.").arg(row + 1).arg(cell(row, 3)));
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Top 10 most sold items")));
+    settle();
+    check(table->rowCount() > 0, QStringLiteral("Most sold, counted items: rows expected."));
+    for (int row = 0; row < table->rowCount(); ++row)
+        check(cell(row, 3).endsWith(QStringLiteral(" count")) && cell(row, 4).endsWith(QStringLiteral(" count")),
+            QStringLiteral("Most sold, counted items row %1 shows '%2 | %3'.").arg(row + 1).arg(cell(row, 3), cell(row, 4)));
+    units->setCurrentIndex(0);
+    settle();
 }
 
 void testCashierAccountCreation(QStackedWidget *stack)

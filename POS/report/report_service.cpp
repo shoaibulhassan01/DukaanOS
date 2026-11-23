@@ -23,7 +23,7 @@ bool comesFirstByName(const Product &a, const Product &b)
 }
 
 bool topSoldProducts(QString productFile, QString orderFile, QString orderDetailFile,
-    int limit, QVector<SoldItem> &rows, QString &error)
+    int limit, QVector<SoldItem> &rows, QString &error, QString unitFilter)
 {
     rows.clear();
     QVector<Product> products;
@@ -71,6 +71,9 @@ bool topSoldProducts(QString productFile, QString orderFile, QString orderDetail
             item.product.name = it.key();
             item.product.barcode = barcodeOf.value(it.key());
         }
+        // A product no longer in Product.txt has no known unit: only in "all".
+        if (!unitFilter.isEmpty() && (!item.inProductFile || item.product.unit != unitFilter))
+            continue;
         all.append(item);
     }
 
@@ -84,12 +87,16 @@ bool topSoldProducts(QString productFile, QString orderFile, QString orderDetail
     return true;
 }
 
-bool topStockProducts(QString productFile, int limit, QVector<Product> &rows, QString &error)
+bool topStockProducts(QString productFile, int limit, QVector<Product> &rows, QString &error,
+    QString unitFilter)
 {
     rows.clear();
     QVector<Product> products;
     if (!readProducts(productFile, products, error))
         return false;
+    if (!unitFilter.isEmpty())
+        products.erase(std::remove_if(products.begin(), products.end(),
+            [&](const Product &p) { return p.unit != unitFilter; }), products.end());
     std::sort(products.begin(), products.end(), [](const Product &a, const Product &b) {
         if (a.quantity != b.quantity)
             return a.quantity > b.quantity;

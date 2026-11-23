@@ -347,13 +347,12 @@ private:
                     "No category %1 in PCategory.txt. Add it on the Categories page.").arg(categoryId));
             }
             table_->setItem(row, 2, category);
-            setCell(row, 3, product.unit);
+            setCell(row, 3, Pos::unitLabel(product.unit));
             setCell(row, 4, QStringLiteral("PKR %1").arg(product.unitPrice, 0, 'f', 2));
             setCell(row, 5, QStringLiteral("PKR %1").arg(product.tax, 0, 'f', 2));
             setCell(row, 6, QStringLiteral("PKR %1").arg(product.discountPerUnit, 0, 'f', 2));
 
-            auto *stock = new QTableWidgetItem(QStringLiteral("%1 %2")
-                .arg(product.quantity).arg(product.unit));
+            auto *stock = new QTableWidgetItem(Pos::quantityText(product.quantity, product.unit));
             stock->setFlags(stock->flags() & ~Qt::ItemIsEditable);
             stock->setTextAlignment(Qt::AlignCenter);
             stock->setForeground(UiTheme::textColor(QColor(isLowStock
