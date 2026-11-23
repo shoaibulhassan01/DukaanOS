@@ -13,7 +13,6 @@ namespace Pos
 {
 namespace
 {
-// Reads the first field (the ID) of every record in a file.
 
 bool readIds(const QString &filePath, int fieldCount, int idLength,
     QStringList &ids, QString &error)

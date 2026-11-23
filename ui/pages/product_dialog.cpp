@@ -1,5 +1,6 @@
 #include "product_dialog.h"
 
+#include "../../POS/category/category_service.h"
 #include "../../POS/product/product_service.h"
 #include "../../POS/product/product_category.h"
 
@@ -17,6 +18,7 @@
 #include <QLineEdit>
 #include <QLocale>
 #include <QPushButton>
+#include <QRegularExpressionValidator>
 #include <QScrollArea>
 #include <QScreen>
 #include <QVBoxLayout>
@@ -48,7 +50,8 @@ class ProductDialog : public QDialog
 public:
     ProductDialog(QWidget *parent, const QString &productFile, Mode mode,
         const Pos::Product &product)
-        : QDialog(parent), productFile_(productFile), mode_(mode), original_(product)
+        : QDialog(parent), productFile_(productFile), mode_(mode), original_(product),
+          categoryFile_(QFileInfo(productFile).absoluteDir().filePath(QStringLiteral("PCategory.txt")))
     {
         setWindowTitle(mode == Mode::Add ? QStringLiteral("Add product")
                                          : QStringLiteral("Edit product"));
@@ -66,7 +69,7 @@ public:
         root->addWidget(title);
 
         auto *hint = new QLabel(mode == Mode::Add
-            ? QStringLiteral("Choose a configured category. Its 2-digit ID starts your generated barcode.")
+            ? QStringLiteral("Choose a category to generate a barcode, or enter a 6-digit barcode whose first two digits match the Category Id. The barcode picture is created for you.")
             : QStringLiteral("Only the price, discount and available stock can be changed."), this);
         hint->setWordWrap(true);
         hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
@@ -90,8 +93,12 @@ public:
                     .arg(category.id, category.name, category.acronym), category.id);
         }
         barcode_ = new QLineEdit(this);
-        barcode_->setPlaceholderText(QStringLiteral("Generated from the category"));
-        barcode_->setReadOnly(true);
+        barcode_->setPlaceholderText(QStringLiteral("Generated or enter 6 digits"));
+        barcode_->setMaxLength(6);
+        barcode_->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("\\d{0,6}")), barcode_));
+        categoryInfo_ = new QLabel(this);
+        categoryInfo_->setWordWrap(true);
         acronym_ = new QLineEdit(this);
         acronym_->setPlaceholderText(QStringLiteral("Up to 8 characters"));
         acronym_->setMaxLength(8);
@@ -112,7 +119,8 @@ public:
 
         form->addRow(label(QStringLiteral("Product id")), id_);
         form->addRow(label(QStringLiteral("Category")), category_);
-        form->addRow(label(QStringLiteral("Generated barcode")), barcode_);
+        form->addRow(label(QStringLiteral("Barcode")), barcode_);
+        form->addRow(label(QStringLiteral("Barcode category")), categoryInfo_);
         form->addRow(label(QStringLiteral("Acronym")), acronym_);
         form->addRow(label(QStringLiteral("Name")), name_);
         form->addRow(label(QStringLiteral("Unit")), unit_);
@@ -175,11 +183,17 @@ public:
         {
             connect(category_, qOverload<int>(&QComboBox::currentIndexChanged),
                 this, [this]() { updateBarcodePreview(); });
+            connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
+                image_->setText(text.trimmed().isEmpty()
+                    ? QString() : QStringLiteral("Data/barcodes/%1.png").arg(text.trimmed()));
+                showCategory(text);
+            });
             updateBarcodePreview();
         }
         else
         {
             fill(product);
+            showStoredCategory(product.categoryId);
             for (QWidget *locked : { static_cast<QWidget *>(id_), static_cast<QWidget *>(category_),
                      static_cast<QWidget *>(barcode_), static_cast<QWidget *>(acronym_),
                      static_cast<QWidget *>(name_), static_cast<QWidget *>(unit_),
@@ -195,6 +209,66 @@ private:
         auto *l = new QLabel(text, this);
         l->setStyleSheet(QStringLiteral("color: %1; font-size: 11px;").arg(kInk));
         return l;
+    }
+
+    // Edit form: the category stored for the product (11th field of
+    // Product.txt, req 2).
+    void showStoredCategory(const QString &categoryId)
+    {
+        Pos::Category category;
+        QString error;
+        const bool found = Pos::findCategoryById(categoryFile_, categoryId, category, error);
+        QString name = category.name;
+        QString acronym = category.acronym;
+        categoryInfo_->setText(found
+            ? QStringLiteral("%1 \u00B7 %2 (%3)").arg(category.id,
+                  name.replace(QLatin1Char('_'), QLatin1Char(' ')),
+                  acronym.replace(QLatin1Char('_'), QLatin1Char(' ')))
+            : QStringLiteral("Category %1 not found in PCategory.txt.").arg(categoryId));
+        categoryInfo_->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 10px; font-weight: 600;").arg(found
+                ? QStringLiteral("#18764A") : QStringLiteral("#B42318")));
+    }
+
+    // Add form: the category the barcode being typed belongs to (its first
+    // two digits, req 1), or why there is none.
+    void showCategory(const QString &barcodeText)
+    {
+        const QString barcode = barcodeText.trimmed();
+        QString text;
+        QString color = kMuted;
+        if (barcode.startsWith(QLatin1Char('0')))
+        {
+            text = QStringLiteral("A barcode cannot start with 0.");
+            color = QStringLiteral("#B42318");
+        }
+        else if (barcode.size() < 2)
+            text = QStringLiteral("Type the barcode: its first two digits choose the category.");
+        else
+        {
+            Pos::Category category;
+            QString error;
+            if (Pos::findCategoryForBarcode(categoryFile_, barcode, category, error))
+            {
+                QString name = category.name;
+                QString acronym = category.acronym;
+                text = QStringLiteral("%1 \u00B7 %2 (%3)").arg(category.id,
+                    name.replace(QLatin1Char('_'), QLatin1Char(' ')),
+                    acronym.replace(QLatin1Char('_'), QLatin1Char(' ')));
+                color = QStringLiteral("#18764A");
+            }
+            else
+            {
+                text = error.startsWith(QStringLiteral("No category"))
+                    ? QStringLiteral("Category %1 not found. Add it on the Categories page first.")
+                          .arg(barcode.left(2))
+                    : error;
+                color = QStringLiteral("#B42318");
+            }
+        }
+        categoryInfo_->setText(text);
+        categoryInfo_->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 10px; font-weight: 600;").arg(color));
     }
 
     QLineEdit *moneyBox()
@@ -245,7 +319,7 @@ private:
     {
         p.id = id_->text().trimmed();
         p.categoryId = category_->currentData().toString();
-        p.barcode.clear();
+        p.barcode = barcode_->text().trimmed();
         p.acronym = acronym_->text().trimmed();
         // Product.txt is space separated, so spaces in a name are stored as _.
         p.name = name_->text().simplified().replace(QLatin1Char(' '), QLatin1Char('_'));
@@ -337,6 +411,8 @@ private:
     QString categoryLoadError_;
     Mode mode_;
     Pos::Product original_;
+    QString categoryFile_;
+    QLabel *categoryInfo_ = nullptr;
     QLineEdit *id_ = nullptr;
     QComboBox *category_ = nullptr;
     QLineEdit *barcode_ = nullptr;

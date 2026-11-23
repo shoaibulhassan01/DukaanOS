@@ -1,3 +1,4 @@
 manager manager123 manager#
 cashier cashier123 cashier#
 cashier2 cashier123 cashier#
+hasan_ali 12345678 cashier#

@@ -30,13 +30,13 @@ bool reduceStock(QString productFile, QVector<CartItem> soldItems, QString &erro
 //   quantity are not negative; discount is not more than the price.
 bool validateProduct(Product product, QString &error);
 
-// Owner: Umar Khan - add a new product to Product.txt (Manager, Add Product).
-// When barcode is empty, categoryId must name a configured category; a unique
-// category-prefixed barcode and its image are generated before saving.
-// A supplied barcode remains supported for legacy callers. Product.txt is
-// created if it does not exist yet.
+// Generate the next unused barcode for a configured category.
 bool generateNextProductBarcode(const QString &productFile,
     const QString &categoryId, QString &barcode, QString &error);
+
+// Validate the product, require its barcode's category to exist in PCategory.txt,
+// store its category ID, generate its barcode picture, and create Product.txt
+// if needed. A supplied barcode remains supported.
 bool addProduct(QString productFile, Product product, QString &error);
 
 // Owner: Umar Khan - edit the price, discount per unit and available

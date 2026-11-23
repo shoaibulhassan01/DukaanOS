@@ -1,6 +1,8 @@
 #include "dashboard_page.h"
 #include "../theme.h"
 #include "bill_page.h"
+#include "categories_page.h"
+#include "cashier_accounts_page.h"
 #include "held_orders_page.h"
 #include "new_order_page.h"
 #include "order_history_page.h"
@@ -132,6 +134,11 @@ QPixmap drawIcon(const QString &name, const QColor &color, int size)
     {
         p.drawEllipse(QPointF(12, 8), 4, 4);
         p.drawArc(QRectF(4, 14, 16, 14), 0, 180 * 16);
+    }
+    else if (name == QStringLiteral("tag"))
+    {
+        poly({QPointF(3, 3), QPointF(11, 3), QPointF(21, 13), QPointF(13, 21), QPointF(3, 11)}, true);
+        p.drawEllipse(QPointF(7.5, 7.5), 1.5, 1.5);
     }
     else if (name == QStringLiteral("logout"))
     {
@@ -387,7 +394,11 @@ private:
                     QStringLiteral("Look up an item"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")},
                 {QStringLiteral("Products"), QStringLiteral("box"),
                     QStringLiteral("Manage inventory"), QStringLiteral("#F59E0B"), QStringLiteral("#FEF3DC")},
-                history
+                {QStringLiteral("Categories"), QStringLiteral("tag"),
+                    QStringLiteral("Set up product categories"), QStringLiteral("#16845B"), QStringLiteral("#E1F7EE")},
+                history,
+                {QStringLiteral("Cashier Accounts"), QStringLiteral("user"),
+                    QStringLiteral("Create cashier logins"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")}
             };
         }
         return {
@@ -501,6 +512,10 @@ private:
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Categories"))
+            contentLayout_->addWidget(UiPages::createCategoriesPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Cashier Accounts"))
+            contentLayout_->addWidget(UiPages::createCashierAccountsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
             contentLayout_->addWidget(UiPages::createBillPage(billPreview_, contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));

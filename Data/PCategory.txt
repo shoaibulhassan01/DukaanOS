@@ -1,6 +1,8 @@
-10 Drinks DRK#
-12 Tea TEA#
-34 Bakery BAK#
-45 Personal_Care PER#
-56 Dairy DAI#
-66 Snacks SNK#
+10 Beverages BEV#
+20 Bakery BKY#
+30 Fresh_produce FRP#
+34 Snacks SNK#
+40 Household HSH#
+45 Personal_care PCR#
+56 Dairy DRY#
+60 Grains_and_pulses GRN#

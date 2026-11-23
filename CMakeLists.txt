@@ -23,6 +23,8 @@ set(POS_LOGIC_SOURCES
     POS/product/product_category.cpp
     POS/product/product_service.cpp
     POS/product/barcode_image.cpp
+    POS/category/category_repository.cpp
+    POS/category/category_service.cpp
     POS/order/order_repository.cpp
     POS/order/order_service.cpp
     POS/payment/payment_methods.cpp
@@ -39,6 +41,8 @@ set(DUKAANOS_UI_SOURCES
     ui/theme.cpp
     ui/pages/login_page.cpp
     ui/pages/dashboard_page.cpp
+    ui/pages/cashier_accounts_page.cpp
+    ui/pages/categories_page.cpp
     ui/pages/new_order_page.cpp
     ui/pages/held_orders_page.cpp
     ui/pages/order_history_page.cpp
@@ -125,6 +129,13 @@ if(BUILD_TESTING)
     target_link_libraries(OrderRepositoryTest PRIVATE Qt6::Gui)
     set_target_properties(OrderRepositoryTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME OrderRepositoryTest COMMAND OrderRepositoryTest)
+
+    # Product categories: PCategory.txt, add/edit/delete rules (Increment 3, req 1).
+    qt_add_executable(CategoryTest POS/tests/category_test.cpp POS/tests/data_format_checker.cpp ${POS_LOGIC_SOURCES})
+    target_include_directories(CategoryTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
+    target_link_libraries(CategoryTest PRIVATE Qt6::Gui)
+    set_target_properties(CategoryTest PROPERTIES WIN32_EXECUTABLE OFF)
+    add_test(NAME CategoryTest COMMAND CategoryTest)
 
     # Reads the sample data in Data/ and checks it is valid and consistent.
     qt_add_executable(DataFilesTest POS/tests/data_files_test.cpp ${POS_LOGIC_SOURCES})

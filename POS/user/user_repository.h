@@ -12,4 +12,7 @@ bool readUsers(QString filePath, QVector<User> &users, QString &error);
 
 // Owner: Umar Khan - find a user by exact username.
 bool findUser(QVector<User> users, QString username, User &user);
+
+bool createCashierAccount(QString filePath, QString username, QString password,
+    QString &error);
 }

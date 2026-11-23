@@ -44,6 +44,13 @@ set "PATH=%QT_PREFIX_PATH%\bin;%MINGW_BIN%;%PATH%"
 for %%I in ("%MINGW_BIN%..") do set "MINGW_NAME=%%~nxI"
 for %%I in ("%QT_PREFIX_PATH%\..") do set "QT_VERSION=%%~nxI"
 set "BUILD_DIR=%~dp0build\DukaanOS-%QT_VERSION%-%MINGW_NAME%"
+for %%I in ("%~dp0.") do set "SOURCE_DIR=%%~fI"
+
+if exist "%BUILD_DIR%\CMakeCache.txt" (
+    set "CACHED_SOURCE_DIR="
+    for /f "tokens=1,* delims==" %%A in ('findstr /B /C:"CMAKE_HOME_DIRECTORY:INTERNAL=" "%BUILD_DIR%\CMakeCache.txt"') do set "CACHED_SOURCE_DIR=%%B"
+    if defined CACHED_SOURCE_DIR call :check_cached_source
+)
 
 set "CMAKE_EXE="
 if exist "%QT_ROOT%\Tools\CMake_64\bin\cmake.exe" set "CMAKE_EXE=%QT_ROOT%\Tools\CMake_64\bin\cmake.exe"
@@ -148,4 +155,16 @@ if errorlevel 1 (
 )
 
 echo Installer files are ready in "%PACKAGE_DIR%".
+exit /b 0
+
+:check_cached_source
+setlocal
+set "CACHED_SOURCE_DIR=%CACHED_SOURCE_DIR:/=\%"
+for %%I in ("%CACHED_SOURCE_DIR%") do set "CACHED_SOURCE_DIR=%%~fI"
+if /I not "%CACHED_SOURCE_DIR%"=="%SOURCE_DIR%" (
+    echo CMake cache belongs to "%CACHED_SOURCE_DIR%". Clearing stale CMake metadata...
+    del /q "%BUILD_DIR%\CMakeCache.txt"
+    if exist "%BUILD_DIR%\CMakeFiles" rmdir /s /q "%BUILD_DIR%\CMakeFiles"
+)
+endlocal
 exit /b 0

@@ -37,6 +37,8 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
 
         const QStringList fields = line.left(line.size() - 1)
             .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+        // Ten-field legacy records derive their category from the barcode;
+        // current records store it as the eleventh field.
         if (fields.size() != 10 && fields.size() != 11)
         {
             error = QStringLiteral("Product.txt line %1 must contain 10 legacy fields or 11 fields with a Category Id.")
@@ -108,7 +110,8 @@ bool saveProducts(QString filePath, QVector<Product> products, QString &error)
         const Product &product = products.at(i);
         if (!isStorableText(product.id) || !isStorableText(product.barcode) ||
             !isStorableText(product.acronym) || !isStorableText(product.name) ||
-            !isStorableText(product.unit) || !isStorableText(product.barcodeImage))
+            !isStorableText(product.unit) || !isStorableText(product.barcodeImage) ||
+            (!product.categoryId.isEmpty() && !isStorableText(product.categoryId)))
         {
             error = QStringLiteral("Product %1 has an empty field or a field with a space or #.")
                 .arg(product.id.isEmpty() ? QString::number(i + 1) : product.id);
