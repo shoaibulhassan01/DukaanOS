@@ -2,6 +2,7 @@
 #include "../theme.h"
 #include "bill_page.h"
 #include "categories_page.h"
+#include "reports_page.h"
 #include "cashier_accounts_page.h"
 #include "held_orders_page.h"
 #include "new_order_page.h"
@@ -397,6 +398,8 @@ private:
                 {QStringLiteral("Categories"), QStringLiteral("tag"),
                     QStringLiteral("Set up product categories"), QStringLiteral("#16845B"), QStringLiteral("#E1F7EE")},
                 history,
+                {QStringLiteral("Reports"), QStringLiteral("trend"),
+                    QStringLiteral("Sales and stock reports"), QStringLiteral("#4F46E5"), QStringLiteral("#EEF0FF")},
                 {QStringLiteral("Cashier Accounts"), QStringLiteral("user"),
                     QStringLiteral("Create cashier logins"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")}
             };
@@ -512,6 +515,8 @@ private:
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Reports"))
+            contentLayout_->addWidget(UiPages::createReportsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Categories"))
             contentLayout_->addWidget(UiPages::createCategoriesPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Cashier Accounts"))
