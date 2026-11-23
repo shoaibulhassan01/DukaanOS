@@ -109,6 +109,7 @@ public:
         name_ = new QLineEdit(this);
         name_->setPlaceholderText(QStringLiteral("e.g. Green tea"));
         unit_ = new QComboBox(this);
+        unit_->setObjectName(QStringLiteral("productUnit"));
         // Shown as "weight (kg)", saved as "weight" in Product.txt.
         unit_->addItem(Pos::unitLabel(QStringLiteral("count")), QStringLiteral("count"));
         unit_->addItem(Pos::unitLabel(QStringLiteral("weight")), QStringLiteral("weight"));

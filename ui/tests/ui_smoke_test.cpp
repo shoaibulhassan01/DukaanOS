@@ -636,7 +636,7 @@ void testCategoriesPage(QStackedWidget *stack)
             field(popup, QStringLiteral("e.g. P0004"))->setText(QStringLiteral("P0098"));
             field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("SGR"));
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Sugar"));
-            for (QComboBox *unit : popup->findChildren<QComboBox *>())
+            if (QComboBox *unit = popup->findChild<QComboBox *>(QStringLiteral("productUnit")))
             {
                 for (int i = 0; i < unit->count(); ++i)
                     unitChoices << unit->itemText(i);
