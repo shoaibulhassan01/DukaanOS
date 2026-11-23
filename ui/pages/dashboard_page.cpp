@@ -4,6 +4,11 @@
 #include "new_order_page.h"
 #include "order_history_page.h"
 #include "products_page.h"
+#include "seasons_page.h"
+#include "sales_reports_page.h"
+
+#include "../../POS/checkout/checkout_service.h"
+#include "../../POS/order/order_service.h"
 
 #include <QComboBox>
 #include <QDateTime>
@@ -88,6 +93,28 @@ QPixmap drawIcon(const QString &name, const QColor &color, int size)
     {
         p.drawEllipse(QPointF(12, 12), 9, 9);
         poly({QPointF(12, 7), QPointF(12, 12), QPointF(15.5, 14)});
+    }
+    else if (name == QStringLiteral("calendar"))
+    {
+        p.drawRoundedRect(QRectF(3.5, 5, 17, 16), 2, 2);
+        p.drawLine(QPointF(4, 9), QPointF(20, 9));
+        p.drawLine(QPointF(8, 3), QPointF(8, 7));
+        p.drawLine(QPointF(16, 3), QPointF(16, 7));
+        p.drawEllipse(QPointF(8, 13), 0.8, 0.8);
+        p.drawEllipse(QPointF(12, 13), 0.8, 0.8);
+        p.drawEllipse(QPointF(16, 13), 0.8, 0.8);
+        p.drawEllipse(QPointF(8, 17), 0.8, 0.8);
+        p.drawEllipse(QPointF(12, 17), 0.8, 0.8);
+    }
+    else if (name == QStringLiteral("report"))
+    {
+        p.drawRoundedRect(QRectF(5, 3, 14, 18), 2, 2);
+        p.drawLine(QPointF(8, 8), QPointF(16, 8));
+        p.drawLine(QPointF(8, 11), QPointF(16, 11));
+        p.drawLine(QPointF(8, 18), QPointF(8, 15));
+        p.drawLine(QPointF(12, 18), QPointF(12, 13));
+        p.drawLine(QPointF(16, 18), QPointF(16, 15));
+        p.drawLine(QPointF(7, 18), QPointF(17, 18));
     }
     else if (name == QStringLiteral("hold"))
     {
@@ -364,7 +391,11 @@ private:
                     QStringLiteral("Look up an item"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")},
                 {QStringLiteral("Products"), QStringLiteral("box"),
                     QStringLiteral("Manage inventory"), QStringLiteral("#F59E0B"), QStringLiteral("#FEF3DC")},
-                history
+                history,
+                {QStringLiteral("Seasons"), QStringLiteral("calendar"),
+                    QStringLiteral("Manage seasonal discounts"), QStringLiteral("#14B8A6"), QStringLiteral("#DDF8F1")},
+                {QStringLiteral("Sales Reports"), QStringLiteral("report"),
+                    QStringLiteral("Review store sales"), QStringLiteral("#8B5CF6"), QStringLiteral("#F0EAFE")}
             };
         }
         return {
@@ -444,11 +475,37 @@ private:
             const OrderPreview *initialOrder = hasResumeOrder_ ? &resumeOrder_ : nullptr;
             contentLayout_->addWidget(UiPages::createNewOrderPage(contentHost_, initialOrder,
                 [this](const OrderPreview &order) {
+                    Pos::CheckoutRequest request;
+                    request.customerName = order.customerName;
+                    request.customerContact = order.phone;
+                    request.paymentMode = order.paymentMethod;
+                    request.merchant = order.merchant;
+                    request.amountPaid = order.amountReceived;
+                    request.specialDiscountPercent = order.specialDiscountPercent;
+                    for (const OrderPreviewLine &line : order.lines)
+                        request.items.append(Pos::CartItem{line.product, line.quantity});
+
+                    Pos::CheckoutResult result;
+                    QString error;
+                    if (!Pos::completePayment(request, result, error))
+                    {
+                        QMessageBox::warning(this, QStringLiteral("Checkout failed"), error);
+                        return;
+                    }
                     billPreview_ = order;
-                    billPreview_.id = QStringLiteral("BILL-%1")
-                        .arg(++billCounter_, 6, 10, QLatin1Char('0'));
+                    billPreview_.id = result.billRows.isEmpty()
+                        ? QString() : result.billRows.first().id;
                     billPreview_.createdAt = QDateTime::currentDateTime()
                         .toString(QStringLiteral("dd MMM yyyy, hh:mm AP"));
+                    billPreview_.subtotal = result.totals.withoutTax;
+                    billPreview_.tax = result.totals.tax;
+                    billPreview_.discount = result.totals.discount;
+                    billPreview_.seasonalDiscount = result.totals.seasonalDiscount;
+                    billPreview_.specialDiscount = result.totals.specialDiscount;
+                    billPreview_.total = result.totals.payable;
+                    billPreview_.amountReceived = order.amountReceived;
+                    billPreview_.balanceReturned = result.billRows.isEmpty()
+                        ? 0 : result.billRows.first().balanceReturned;
                     hasBillPreview_ = true;
                     navigateTo(QStringLiteral("Bill"));
                 },
@@ -471,6 +528,10 @@ private:
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Seasons"))
+            contentLayout_->addWidget(UiPages::createSeasonsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Sales Reports"))
+            contentLayout_->addWidget(UiPages::createSalesReportsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
             contentLayout_->addWidget(UiPages::createBillPage(billPreview_, contentHost_,
                 [this]() { navigateTo(QStringLiteral("New Order")); }));
@@ -742,7 +803,6 @@ private:
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
     int heldOrderCounter_ = 0;
-    int billCounter_ = 0;
     bool hasResumeOrder_ = false;
     bool hasBillPreview_ = false;
 };

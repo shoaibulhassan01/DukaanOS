@@ -26,7 +26,8 @@ bool calculateBillLine(QString billId, Order order, Product product,
     }
     if (!std::isfinite(product.unitPrice) || !std::isfinite(product.tax)
         || !std::isfinite(product.discountPerUnit) || product.unitPrice < 0
-        || product.tax < 0 || product.discountPerUnit < 0) {
+        || product.tax < 0 || product.discountPerUnit < 0
+        || product.discountPerUnit > product.unitPrice) {
         error = QStringLiteral("Product price, tax and discount must be finite and non-negative.");
         return false;
     }
@@ -81,6 +82,13 @@ bool buildBill(QString billId, Order order, QVector<CartItem> items,
             return false;
         built.append(line);
     }
+
+    double amountReceived = 0;
+    for (const Bill &line : built)
+        amountReceived += line.totalPayable;
+    amountReceived = round2(amountReceived);
+    for (Bill &line : built)
+        line.amountReceived = amountReceived;
 
     rows = built;
     return true;

@@ -2,131 +2,98 @@
 #include "id_generator.h"
 #include "record_codec.h"
 
-#include <QFile>
-#include <QTextStream>
-#include <QStringList>
-#include <QRegularExpression>
 #include <QDate>
+#include <QFile>
+#include <QRegularExpression>
+#include <QStringList>
+#include <QTextStream>
 
 namespace Pos
 {
-    // Owner: Zain Ul Abideen - make a unique 8-digit order ID.
-    bool generateOrderId(QString& id)
+namespace
+{
+bool nextId(const QString &filePath, const QDate &date, bool billId,
+    QString &id, QString &error)
+{
+    id.clear();
+    error.clear();
+    if (!date.isValid())
     {
-        QFile file("Order.txt");
-
-        QString datePrefix = QDate::currentDate().toString("yyMMdd");
-
-        int highestNumber = 0;
-
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
-        {
-            QTextStream input(&file);
-
-            while (!input.atEnd())
-            {
-                QString line = input.readLine().trimmed();
-
-                if (line.isEmpty())
-                    continue;
-
-                QStringList fields;
-
-                if (!splitRecord(line, fields) || fields.size() != 9)
-                    return false;
-
-                QString existingId = fields.at(0);
-
-                if (!QRegularExpression("^\\d{8}$")
-                    .match(existingId).hasMatch())
-                {
-                    return false;
-                }
-
-                if (existingId.left(6) == datePrefix)
-                {
-                    int number = existingId.right(2).toInt();
-
-                    if (number > highestNumber)
-                        highestNumber = number;
-                }
-            }
-        }
-        else if (file.exists())
-        {
-            return false;
-        }
-
-        if (highestNumber >= 99)
-            return false;
-
-        highestNumber++;
-
-        QString sequence =
-            QString("%1").arg(highestNumber, 2, 10, QChar('0'));
-
-        id = datePrefix + sequence;
-
-        return true;
+        error = QStringLiteral("Cannot generate an ID for an invalid date.");
+        return false;
     }
 
-    // Owner: Zain Ul Abideen - make a unique 9-digit bill ID.
-    bool generateBillId(QString& id)
+    const int width = billId ? 9 : 8;
+    const int sequenceWidth = billId ? 3 : 2;
+    const int maximum = billId ? 999 : 99;
+    const QString prefix = date.toString(QStringLiteral("yyMMdd"));
+    int highest = 0;
+    QFile file(filePath);
+    if (file.exists() && !file.open(QIODevice::ReadOnly | QIODevice::Text))
     {
-        QFile file("Bill.txt");
-
-        QString datePrefix = QDate::currentDate().toString("yyMMdd");
-
-        int highestNumber = 0;
-
-        if (file.open(QIODevice::ReadOnly | QIODevice::Text))
-        {
-            QTextStream input(&file);
-
-            while (!input.atEnd())
-            {
-                QString line = input.readLine().trimmed();
-
-                if (line.isEmpty())
-                    continue;
-
-                QStringList fields;
-
-                if (!splitRecord(line, fields) || fields.size() != 12)
-                    return false;
-
-                QString existingId = fields.at(0);
-
-                if (!QRegularExpression("^\\d{9}$")
-                    .match(existingId).hasMatch())
-                {
-                    return false;
-                }
-
-                if (existingId.left(6) == datePrefix)
-                {
-                    int number = existingId.right(3).toInt();
-
-                    if (number > highestNumber)
-                        highestNumber = number;
-                }
-            }
-        }
-        else if (file.exists())
-        {
-            return false;
-        }
-
-        if (highestNumber >= 999)
-            return false;
-
-        highestNumber++;
-
-        QString sequence =
-            QString("%1").arg(highestNumber, 3, 10, QChar('0'));
-
-        id = datePrefix + sequence;
-
-        return true;
+        error = QStringLiteral("Cannot read %1: %2").arg(filePath, file.errorString());
+        return false;
     }
+    if (file.isOpen())
+    {
+        QTextStream in(&file);
+        while (!in.atEnd())
+        {
+            QStringList fields;
+            const QString line = in.readLine().trimmed();
+            if (line.isEmpty())
+                continue;
+            const bool validCount = splitRecord(line, fields)
+                && (billId ? (fields.size() == 12 || fields.size() == 16)
+                           : fields.size() == 9);
+            if (!validCount)
+            {
+                error = QStringLiteral("Invalid record in %1.").arg(filePath);
+                return false;
+            }
+            const QString existing = fields.first();
+            if (!QRegularExpression(QStringLiteral("^\\d{%1}$").arg(width))
+                    .match(existing).hasMatch())
+            {
+                error = QStringLiteral("Invalid ID in %1.").arg(filePath);
+                return false;
+            }
+            if (existing.left(6) == prefix)
+                highest = qMax(highest, existing.right(sequenceWidth).toInt());
+        }
+    }
+    if (highest >= maximum)
+    {
+        error = QStringLiteral("Daily ID limit reached for %1.").arg(filePath);
+        return false;
+    }
+    id = prefix + QStringLiteral("%1")
+        .arg(highest + 1, sequenceWidth, 10, QLatin1Char('0'));
+    return true;
+}
+}
+
+bool generateOrderId(QString &id)
+{
+    QString error;
+    return nextId(QStringLiteral("Order.txt"), QDate::currentDate(),
+        false, id, error);
+}
+
+bool generateBillId(QString &id)
+{
+    QString error;
+    return nextId(QStringLiteral("Bill.txt"), QDate::currentDate(),
+        true, id, error);
+}
+
+bool generateOrderId(QString filePath, QDate date, QString &id, QString &error)
+{
+    return nextId(filePath, date, false, id, error);
+}
+
+bool generateBillId(QString filePath, QDate date, QString &id, QString &error)
+{
+    return nextId(filePath, date, true, id, error);
+}
 }

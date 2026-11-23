@@ -18,6 +18,10 @@ struct Bill
     double totalTax = 0;
     double totalDiscount = 0;
     double totalPayable = 0;
+    double seasonalDiscount = 0;
+    double specialDiscount = 0;
+    double amountReceived = 0;
+    double balanceReturned = 0;
     QString paymentStatus;
 };
 }

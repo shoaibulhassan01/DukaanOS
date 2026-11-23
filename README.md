@@ -4,9 +4,9 @@ A Point of Sale (POS) system being built with C++ and Qt.
 
 ## Current UI
 
-- The app opens directly to a dashboard preview. New Order can scan a barcode or accept typed input and look up matching products in `Data/Product.txt`; order saving and billing are not connected.
+- Cashier checkout validates cash, card, and wallet payments, applies active seasonal and optional special discounts, saves paid orders and bills, and reduces stock. Cash change and the settlement are shown on the bill.
 - Use the role dropdown to switch between Cashier and Manager navigation.
-- Dashboard stats are placeholders. Manager Products reads from `Data/Product.txt`; Order History reads saved order records. Held Orders and bill generation work as in-memory previews only, and no new order is written to storage or sent to a printer.
+- Manager Products reads from `Data/Product.txt`; Managers can configure seasons and view daily, weekly, monthly, yearly, and custom-period sales reports. Dashboard stats are placeholders. Held Orders remain in-memory previews.
 - Each page has its own file under `ui/pages/` and is assembled through `ui/ui.cpp`.
 - The old BarcodeX screen is removed from the app window. Barcode code remains available for future POS work.
 
@@ -22,6 +22,8 @@ A Point of Sale (POS) system being built with C++ and Qt.
 | Held Orders | Cashier | Resume on-hold orders |
 | Orders History | Cashier, Manager | Search and view orders; Manager can archive |
 | Products | Manager | Search products, add/edit price, discount and stock, and view the low-stock list |
+| Seasons | Manager | Add, edit, activate, and deactivate dated seasonal discounts |
+| Sales Reports | Manager | View cash sales and all paid sales/discounts by date range |
 
 ## Team
 
@@ -60,10 +62,14 @@ DukaanOS/
 │   └── decoder/     # Run widths to digits
 ├── POS/
 │   ├── bill/        # Bill records, storage, and calculations
-│   ├── common/      # Record codec and ID generation
+│   ├── checkout/    # Payment validation and checkout orchestration
+│   ├── common/      # Record codec, data paths, dates, and ID generation
 │   ├── order/       # Order records, storage, and checkout services
+│   ├── payment/     # Cash, card, and wallet validation
 │   ├── product/     # Product records and stock services
+│   ├── report/      # Cash sales and all-sales summaries
 │   ├── scanner/     # POS adapter for the camera barcode scanner
+│   ├── season/      # Seasonal discount management and storage
 │   └── user/        # User records and login authentication
 ├── ui/
 │   ├── assets/      # App icons and page images
@@ -88,8 +94,11 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 | OrderDetail.txt | order id, product id, barcode, quantity |
 | Bill.txt | bill id (9 digits), customer name, order id, acronym, unit price, discount per unit, quantity, total without tax, total tax, total discount, total payable, status |
 | Users.txt | username, password, role |
+| Seasons.txt | season name, start date, end date, percentage, active status |
 
 Order status: `in-progress`, `on-hold`, `paid`, `archived`. Payment mode: `cash`, `card`, `wallet`.
+
+Bill rows preserve the 12-field legacy format when read; new checkout rows append seasonal/special discounts and the received/returned amounts. `Seasons.txt` records use `name startDate endDate percentage isActive#`.
 
 `Users.txt` credentials are plain-text demonstration data for local UI testing only. Do not use real or reused passwords.
 

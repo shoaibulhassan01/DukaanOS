@@ -26,6 +26,15 @@ if exist "%QT_KIT_ROOT%\Tools" set "QT_ROOT=%QT_KIT_ROOT%"
 if not defined CXX_COMPILER if defined CMAKE_CXX_COMPILER set "CXX_COMPILER=%CMAKE_CXX_COMPILER%"
 if not defined CXX_COMPILER if defined MINGW_ROOT if exist "%MINGW_ROOT%\bin\g++.exe" set "CXX_COMPILER=%MINGW_ROOT%\bin\g++.exe"
 if not defined CXX_COMPILER (
+    for /f "tokens=3" %%V in ('findstr /b /c:"QT_GCC_MAJOR_VERSION =" "%QT_PREFIX_PATH%\mkspecs\qconfig.pri"') do set "QT_GCC_MAJOR=%%V"
+    for /f "tokens=3" %%V in ('findstr /b /c:"QT_GCC_MINOR_VERSION =" "%QT_PREFIX_PATH%\mkspecs\qconfig.pri"') do set "QT_GCC_MINOR=%%V"
+)
+if not defined CXX_COMPILER if defined QT_GCC_MAJOR if defined QT_GCC_MINOR (
+    for %%M in ("%QT_ROOT%\Tools\mingw%QT_GCC_MAJOR%%QT_GCC_MINOR%0_64") do (
+        if exist "%%~fM\bin\g++.exe" set "CXX_COMPILER=%%~fM\bin\g++.exe"
+    )
+)
+if not defined CXX_COMPILER (
     for /d %%M in ("%QT_ROOT%\Tools\mingw*_64") do (
         if not defined CXX_COMPILER if exist "%%~fM\bin\g++.exe" set "CXX_COMPILER=%%~fM\bin\g++.exe"
     )
@@ -76,7 +85,7 @@ if errorlevel 1 (
 )
 
 echo Building DukaanOS...
-"%CMAKE_EXE%" --build "%BUILD_DIR%" --target DukaanOS
+"%CMAKE_EXE%" --build "%BUILD_DIR%" --target DukaanOS --parallel 1
 if errorlevel 1 (
     echo Build failed.
     pause

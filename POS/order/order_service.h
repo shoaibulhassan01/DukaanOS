@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../bill/bill.h"
+#include "../checkout/checkout_service.h"
 
 namespace Pos
 {
@@ -16,7 +16,6 @@ bool holdOrder(QString &error);
 // Owner: Abdul Ahad - load a held order back into the cart.
 bool resumeOrder(QString orderId, QString &error);
 
-// Owner: Abdul Ahad, with Anas for payment - complete checkout and create bill rows.
-bool completePayment(QString paymentMode, QString merchant,
-    double amountPaid, QVector<Bill> &billRows, QString &error);
+bool completePayment(const CheckoutRequest &request,
+    CheckoutResult &result, QString &error);
 }

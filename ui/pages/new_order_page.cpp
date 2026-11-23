@@ -1,13 +1,16 @@
 #include "new_order_page.h"
 
 #include "../../BarCode/camera/camera_scanner.h"
+#include "../../POS/checkout/checkout_service.h"
 #include "../../POS/product/product.h"
 #include "../../POS/product/product_repository.h"
 #include "../../POS/product/product_service.h"
 
 #include <QCoreApplication>
+#include <QAbstractSpinBox>
 #include <QComboBox>
 #include <QDir>
+#include <QDoubleSpinBox>
 #include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
@@ -20,6 +23,7 @@
 #include <QPixmap>
 #include <QPushButton>
 #include <QSpinBox>
+#include <QSignalBlocker>
 #include <QTableWidgetItem>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -62,7 +66,7 @@ QLabel *createFieldLabel(const QString &text, QWidget *parent)
 QString fieldStyle()
 {
     return QStringLiteral(
-        "QLineEdit, QSpinBox, QComboBox { background: #FAFAFD; color: %1;"
+        "QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #FAFAFD; color: %1;"
         " border: 1px solid %2; border-radius: 9px; padding: 0 11px; font-size: 12px; }"
         "QLineEdit:focus, QSpinBox:focus, QComboBox:focus { background: white;"
         " border: 1px solid %3; }")
@@ -117,7 +121,7 @@ public:
         root->addLayout(body);
 
         auto *notice = new QLabel(
-            QStringLiteral("Preview mode - bill is a preview; order saving and printing are not connected."),
+            QStringLiteral("Paid checkouts save the order, bill, and stock changes. Held orders are still previews."),
             this);
         notice->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent; padding-left: 2px;")
@@ -323,7 +327,11 @@ private:
             layout, card, QStringLiteral("Subtotal"), QStringLiteral("PKR 0"));
         taxValue_ = addSummaryRow(layout, card, QStringLiteral("Tax"), QStringLiteral("PKR 0"));
         discountValue_ = addSummaryRow(
-            layout, card, QStringLiteral("Discount"), QStringLiteral("PKR 0"));
+            layout, card, QStringLiteral("Total discounts"), QStringLiteral("PKR 0"));
+        seasonalValue_ = addSummaryRow(
+            layout, card, QStringLiteral("Seasonal discount"), QStringLiteral("PKR 0"));
+        specialValue_ = addSummaryRow(
+            layout, card, QStringLiteral("Special discount"), QStringLiteral("PKR 0"));
 
         auto *divider = new QFrame(card);
         divider->setFrameShape(QFrame::HLine);
@@ -355,6 +363,42 @@ private:
         layout->addWidget(paymentMethod_);
         layout->addSpacing(17);
 
+        layout->addWidget(createFieldLabel(QStringLiteral("Special discount (max 8%)"), card));
+        specialDiscount_ = new QDoubleSpinBox(card);
+        specialDiscount_->setRange(0, 8);
+        specialDiscount_->setDecimals(2);
+        specialDiscount_->setSuffix(QStringLiteral(" %"));
+        specialDiscount_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        specialDiscount_->setFixedHeight(42);
+        specialDiscount_->setStyleSheet(fieldStyle());
+        layout->addWidget(specialDiscount_);
+        layout->addSpacing(12);
+
+        merchantLabel_ = createFieldLabel(QStringLiteral("Bank / wallet name"), card);
+        merchantEdit_ = new QLineEdit(card);
+        merchantEdit_->setPlaceholderText(QStringLiteral("e.g. HBL or JazzCash"));
+        merchantEdit_->setFixedHeight(42);
+        merchantEdit_->setStyleSheet(fieldStyle());
+        layout->addWidget(merchantLabel_);
+        layout->addSpacing(7);
+        layout->addWidget(merchantEdit_);
+        layout->addSpacing(12);
+
+        cashLabel_ = createFieldLabel(QStringLiteral("Cash received"), card);
+        cashReceived_ = new QDoubleSpinBox(card);
+        cashReceived_->setRange(0, 100000000);
+        cashReceived_->setDecimals(2);
+        cashReceived_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        cashReceived_->setFixedHeight(42);
+        cashReceived_->setStyleSheet(fieldStyle());
+        changeLabel_ = new QLabel(card);
+        changeLabel_->setWordWrap(true);
+        layout->addWidget(cashLabel_);
+        layout->addSpacing(7);
+        layout->addWidget(cashReceived_);
+        layout->addWidget(changeLabel_);
+        layout->addSpacing(12);
+
         auto *hold = new QPushButton(QStringLiteral("Hold order"), card);
         holdButton_ = hold;
         hold->setCursor(Qt::PointingHandCursor);
@@ -376,8 +420,17 @@ private:
             "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
         layout->addWidget(checkout);
         layout->addStretch(1);
+        connect(paymentMethod_, &QComboBox::currentTextChanged,
+            this, [this]() { updatePaymentFields(); });
+        connect(cashReceived_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [this]() { updatePaymentFields(); });
+        connect(cashReceived_, &QAbstractSpinBox::editingFinished,
+            this, [this]() { cashEdited_ = true; });
+        connect(specialDiscount_, qOverload<double>(&QDoubleSpinBox::valueChanged),
+            this, [this]() { refreshCart(); });
         connect(holdButton_, &QPushButton::clicked, this, [this]() { holdOrder(); });
         connect(checkoutButton_, &QPushButton::clicked, this, [this]() { generateBill(); });
+        updatePaymentFields();
         return card;
     }
 
@@ -523,12 +576,11 @@ private:
             }
         }
 
-        if (currentProduct_.quantity <= 0 ||
-            quantity_->value() >= currentProduct_.quantity - existingQuantity)
+        if (quantity_->value() > currentProduct_.quantity - existingQuantity)
         {
             setStatus(QStringLiteral(
-                "Required quantity must be less than the available stock (%1).")
-                .arg(currentProduct_.quantity), true);
+                "Only %1 of this product remain available.")
+                .arg(qMax(0, currentProduct_.quantity - existingQuantity)), true);
             return;
         }
 
@@ -538,28 +590,23 @@ private:
             cartLines_[existingRow].quantity += quantity_->value();
 
         refreshCart();
-        setStatus(QStringLiteral("Product added to the order preview."));
+        setStatus(QStringLiteral("Product added to the cart."));
     }
 
     void refreshCart()
     {
         cartTable_->clearSpans();
         cartTable_->setRowCount(cartLines_.size());
+        QVector<Pos::CartItem> items;
         int itemCount = 0;
-        double subtotal = 0;
-        double tax = 0;
-        double discount = 0;
 
         for (int row = 0; row < cartLines_.size(); ++row)
         {
             const CartLine &line = cartLines_.at(row);
             QString productName = line.product.name;
             productName.replace(QLatin1Char('_'), QLatin1Char(' '));
-            const double lineSubtotal = line.product.unitPrice * line.quantity;
             itemCount += line.quantity;
-            subtotal += lineSubtotal;
-            tax += line.product.tax * line.quantity;
-            discount += line.product.discountPerUnit * line.quantity;
+            items.append(Pos::CartItem{line.product, line.quantity});
 
             auto setCell = [this, row](int column, const QString &value) {
                 auto *cell = new QTableWidgetItem(value);
@@ -570,32 +617,94 @@ private:
             setCell(1, line.product.barcode);
             setCell(2, QStringLiteral("PKR %1").arg(line.product.unitPrice, 0, 'f', 2));
             setCell(3, QString::number(line.quantity));
-            setCell(4, QStringLiteral("PKR %1").arg(lineSubtotal, 0, 'f', 2));
+            setCell(4, QStringLiteral("PKR %1")
+                .arg(line.product.unitPrice * line.quantity, 0, 'f', 2));
             cartTable_->setRowHeight(row, 42);
         }
 
         itemsValue_->setText(QString::number(itemCount));
-        subtotalValue_->setText(QStringLiteral("PKR %1").arg(subtotal, 0, 'f', 2));
-        taxValue_->setText(QStringLiteral("PKR %1").arg(tax, 0, 'f', 2));
-        discountValue_->setText(QStringLiteral("PKR %1").arg(discount, 0, 'f', 2));
-        totalValue_->setText(QStringLiteral("PKR %1").arg(subtotal + tax - discount, 0, 'f', 2));
+        Pos::CartTotals totals;
+        QString error;
+        if (!items.isEmpty() && !Pos::calculateCheckoutTotals(
+                items, specialDiscount_->value(), totals, error))
+        {
+            setStatus(error, true);
+            checkoutButton_->setEnabled(false);
+            return;
+        }
+        checkoutButton_->setEnabled(true);
+        subtotalValue_->setText(QStringLiteral("PKR %1").arg(totals.withoutTax, 0, 'f', 2));
+        taxValue_->setText(QStringLiteral("PKR %1").arg(totals.tax, 0, 'f', 2));
+        discountValue_->setText(QStringLiteral("PKR %1").arg(totals.discount, 0, 'f', 2));
+        seasonalValue_->setText(QStringLiteral("PKR %1")
+            .arg(totals.seasonalDiscount, 0, 'f', 2));
+        specialValue_->setText(QStringLiteral("PKR %1")
+            .arg(totals.specialDiscount, 0, 'f', 2));
+        currentTotal_ = totals.payable;
+        totalValue_->setText(QStringLiteral("PKR %1").arg(currentTotal_, 0, 'f', 2));
+        if (!cashEdited_)
+        {
+            const QSignalBlocker blocker(cashReceived_);
+            cashReceived_->setValue(currentTotal_);
+        }
+        updatePaymentFields();
     }
 
-    OrderPreview createOrderPreview() const
+    void updatePaymentFields()
+    {
+        const bool cash = paymentMethod_->currentText() == QStringLiteral("Cash");
+        merchantLabel_->setVisible(!cash);
+        merchantEdit_->setVisible(!cash);
+        cashLabel_->setVisible(cash);
+        cashReceived_->setVisible(cash);
+        changeLabel_->setVisible(cash);
+        if (!cash)
+        {
+            changeLabel_->clear();
+            return;
+        }
+        const double change = cashReceived_->value() - currentTotal_;
+        if (change < -0.005)
+            changeLabel_->setText(QStringLiteral("Short by PKR %1")
+                .arg(-change, 0, 'f', 2));
+        else
+            changeLabel_->setText(QStringLiteral("Change: PKR %1")
+                .arg(qMax(0.0, change), 0, 'f', 2));
+    }
+
+    OrderPreview createOrderPreview()
     {
         OrderPreview order;
         order.customerName = customerNameEdit_->text().trimmed();
         order.phone = customerPhoneEdit_->text().trimmed();
         order.paymentMethod = paymentMethod_->currentText();
+        order.merchant = merchantEdit_->text().trimmed();
+        order.specialDiscountPercent = specialDiscount_->value();
         for (const CartLine &line : cartLines_)
         {
             order.lines.append(OrderPreviewLine{line.product, line.quantity});
             order.itemCount += line.quantity;
-            order.subtotal += line.product.unitPrice * line.quantity;
-            order.tax += line.product.tax * line.quantity;
-            order.discount += line.product.discountPerUnit * line.quantity;
         }
-        order.total = order.subtotal + order.tax - order.discount;
+        QVector<Pos::CartItem> items;
+        for (const CartLine &line : cartLines_)
+            items.append(Pos::CartItem{line.product, line.quantity});
+        Pos::CartTotals totals;
+        QString error;
+        if (!Pos::calculateCheckoutTotals(items, order.specialDiscountPercent,
+                totals, error))
+        {
+            setStatus(error, true);
+            return OrderPreview{};
+        }
+        order.subtotal = totals.withoutTax;
+        order.tax = totals.tax;
+        order.discount = totals.discount;
+        order.seasonalDiscount = totals.seasonalDiscount;
+        order.specialDiscount = totals.specialDiscount;
+        order.total = totals.payable;
+        order.amountReceived = order.paymentMethod == QStringLiteral("Cash")
+            ? cashReceived_->value() : order.total;
+        order.balanceReturned = qMax(0.0, order.amountReceived - order.total);
         return order;
     }
 
@@ -648,6 +757,12 @@ private:
     QLineEdit *customerPhoneEdit_ = nullptr;
     QSpinBox *quantity_ = nullptr;
     QComboBox *paymentMethod_ = nullptr;
+    QDoubleSpinBox *specialDiscount_ = nullptr;
+    QLineEdit *merchantEdit_ = nullptr;
+    QLabel *merchantLabel_ = nullptr;
+    QDoubleSpinBox *cashReceived_ = nullptr;
+    QLabel *cashLabel_ = nullptr;
+    QLabel *changeLabel_ = nullptr;
     QLabel *previewLabel_ = nullptr;
     QLabel *matchLabel_ = nullptr;
     QLabel *statusLabel_ = nullptr;
@@ -656,7 +771,11 @@ private:
     QLabel *subtotalValue_ = nullptr;
     QLabel *taxValue_ = nullptr;
     QLabel *discountValue_ = nullptr;
+    QLabel *seasonalValue_ = nullptr;
+    QLabel *specialValue_ = nullptr;
     QLabel *totalValue_ = nullptr;
+    double currentTotal_ = 0;
+    bool cashEdited_ = false;
     Pos::Product currentProduct_;
     QVector<CartLine> cartLines_;
     bool hasMatchedProduct_ = false;

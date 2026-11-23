@@ -15,6 +15,7 @@ struct CheckoutRequest
 {
     QString customerName, customerContact, paymentMode, merchant;
     double amountPaid = 0;
+    double specialDiscountPercent = 0;
     QVector<CartItem> items;
 };
 
@@ -32,4 +33,7 @@ struct CheckoutResult
 // the save step on.
 bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     QString &error);
+
+bool calculateCheckoutTotals(const QVector<CartItem> &items,
+    double specialDiscountPercent, CartTotals &totals, QString &error);
 }

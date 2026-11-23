@@ -41,8 +41,8 @@ int main(int argc, char *argv[])
     product.quantity = 5;
     if (!Pos::checkStock(product, 4))
         return fail(QStringLiteral("A quantity below the stock must be allowed."));
-    if (Pos::checkStock(product, 5))
-        return fail(QStringLiteral("A quantity equal to the stock must be refused."));
+    if (!Pos::checkStock(product, 5))
+        return fail(QStringLiteral("A quantity equal to the stock must be allowed."));
     if (Pos::checkStock(product, 6))
         return fail(QStringLiteral("A quantity above the stock must be refused."));
     if (Pos::checkStock(product, 0))

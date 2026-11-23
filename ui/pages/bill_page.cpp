@@ -137,7 +137,7 @@ bool exportBillPdf(const OrderPreview &order, const QString &path)
         painter.drawLine(left, y, right, y);
     }
 
-    if (y + 140 > bottom)
+    if (y + 340 > bottom)
     {
         painter.setPen(QColor(kMuted));
         painter.setFont(QFont(QStringLiteral("Segoe UI"), 8));
@@ -160,11 +160,15 @@ bool exportBillPdf(const OrderPreview &order, const QString &path)
     };
     drawTotal(QStringLiteral("Subtotal"), money(order.subtotal), false);
     drawTotal(QStringLiteral("Tax"), money(order.tax), false);
-    drawTotal(QStringLiteral("Discount"), QStringLiteral("- %1").arg(money(order.discount)), false);
+    drawTotal(QStringLiteral("Total discounts"), QStringLiteral("- %1").arg(money(order.discount)), false);
+    drawTotal(QStringLiteral("Seasonal discount"), QStringLiteral("- %1").arg(money(order.seasonalDiscount)), false);
+    drawTotal(QStringLiteral("Special discount"), QStringLiteral("- %1").arg(money(order.specialDiscount)), false);
     painter.setPen(QPen(QColor(kLine), 1));
     painter.drawLine(left, y, right, y);
     y += 7;
     drawTotal(QStringLiteral("TOTAL"), money(order.total), true);
+    drawTotal(QStringLiteral("Amount received"), money(order.amountReceived), false);
+    drawTotal(QStringLiteral("Balance returned"), money(order.balanceReturned), false);
 
     painter.setPen(QColor(kMuted));
     painter.setFont(QFont(QStringLiteral("Segoe UI"), 9));
@@ -197,7 +201,7 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
         QStringLiteral("color: %1; font-size: 19px; font-weight: 800; background: transparent;")
             .arg(kNavy), receipt));
     brandRow->addStretch(1);
-    brandRow->addWidget(makeLabel(QStringLiteral("PAYMENT PREVIEW"),
+    brandRow->addWidget(makeLabel(    QStringLiteral("PAID"),
         QStringLiteral("color: #18764A; background: #E8F8F0; border-radius: 8px;"
                        " padding: 7px 10px; font-size: 9px; font-weight: 700;"), receipt));
     layout->addLayout(brandRow);
@@ -290,11 +294,17 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
     };
     addTotal(0, QStringLiteral("Subtotal"), money(order.subtotal));
     addTotal(1, QStringLiteral("Tax"), money(order.tax));
-    addTotal(2, QStringLiteral("Discount"), QStringLiteral("- %1").arg(money(order.discount)));
+    addTotal(2, QStringLiteral("Total discounts"), QStringLiteral("- %1").arg(money(order.discount)));
+    addTotal(3, QStringLiteral("Seasonal discount"),
+        QStringLiteral("- %1").arg(money(order.seasonalDiscount)));
+    addTotal(4, QStringLiteral("Special discount"),
+        QStringLiteral("- %1").arg(money(order.specialDiscount)));
+    addTotal(5, QStringLiteral("Amount received"), money(order.amountReceived));
+    addTotal(6, QStringLiteral("Balance returned"), money(order.balanceReturned));
     auto *divider = new QFrame(receipt);
     divider->setFrameShape(QFrame::HLine);
     divider->setStyleSheet(QStringLiteral("color: %1;").arg(kLine));
-    totals->addWidget(divider, 3, 0, 1, 2);
+    totals->addWidget(divider, 7, 0, 1, 2);
     auto *totalLabel = makeLabel(QStringLiteral("TOTAL PAID"),
         QStringLiteral("color: %1; font-size: 11px; font-weight: 800; background: transparent;")
             .arg(kInk), receipt);
@@ -302,8 +312,8 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
         QStringLiteral("color: %1; font-size: 17px; font-weight: 800; background: transparent;")
             .arg(kNavy), receipt);
     totalValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    totals->addWidget(totalLabel, 4, 0);
-    totals->addWidget(totalValue, 4, 1);
+    totals->addWidget(totalLabel, 8, 0);
+    totals->addWidget(totalValue, 8, 1);
     layout->addLayout(totals);
     layout->addSpacing(20);
     auto *footer = makeLabel(QStringLiteral("Thank you for shopping with us!"),

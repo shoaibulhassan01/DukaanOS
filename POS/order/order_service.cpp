@@ -30,11 +30,9 @@ bool resumeOrder(QString orderId, QString &error)
     return false;
 }
 
-// Owner: Abdul Ahad, with Anas for payment - complete checkout and create bill rows.
-bool completePayment(QString paymentMode, QString merchant,
-    double amountPaid, QVector<Bill> &billRows, QString &error)
+bool completePayment(const CheckoutRequest &request,
+    CheckoutResult &result, QString &error)
 {
-    error = QStringLiteral("TODO: Complete payment and generate bill.");
-    return false;
+    return generateBill(request, result, error);
 }
 }

@@ -20,8 +20,12 @@ qt_add_executable(DukaanOS
     ui/pages/products_page.cpp
     ui/pages/product_dialog.cpp
     ui/pages/bill_page.cpp
+    ui/pages/seasons_page.cpp
+    ui/pages/sales_reports_page.cpp
     POS/common/id_generator.cpp
     POS/common/record_codec.cpp
+    POS/common/data_paths.cpp
+    POS/common/date_format.cpp
     POS/user/user_repository.cpp
     POS/user/auth_service.cpp
     POS/product/product_repository.cpp
@@ -31,6 +35,11 @@ qt_add_executable(DukaanOS
     POS/order/order_service.cpp
     POS/bill/bill_repository.cpp
     POS/bill/bill_service.cpp
+    POS/checkout/checkout_service.cpp
+    POS/payment/payment_methods.cpp
+    POS/season/season_repository.cpp
+    POS/season/season_service.cpp
+    POS/report/sales_report.cpp
     BarCode/encoder/encoder.cpp
     BarCode/generator/generator.cpp
     BarCode/scanner/scanner.cpp
@@ -72,6 +81,27 @@ if(BUILD_TESTING)
     )
     target_link_libraries(UserAuthTest PRIVATE Qt6::Core)
     add_test(NAME UserAuthTest COMMAND UserAuthTest)
+
+    qt_add_executable(AnasTaskTest
+        POS/tests/anas_task_test.cpp
+        POS/common/record_codec.cpp
+        POS/common/data_paths.cpp
+        POS/common/date_format.cpp
+        POS/common/id_generator.cpp
+        POS/product/product_repository.cpp
+        POS/product/product_service.cpp
+        POS/order/order_repository.cpp
+        POS/order/order_service.cpp
+        POS/bill/bill_repository.cpp
+        POS/bill/bill_service.cpp
+        POS/checkout/checkout_service.cpp
+        POS/payment/payment_methods.cpp
+        POS/season/season_repository.cpp
+        POS/season/season_service.cpp
+        POS/report/sales_report.cpp
+    )
+    target_link_libraries(AnasTaskTest PRIVATE Qt6::Core)
+    add_test(NAME AnasTaskTest COMMAND AnasTaskTest)
 
     qt_add_executable(CameraScannerTest
         BarCode/encoder/encoder.cpp
