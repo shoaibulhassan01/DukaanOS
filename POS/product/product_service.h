@@ -23,9 +23,10 @@ bool checkStock(Product product, int requestedQuantity);
 bool reduceStock(QString productFile, QVector<CartItem> soldItems, QString &error);
 
 // Owner: Umar Khan - check one product before it is saved. Rules:
-//   id, name and barcode image path present; no field contains a space or '#';
-//   barcode is exactly 6 digits and its first two digits match the Category Id;
-//   acronym is 1-8 characters;
+//   id is P followed by exactly 4 digits (P0001-P9999, capital P);
+//   name and barcode image path present; no field contains a space or '#';
+//   barcode is exactly 6 digits with a first digit of 1-9 and its first two
+//   digits match the Category Id; acronym is 1-8 characters;
 //   unit is "count" or "weight"; price is above 0; tax, discount and
 //   quantity are not negative; discount is not more than the price.
 bool validateProduct(Product product, QString &error);
@@ -34,10 +35,16 @@ bool validateProduct(Product product, QString &error);
 bool generateNextProductBarcode(const QString &productFile,
     const QString &categoryId, QString &barcode, QString &error);
 
-// Validate the product, require its barcode's category to exist in PCategory.txt,
-// store its category ID, generate its barcode picture, and create Product.txt
-// if needed. A supplied barcode remains supported.
-bool addProduct(QString productFile, Product product, QString &error);
+// Return the next product ID: one more than the highest ID, or P0001 for an
+// empty file. Gaps are not filled; fails once P9999 is used.
+bool nextProductId(const QString &productFile, QString &id, QString &error);
+
+// Add a product with an automatically assigned ID. Validates it, requires its
+// barcode category to exist in PCategory.txt, stores the category ID, generates
+// its barcode image and creates Product.txt if needed. Returns the assigned ID
+// when requested.
+bool addProduct(QString productFile, Product product, QString &error,
+    QString *assignedId = nullptr);
 
 // Owner: Umar Khan - edit the price, discount per unit and available
 // quantity of an existing product, found by its product id.

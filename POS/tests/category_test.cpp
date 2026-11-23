@@ -143,6 +143,30 @@ int main(int argc, char *argv[])
         QStringLiteral("Editing must refuse an empty name."));
     check(count(file) == 2, QStringLiteral("Edits must not add or remove categories."));
 
+    // -------------------------------------------------------------- search
+    const QVector<Pos::Category> all = {
+        category(QStringLiteral("10"), QStringLiteral("Beverages"), QStringLiteral("BEV")),
+        category(QStringLiteral("45"), QStringLiteral("Personal_care"), QStringLiteral("PCR")),
+        category(QStringLiteral("60"), QStringLiteral("Grains_and_pulses"), QStringLiteral("GRN")) };
+    auto ids = [](const QVector<Pos::Category> &found) {
+        QStringList list;
+        for (const Pos::Category &c : found)
+            list << c.id;
+        return list.join(QLatin1Char(','));
+    };
+    check(ids(Pos::searchCategories(all, QString())) == QStringLiteral("10,45,60"),
+        QStringLiteral("An empty search must return every category."));
+    check(ids(Pos::searchCategories(all, QStringLiteral("bev"))) == QStringLiteral("10"),
+        QStringLiteral("Search must match the name, not case sensitive."));
+    check(ids(Pos::searchCategories(all, QStringLiteral("personal care"))) == QStringLiteral("45"),
+        QStringLiteral("A space in the search must match the underscore in the stored name."));
+    check(ids(Pos::searchCategories(all, QStringLiteral("grn"))) == QStringLiteral("60"),
+        QStringLiteral("Search must match the acronym."));
+    check(ids(Pos::searchCategories(all, QStringLiteral(" 45 "))) == QStringLiteral("45"),
+        QStringLiteral("Search must match the Id and ignore surrounding spaces."));
+    check(Pos::searchCategories(all, QStringLiteral("xyz")).isEmpty(),
+        QStringLiteral("A search with no match must return nothing."));
+
     // -------------------------------------------------------------- delete
     // Product P0001 has barcode 100001, so it belongs to category 10.
     writeText(products,
