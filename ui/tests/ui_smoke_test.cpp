@@ -18,6 +18,7 @@
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
+#include "../../POS/report/report_service.h"
 #include "../../POS/user/auth_service.h"
 
 #include <QAbstractItemModel>
@@ -324,7 +325,7 @@ void testRoles(QStackedWidget *stack)
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
     check(sidebarPages(manager) == QStringList({QStringLiteral("Dashboard"), QStringLiteral("Scan Product"),
                                                 QStringLiteral("Products"), QStringLiteral("Categories"),
-                                                QStringLiteral("Order History"),
+                                                QStringLiteral("Order History"), QStringLiteral("Reports"),
                                                 QStringLiteral("Cashier Accounts")}),
         QStringLiteral("Manager sees the wrong pages: %1").arg(sidebarPages(manager).join(", ")));
     for (QComboBox *box : manager->findChildren<QComboBox *>())
@@ -357,6 +358,8 @@ void testRoles(QStackedWidget *stack)
         QStringLiteral("A cashier must not be able to open Cashier Accounts."));
     check(!sidebarPages(cashier).contains(QStringLiteral("Categories")),
         QStringLiteral("A cashier must not be able to open Categories."));
+    check(!sidebarPages(cashier).contains(QStringLiteral("Reports")),
+        QStringLiteral("A cashier must not be able to open Reports."));
     visitAllPages(cashier, QStringLiteral("Cashier"));
 
     QWidget *unknown = openDashboard(stack, QStringLiteral("admin"));
@@ -504,13 +507,26 @@ void testCategoriesPage(QStackedWidget *stack)
     {
         productsPage->click();
         settle();
-        check(showsText(manager, QStringLiteral("10 \u00B7 Beverages")),
-            QStringLiteral("Products page: products with barcode 10xxxx must show category Beverages."));
-        check(showsText(manager, QStringLiteral("34 \u00B7 Snacks")) &&
-                showsText(manager, QStringLiteral("60 \u00B7 Grains and pulses")),
-            QStringLiteral("Products page: every product must show its category."));
-        check(!showsText(manager, QStringLiteral("not found")),
-            QStringLiteral("Products page: no sample product may be without a category."));
+        // The CATEGORY column shows the category name only.
+        QTableWidget *productList = nullptr;
+        for (QTableWidget *t : manager->findChildren<QTableWidget *>())
+            if (t->isVisible())
+                productList = t;
+        int categoryColumn = -1;
+        for (int c = 0; productList && c < productList->columnCount(); ++c)
+            if (productList->horizontalHeaderItem(c) && productList->horizontalHeaderItem(c)->text() == QStringLiteral("CATEGORY"))
+                categoryColumn = c;
+        QStringList shown;
+        for (int r = 0; productList && categoryColumn >= 0 && r < productList->rowCount(); ++r)
+            if (productList->item(r, categoryColumn))
+                shown << productList->item(r, categoryColumn)->text();
+        check(shown.contains(QStringLiteral("Beverages")) && shown.contains(QStringLiteral("Snacks")) &&
+                shown.contains(QStringLiteral("Grains and pulses")),
+            QStringLiteral("Products page: the CATEGORY column must show category names, got: %1")
+                .arg(shown.join(QStringLiteral(", "))));
+        check(!shown.contains(QStringLiteral("Not found")) && !shown.join(QString()).contains(QStringLiteral("\u00B7")),
+            QStringLiteral("Products page: every sample product has a category, shown by name only, got: %1")
+                .arg(shown.join(QStringLiteral(", "))));
 
         // Add product form: the category appears as the barcode is typed, and
         // a product whose category does not exist cannot be saved.
@@ -598,6 +614,69 @@ void testCategoriesPage(QStackedWidget *stack)
         check(!added, QStringLiteral("A product without a category must not be saved to Product.txt."));
     }
 
+}
+
+// Reports page (Increment 3, req 11): both of Umar's reports show what the
+// report logic (tested in ReportTest) calculates from the sample data.
+void testReportsPage(QStackedWidget *stack)
+{
+    QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
+    QPushButton *page = button(manager, QStringLiteral("Reports"));
+    check(page, QStringLiteral("Manager has no Reports page."));
+    if (!page)
+        return;
+    page->click();
+    settle();
+    QComboBox *selector = manager->findChild<QComboBox *>(QStringLiteral("reportSelector"));
+    QTableWidget *table = nullptr;
+    for (QTableWidget *t : manager->findChildren<QTableWidget *>())
+        if (t->isVisible())
+            table = t;
+    check(selector && table, QStringLiteral("Reports page: no report list or table."));
+    if (!selector || !table)
+        return;
+
+    auto cell = [table](int row, int column) {
+        QTableWidgetItem *item = table->item(row, column);
+        return item ? item->text() : QString();
+    };
+    QString error;
+
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Top 10 most sold items")));
+    settle();
+    QVector<Pos::SoldItem> sold;
+    Pos::topSoldProducts(QStringLiteral("Data/Product.txt"), QStringLiteral("Data/Order.txt"),
+        QStringLiteral("Data/OrderDetail.txt"), 10, sold, error);
+    check(!sold.isEmpty() && table->rowCount() == sold.size(),
+        QStringLiteral("Top sold: the table must have %1 rows, has %2.").arg(sold.size()).arg(table->rowCount()));
+    for (int row = 0; row < qMin(sold.size(), table->rowCount()); ++row)
+    {
+        const Pos::SoldItem &item = sold.at(row);
+        check(cell(row, 0) == QString::number(row + 1) &&
+                cell(row, 1).contains(item.product.id) &&
+                cell(row, 3).startsWith(QString::number(item.quantitySold) + QLatin1Char(' ')) &&
+                cell(row, 4).startsWith(QString::number(item.product.quantity) + QLatin1Char(' ')),
+            QStringLiteral("Top sold row %1 shows '%2 | %3 | %4', expected %5 sold %6, stock %7.")
+                .arg(row + 1).arg(cell(row, 1), cell(row, 3), cell(row, 4), item.product.id)
+                .arg(item.quantitySold).arg(item.product.quantity));
+    }
+    check(cell(0, 2) == QStringLiteral("Beverages"),
+        QStringLiteral("Reports: the CATEGORY column must show the category name only, got '%1'.").arg(cell(0, 2)));
+    check(table->horizontalHeaderItem(3) && table->horizontalHeaderItem(3)->text() == QStringLiteral("QUANTITY SOLD") &&
+            table->horizontalHeaderItem(4) && table->horizontalHeaderItem(4)->text() == QStringLiteral("REMAINING STOCK"),
+        QStringLiteral("Top sold must show QUANTITY SOLD and REMAINING STOCK columns."));
+
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Top 10 items by remaining stock")));
+    settle();
+    QVector<Pos::Product> stock;
+    Pos::topStockProducts(QStringLiteral("Data/Product.txt"), 10, stock, error);
+    check(!stock.isEmpty() && table->rowCount() == stock.size(),
+        QStringLiteral("Top stock: the table must have %1 rows, has %2.").arg(stock.size()).arg(table->rowCount()));
+    for (int row = 0; row < qMin(stock.size(), table->rowCount()); ++row)
+        check(cell(row, 1).contains(stock.at(row).id) &&
+                cell(row, 3).startsWith(QString::number(stock.at(row).quantity) + QLatin1Char(' ')),
+            QStringLiteral("Top stock row %1 shows '%2 | %3', expected %4 with %5.")
+                .arg(row + 1).arg(cell(row, 1), cell(row, 3), stock.at(row).id).arg(stock.at(row).quantity));
 }
 
 void testCashierAccountCreation(QStackedWidget *stack)
@@ -878,6 +957,7 @@ int main(int argc, char *argv[])
     testLogin(window);
     testRoles(stack);
     testCategoriesPage(stack);
+    testReportsPage(stack);
     testCashierAccountCreation(stack);
     testSale(stack);
 

@@ -337,9 +337,8 @@ private:
 
             setCell(row, 1, product.barcode);
             const QString categoryId = product.categoryId;   // stored 11th field (req 2)
-            auto *category = new QTableWidgetItem(categoryNames_.contains(categoryId)
-                ? QStringLiteral("%1 \u00B7 %2").arg(categoryId, categoryNames_.value(categoryId))
-                : QStringLiteral("%1 \u00B7 not found").arg(categoryId));
+            auto *category = new QTableWidgetItem(categoryNames_.value(categoryId,
+                QStringLiteral("Not found")));
             category->setFlags(category->flags() & ~Qt::ItemIsEditable);
             if (!categoryNames_.contains(categoryId))
             {
