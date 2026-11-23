@@ -3,6 +3,7 @@
 // made-up data in a temporary folder, then rules that must hold on the
 // project's real sample data.
 
+#include "../product/product_service.h"
 #include "../report/report_service.h"
 
 #include <QCoreApplication>
@@ -170,6 +171,43 @@ int main(int argc, char *argv[])
     writeText(orders, QStringLiteral("00000001 broken#\n"));
     check(!Pos::topSoldProducts(products, orders, details, 10, sold, error) && !error.isEmpty(),
         QStringLiteral("A broken Order.txt must be reported."));
+
+    // ------------------------------------------------- unit filter
+    // Counts and kilograms are ranked separately when a unit is chosen; the
+    // filter is applied before the top ten is taken.
+    writeText(orders, orderText);
+    QString mixed = productText;
+    mixed += QStringLiteral("P0090 100090 RCE Rice weight 10.00 0.00 0.00 80 Data/barcodes/100090.png 10#\n");
+    mixed += QStringLiteral("P0091 100091 SGR Sugar weight 10.00 0.00 0.00 5 Data/barcodes/100091.png 10#\n");
+    writeText(products, mixed);
+    writeText(details, detailText + item(QStringLiteral("00000001"), 90, 1) + item(QStringLiteral("00000002"), 91, 2) +
+        item(QStringLiteral("00000001"), 77, 40));
+    check(Pos::topSoldProducts(products, orders, details, 10, sold, error, QStringLiteral("weight")) &&
+            names(sold) == QStringList({QStringLiteral("Sugar:2"), QStringLiteral("Rice:1")}),
+        QStringLiteral("Weighed items only: Sugar 2, Rice 1 (they are below the overall top ten). Got: %1")
+            .arg(names(sold).join(QStringLiteral(", "))));
+    check(Pos::topSoldProducts(products, orders, details, 10, sold, error, QStringLiteral("count")) &&
+            sold.size() == 10 && names(sold).value(0) == QStringLiteral("Lentils:12"),
+        QStringLiteral("Counted items only: 10 rows starting with Lentils; the removed product P0077 has no unit "
+                       "and is left out. Got: %1").arg(names(sold).join(QStringLiteral(", "))));
+    check(Pos::topSoldProducts(products, orders, details, 10, sold, error) && sold.value(0).product.id == QStringLiteral("P0077"),
+        QStringLiteral("All items: the removed product P0077 is still listed."));
+    check(Pos::topStockProducts(products, 10, stock, error, QStringLiteral("weight")) &&
+            names(stock) == QStringList({QStringLiteral("Rice:80"), QStringLiteral("Sugar:5")}),
+        QStringLiteral("Stock, weighed items only: Rice 80, Sugar 5. Got: %1").arg(names(stock).join(QStringLiteral(", "))));
+    check(Pos::topStockProducts(products, 10, stock, error) && names(stock).value(0) == QStringLiteral("Rice:80"),
+        QStringLiteral("Stock, all items: Rice (80) is first."));
+    check(Pos::topStockProducts(products, 10, stock, error, QStringLiteral("count")) &&
+            stock.size() == 10 && !names(stock).contains(QStringLiteral("Rice:80")),
+        QStringLiteral("Stock, counted items only: 10 rows, no weighed items."));
+
+    // How quantities are shown: weight is in kilograms.
+    check(Pos::unitLabel(QStringLiteral("weight")) == QStringLiteral("weight (kg)") &&
+            Pos::unitLabel(QStringLiteral("count")) == QStringLiteral("count"),
+        QStringLiteral("Units must show as 'count' and 'weight (kg)'."));
+    check(Pos::quantityText(100, QStringLiteral("weight")) == QStringLiteral("100 kg") &&
+            Pos::quantityText(36, QStringLiteral("count")) == QStringLiteral("36 count"),
+        QStringLiteral("Quantities must show as '100 kg' and '36 count'."));
 
     // ------------------------------------------- the real sample data
     const QDir data(QDir(QStringLiteral(DUKAANOS_SOURCE_DIR)).filePath(QStringLiteral("Data")));

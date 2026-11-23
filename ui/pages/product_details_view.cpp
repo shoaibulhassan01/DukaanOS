@@ -1,5 +1,7 @@
 #include "product_details_view.h"
 
+#include "../../POS/product/product_service.h"
+
 #include <QCoreApplication>
 #include <QDialog>
 #include <QDir>
@@ -52,7 +54,7 @@ QWidget *UiPages::createProductDetailsView(const Pos::Product &product, QWidget 
 
     auto *stockTag = new QLabel(view);
     const bool inStock = product.quantity > 0;
-    stockTag->setText(inStock ? QStringLiteral("%1 %2 available").arg(product.quantity).arg(product.unit)
+    stockTag->setText(inStock ? QStringLiteral("%1 available").arg(Pos::quantityText(product.quantity, product.unit))
                               : QStringLiteral("Out of stock"));
     stockTag->setStyleSheet(QStringLiteral(
         "color: %1; font-size: 11px; font-weight: 600; background: transparent;")
@@ -78,7 +80,7 @@ QWidget *UiPages::createProductDetailsView(const Pos::Product &product, QWidget 
         { QStringLiteral("Barcode"), product.barcode },
         { QStringLiteral("Acronym"), product.acronym },
         { QStringLiteral("Name"), name },
-        { QStringLiteral("Measurement unit"), product.unit },
+        { QStringLiteral("Measurement unit"), Pos::unitLabel(product.unit) },
         { QStringLiteral("Unit price"), money(product.unitPrice) },
         { QStringLiteral("Tax per unit"), money(product.tax) },
         { QStringLiteral("Discount per unit"), money(product.discountPerUnit) },

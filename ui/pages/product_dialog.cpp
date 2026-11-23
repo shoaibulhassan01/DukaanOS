@@ -90,7 +90,9 @@ public:
         name_ = new QLineEdit(this);
         name_->setPlaceholderText(QStringLiteral("e.g. Green tea"));
         unit_ = new QComboBox(this);
-        unit_->addItems({ QStringLiteral("count"), QStringLiteral("weight") });
+        // Shown as "weight (kg)", saved as "weight" in Product.txt.
+        unit_->addItem(Pos::unitLabel(QStringLiteral("count")), QStringLiteral("count"));
+        unit_->addItem(Pos::unitLabel(QStringLiteral("weight")), QStringLiteral("weight"));
         price_ = moneyBox();
         tax_ = moneyBox();
         discount_ = moneyBox();
@@ -276,7 +278,7 @@ private:
         acronym_->setText(p.acronym);
         QString name = p.name;
         name_->setText(name.replace(QLatin1Char('_'), QLatin1Char(' ')));
-        unit_->setCurrentText(p.unit);
+        unit_->setCurrentIndex(qMax(0, unit_->findData(p.unit)));
         price_->setText(QString::number(p.unitPrice, 'f', 2));
         tax_->setText(QString::number(p.tax, 'f', 2));
         discount_->setText(QString::number(p.discountPerUnit, 'f', 2));
@@ -291,7 +293,7 @@ private:
         p.acronym = acronym_->text().trimmed();
         // Product.txt is space separated, so spaces in a name are stored as _.
         p.name = name_->text().simplified().replace(QLatin1Char(' '), QLatin1Char('_'));
-        p.unit = unit_->currentText();
+        p.unit = unit_->currentData().toString();
         p.barcodeImage = image_->text().trimmed();
 
         const QString priceText = price_->text().trimmed();
