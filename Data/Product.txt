@@ -1,7 +1,18 @@
-P0001 100001 APL Apple_juice count 250.00 12.50 10.00 36 Data/barcodes/100001.png#
-P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 30 Data/barcodes/100002.png#
-P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 10 Data/barcodes/100003.png#
-P1 123456 GTEA Green_Tea count 2855380.00 0.00 387131.00 0 Data/barcodes/123456.png#
-P11 456789 Sh Shampoo weight 300.00 20.00 4.00 1 Data/barcodes/456789.png#
-P1114 567890 Mil Milk weight 260.00 0.20 0.10 1 Data/barcodes/567890.png#
-P1145 345678 BB Biscuit count 60.00 0.10 0.01 1 Data/barcodes/345678.png#
+P0001 100001 APL Apple_juice count 250.00 12.50 10.00 36 Data/barcodes/100001.png 10#
+P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 30 Data/barcodes/100002.png 10#
+P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 10 Data/barcodes/100003.png 10#
+P0004 100004 CFE Instant_coffee count 650.00 32.50 20.00 18 Data/barcodes/100004.png 10#
+P0005 200001 BRD White_bread count 150.00 0.00 0.00 25 Data/barcodes/200001.png 20#
+P0006 200002 RSK Rusk count 220.00 11.00 10.00 8 Data/barcodes/200002.png 20#
+P0007 300001 BAN Bananas weight 180.00 0.00 0.00 40 Data/barcodes/300001.png 30#
+P0008 300002 TOM Tomatoes weight 120.00 0.00 5.00 6 Data/barcodes/300002.png 30#
+P1145 345678 BB Biscuit count 60.00 0.10 0.01 50 Data/barcodes/345678.png 34#
+P0009 340001 CHP Potato_chips count 100.00 5.00 0.00 60 Data/barcodes/340001.png 34#
+P0010 400001 DTG Detergent count 550.00 27.50 25.00 15 Data/barcodes/400001.png 40#
+P0011 400002 DWL Dishwash_liquid count 320.00 16.00 0.00 3 Data/barcodes/400002.png 40#
+P11 456789 Sh Shampoo count 300.00 20.00 4.00 24 Data/barcodes/456789.png 45#
+P0012 450001 SOP Bath_soap count 120.00 6.00 5.00 70 Data/barcodes/450001.png 45#
+P1114 567890 Mil Fresh_milk weight 260.00 0.20 0.10 40 Data/barcodes/567890.png 56#
+P0013 560001 YGT Yogurt weight 240.00 0.00 0.00 12 Data/barcodes/560001.png 56#
+P0014 600001 RCE Basmati_rice weight 420.00 0.00 20.00 100 Data/barcodes/600001.png 60#
+P0015 600002 DAL Daal_masoor weight 380.00 0.00 0.00 9 Data/barcodes/600002.png 60#

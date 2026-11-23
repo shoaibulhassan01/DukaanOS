@@ -79,15 +79,38 @@ int main(int argc, char *argv[])
     QFile saved(productFile);
     if (!saved.open(QIODevice::ReadOnly | QIODevice::Text) ||
         QString::fromUtf8(saved.readLine()).trimmed() !=
-            QStringLiteral("P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100001.bmp#"))
-        return fail(QStringLiteral("saveProducts did not write the required record format."));
+            QStringLiteral("P0001 100001 APL Apple_juice count 250.00 12.50 10.00 48 barcodes/100001.bmp 10#"))
+        return fail(QStringLiteral("saveProducts did not write the required record format "
+                                   "(11 fields, Category Id last - Increment 3 req 2)."));
     saved.close();
 
     QVector<Pos::Product> loaded;
     if (!Pos::readProducts(productFile, loaded, error))
         return fail(error);
-    if (loaded.size() != 2 || loaded.at(1).name != tea.name || loaded.at(0).tax != 12.5)
+    if (loaded.size() != 2 || loaded.at(1).name != tea.name || loaded.at(0).tax != 12.5 ||
+        loaded.at(0).categoryId != QStringLiteral("10"))
         return fail(QStringLiteral("Saved products did not read back unchanged."));
+
+    // A line from before categories (10 fields) still reads; its category is
+    // the first two digits of the barcode. 12 fields is an error.
+    const QString oldFormatFile = dataDir.filePath(QStringLiteral("OldProduct.txt"));
+    {
+        QFile old(oldFormatFile);
+        if (!old.open(QIODevice::WriteOnly | QIODevice::Text))
+            return fail(QStringLiteral("Could not write a test file."));
+        old.write("P0007 340001 CHP Potato_chips count 100.00 5.00 0.00 60 Data/barcodes/340001.png#\n");
+    }
+    if (!Pos::readProducts(oldFormatFile, loaded, error) || loaded.size() != 1 ||
+        loaded.at(0).categoryId != QStringLiteral("34"))
+        return fail(QStringLiteral("A 10-field product line must read with Category Id = first two barcode digits."));
+    {
+        QFile old(oldFormatFile);
+        if (!old.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate))
+            return fail(QStringLiteral("Could not write a test file."));
+        old.write("P0007 340001 CHP Potato_chips count 100.00 5.00 0.00 60 Data/barcodes/340001.png 34 x#\n");
+    }
+    if (Pos::readProducts(oldFormatFile, loaded, error))
+        return fail(QStringLiteral("A product line with 12 fields must be refused."));
 
     Pos::Product badProduct = juice;
     badProduct.name = QStringLiteral("Apple juice");
@@ -142,8 +165,27 @@ int main(int argc, char *argv[])
     invalid.discountPerUnit = 300;
     if (Pos::validateProduct(invalid, error))
         return fail(QStringLiteral("A discount above the price must be rejected."));
+    invalid = juice;
+    invalid.categoryId = QStringLiteral("20");
+    if (Pos::validateProduct(invalid, error))
+        return fail(QStringLiteral("A Category Id that is not the start of the barcode must be rejected."));
 
-    // addProduct (file currently holds P0001 x45 and P0003 x10)
+    // addProduct (file currently holds P0001 x45 and P0003 x10). Req 1: the
+    // barcode's first two digits must be a category in PCategory.txt.
+    Pos::Product noCategory = juice;
+    noCategory.id = QStringLiteral("P0020");
+    noCategory.barcode = QStringLiteral("100020");
+    if (Pos::addProduct(productFile, noCategory, error) || !error.contains(QStringLiteral("Categories")))
+        return fail(QStringLiteral("addProduct must refuse a product while its category does not exist."));
+    {
+        QFile categories(dataDir.filePath(QStringLiteral("PCategory.txt")));
+        if (!categories.open(QIODevice::WriteOnly | QIODevice::Text))
+            return fail(QStringLiteral("Could not write a test PCategory.txt."));
+        categories.write("10 Beverages BEV#\n");
+    }
+    noCategory.barcode = QStringLiteral("200020");
+    if (Pos::addProduct(productFile, noCategory, error) || !error.contains(QStringLiteral("20")))
+        return fail(QStringLiteral("addProduct must refuse barcode 200020: there is no category 20."));
     Pos::Product milk = juice;
     milk.id = QStringLiteral("P0002");
     milk.barcode = QStringLiteral("100002");
@@ -153,6 +195,8 @@ int main(int argc, char *argv[])
     milk.barcodeImage = QStringLiteral("barcodes/100002.bmp");
     if (!Pos::addProduct(productFile, milk, error))
         return fail(error);
+    if (!Pos::readProducts(productFile, loaded, error) || loaded.last().categoryId != QStringLiteral("10"))
+        return fail(QStringLiteral("addProduct must store the Category Id (req 2)."));
     if (!Pos::readProducts(productFile, loaded, error) || loaded.size() != 3 ||
         loaded.at(2).id != milk.id)
         return fail(QStringLiteral("addProduct did not add the product."));

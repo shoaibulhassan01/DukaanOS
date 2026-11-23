@@ -1,6 +1,7 @@
 #include "products_page.h"
 #include "../theme.h"
 
+#include "../../POS/category/category_repository.h"
 #include "../../POS/product/product.h"
 #include "../../POS/product/product_repository.h"
 #include "../../POS/product/product_service.h"
@@ -11,6 +12,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFrame>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -44,6 +46,12 @@ QString orderDetailFilePath()
 {
     // OrderDetail.txt sits next to Product.txt in the Data folder.
     return QFileInfo(productFilePath()).dir().filePath(QStringLiteral("OrderDetail.txt"));
+}
+
+QString categoryFilePath()
+{
+    // PCategory.txt sits next to Product.txt in the Data folder.
+    return QFileInfo(productFilePath()).dir().filePath(QStringLiteral("PCategory.txt"));
 }
 
 QString barcodeImagePath(const QString &imagePath)
@@ -183,18 +191,16 @@ public:
         layout->addLayout(filters);
 
         table_ = new QTableWidget(card);
-        table_->setColumnCount(7);
+        table_->setColumnCount(8);
         table_->setHorizontalHeaderLabels({
             QStringLiteral("PRODUCT"), QStringLiteral("BARCODE"),
-            QStringLiteral("UNIT"), QStringLiteral("PRICE"),
+            QStringLiteral("CATEGORY"), QStringLiteral("UNIT"), QStringLiteral("PRICE"),
             QStringLiteral("TAX"), QStringLiteral("DISCOUNT"),
             QStringLiteral("AVAILABLE STOCK")
         });
         table_->verticalHeader()->hide();
         table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-        table_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-        table_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-        for (int column = 3; column < 7; ++column)
+        for (int column = 1; column < 8; ++column)
             table_->horizontalHeader()->setSectionResizeMode(column, QHeaderView::ResizeToContents);
         table_->horizontalHeader()->setFixedHeight(40);
         table_->setShowGrid(false);
@@ -260,6 +266,14 @@ private:
             return;
         }
 
+        // Category names for the CATEGORY column (PCategory.txt).
+        categoryNames_.clear();
+        QVector<Pos::Category> categories;
+        QString categoryError;
+        if (Pos::readCategories(categoryFilePath(), categories, categoryError))
+            for (const Pos::Category &category : categories)
+                categoryNames_.insert(category.id, QString(category.name).replace(QLatin1Char('_'), QLatin1Char(' ')));
+
         int unitCount = 0;
         for (const Pos::Product &product : products_)
             unitCount += product.quantity;
@@ -322,10 +336,22 @@ private:
             table_->setCellWidget(row, 0, productCell);
 
             setCell(row, 1, product.barcode);
-            setCell(row, 2, product.unit);
-            setCell(row, 3, QStringLiteral("PKR %1").arg(product.unitPrice, 0, 'f', 2));
-            setCell(row, 4, QStringLiteral("PKR %1").arg(product.tax, 0, 'f', 2));
-            setCell(row, 5, QStringLiteral("PKR %1").arg(product.discountPerUnit, 0, 'f', 2));
+            const QString categoryId = product.categoryId;   // stored 11th field (req 2)
+            auto *category = new QTableWidgetItem(categoryNames_.contains(categoryId)
+                ? QStringLiteral("%1 \u00B7 %2").arg(categoryId, categoryNames_.value(categoryId))
+                : QStringLiteral("%1 \u00B7 not found").arg(categoryId));
+            category->setFlags(category->flags() & ~Qt::ItemIsEditable);
+            if (!categoryNames_.contains(categoryId))
+            {
+                category->setForeground(UiTheme::textColor(QColor(QStringLiteral("#B42318"))));
+                category->setToolTip(QStringLiteral(
+                    "No category %1 in PCategory.txt. Add it on the Categories page.").arg(categoryId));
+            }
+            table_->setItem(row, 2, category);
+            setCell(row, 3, product.unit);
+            setCell(row, 4, QStringLiteral("PKR %1").arg(product.unitPrice, 0, 'f', 2));
+            setCell(row, 5, QStringLiteral("PKR %1").arg(product.tax, 0, 'f', 2));
+            setCell(row, 6, QStringLiteral("PKR %1").arg(product.discountPerUnit, 0, 'f', 2));
 
             auto *stock = new QTableWidgetItem(QStringLiteral("%1 %2")
                 .arg(product.quantity).arg(product.unit));
@@ -333,7 +359,7 @@ private:
             stock->setTextAlignment(Qt::AlignCenter);
             stock->setForeground(UiTheme::textColor(QColor(isLowStock
                 ? QStringLiteral("#B7791F") : QStringLiteral("#18764A"))));
-            table_->setItem(row, 6, stock);
+            table_->setItem(row, 7, stock);
             table_->setRowHeight(row, 58);
         }
 
@@ -415,6 +441,7 @@ private:
 
     QVector<Pos::Product> products_;
     QVector<Pos::Product> visible_;
+    QHash<QString, QString> categoryNames_;   // Category Id -> name
     bool loadFailed_ = false;
     QPushButton *editButton_ = nullptr;
     QPushButton *deleteButton_ = nullptr;

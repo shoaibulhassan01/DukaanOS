@@ -39,6 +39,7 @@ QString orders()        { return inData(QStringLiteral("Order.txt")); }
 QString orderDetail()   { return inData(QStringLiteral("OrderDetail.txt")); }
 QString bills()         { return inData(QStringLiteral("Bill.txt")); }
 QString billDetails()   { return inData(QStringLiteral("BillDetail.txt")); }
+QString categories()    { return inData(QStringLiteral("PCategory.txt")); }
 QString barcodeFolder() { return inData(QStringLiteral("barcodes")); }
 }
 }

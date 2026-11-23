@@ -36,9 +36,12 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
 
         const QStringList fields = line.left(line.size() - 1)
             .split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        if (fields.size() != 10)
+        // 11 fields: ... image categoryId (Increment 3). A line from before
+        // categories (10 fields) is still read; its category comes from the
+        // barcode, and the next save writes the 11th field.
+        if (fields.size() != 10 && fields.size() != 11)
         {
-            error = QStringLiteral("Product.txt line %1 must contain 10 fields.")
+            error = QStringLiteral("Product.txt line %1 must contain 11 fields.")
                 .arg(lineNumber);
             return false;
         }
@@ -58,6 +61,7 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
         product.discountPerUnit = fields.at(7).toDouble(&validDiscount);
         product.quantity = fields.at(8).toInt(&validQuantity);
         product.barcodeImage = fields.at(9);
+        product.categoryId = fields.size() == 11 ? fields.at(10) : product.barcode.left(2);
         if (!validPrice || !validTax || !validDiscount || !validQuantity)
         {
             error = QStringLiteral("Product.txt line %1 has an invalid price, tax, discount or quantity.")
@@ -97,7 +101,8 @@ bool saveProducts(QString filePath, QVector<Product> products, QString &error)
         const Product &product = products.at(i);
         if (!isStorableText(product.id) || !isStorableText(product.barcode) ||
             !isStorableText(product.acronym) || !isStorableText(product.name) ||
-            !isStorableText(product.unit) || !isStorableText(product.barcodeImage))
+            !isStorableText(product.unit) || !isStorableText(product.barcodeImage) ||
+            (!product.categoryId.isEmpty() && !isStorableText(product.categoryId)))
         {
             error = QStringLiteral("Product %1 has an empty field or a field with a space or #.")
                 .arg(product.id.isEmpty() ? QString::number(i + 1) : product.id);
@@ -114,7 +119,8 @@ bool saveProducts(QString filePath, QVector<Product> products, QString &error)
             money(product.tax),
             money(product.discountPerUnit),
             QString::number(product.quantity),
-            product.barcodeImage }));
+            product.barcodeImage,
+            product.categoryId.isEmpty() ? product.barcode.left(2) : product.categoryId }));
     }
 
     // QSaveFile writes to a temporary file and only replaces Product.txt
