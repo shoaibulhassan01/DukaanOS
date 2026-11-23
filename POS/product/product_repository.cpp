@@ -64,10 +64,9 @@ bool readProducts(QString filePath, QVector<Product> &products, QString &error)
         product.categoryId = fields.size() == 11
             ? fields.at(10) : product.barcode.left(2);
         static const QRegularExpression categoryPattern(QStringLiteral("^\\d{2}$"));
-        if (!categoryPattern.match(product.categoryId).hasMatch()
-            || !product.barcode.startsWith(product.categoryId))
+        if (!categoryPattern.match(product.categoryId).hasMatch())
         {
-            error = QStringLiteral("Product.txt line %1 has a Category Id that does not match the barcode.")
+            error = QStringLiteral("Product.txt line %1 has an invalid Category Id.")
                 .arg(lineNumber);
             return false;
         }

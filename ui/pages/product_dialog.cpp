@@ -97,7 +97,7 @@ public:
                     .arg(category.id, category.name, category.acronym), category.id);
         }
         barcode_ = new QLineEdit(this);
-        barcode_->setPlaceholderText(QStringLiteral("Generated or enter 6 digits"));
+        barcode_->setPlaceholderText(QStringLiteral("e.g. 100004"));
         barcode_->setMaxLength(6);
         barcode_->setValidator(new QRegularExpressionValidator(
             QRegularExpression(QStringLiteral("\\d{0,6}")), barcode_));
@@ -324,8 +324,9 @@ private:
     bool productFromForm(Pos::Product &p, QString &error) const
     {
         p.id = id_->text().trimmed();
-        p.categoryId = category_->currentData().toString();
         p.barcode = barcode_->text().trimmed();
+        p.categoryId = p.barcode.isEmpty()
+            ? category_->currentData().toString() : p.barcode.left(2);
         p.acronym = acronym_->text().trimmed();
         // Product.txt is space separated, so spaces in a name are stored as _.
         p.name = name_->text().simplified().replace(QLatin1Char(' '), QLatin1Char('_'));
