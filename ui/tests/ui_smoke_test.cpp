@@ -18,6 +18,7 @@
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
+#include "../../POS/category/category_service.h"
 #include "../../POS/product/product_service.h"
 #include "../../POS/report/report_service.h"
 #include "../../POS/user/auth_service.h"
@@ -703,6 +704,64 @@ void testCategoriesPage(QStackedWidget *stack)
         Pos::nextProductId(QStringLiteral("Data/Product.txt"), afterId, error);
         check(afterId == QStringLiteral("P%1").arg(expectedId.mid(1).toInt() + 1, 4, 10, QLatin1Char('0')),
             QStringLiteral("After adding %1 the next product id must go up by one, got %2.").arg(expectedId, afterId));
+
+        // Shortcut: a missing category can be created from the Add product
+        // form. It opens the Add category form with the Id (91, from barcode
+        // 910001) locked; once saved, the form shows the category in green.
+        const QString categoriesBefore = fileText(categoryFile);
+        QString linkBefore;
+        QString lockedId;
+        QString categoryAfter;
+        bool linkHiddenAfter = false;
+        popupHandler = [&](QWidget *popup) {
+            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
+            if (!barcode)
+                return false;
+            barcode->setText(QStringLiteral("910001"));
+            QPushButton *create = nullptr;
+            for (QPushButton *b : popup->findChildren<QPushButton *>())
+                if (b->text().startsWith(QStringLiteral("+ Create category")))
+                    create = b;
+            linkBefore = create && create->isVisible() ? create->text() : QStringLiteral("(no visible link)");
+            if (create)
+            {
+                // The category form opens inside the product form: answer it
+                // from a separate timer.
+                QTimer::singleShot(200, [&lockedId]() {
+                    QWidget *form = QApplication::activeModalWidget();
+                    QLineEdit *id = form ? field(form, QStringLiteral("e.g. 10")) : nullptr;
+                    if (!id)
+                        return;
+                    lockedId = id->isEnabled() ? QStringLiteral("editable") : id->text();
+                    field(form, QStringLiteral("e.g. Beverages"))->setText(QStringLiteral("Imported goods"));
+                    field(form, QStringLiteral("e.g. BEV"))->setText(QStringLiteral("IMP"));
+                    if (QPushButton *add = button(form, QStringLiteral("Add category")))
+                        add->click();
+                });
+                create->click();
+                linkHiddenAfter = !create->isVisible();
+            }
+            for (QLabel *label : popup->findChildren<QLabel *>())
+                if (label->isVisible() && label->text().startsWith(QStringLiteral("91 ")))
+                    categoryAfter = label->text();
+            if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+                cancel->click();
+            popupHandler = nullptr;   // last: this clears the lambda itself
+            return true;
+        };
+        if (QPushButton *addProduct = button(manager, QStringLiteral("+ Add product")))
+            addProduct->click();
+        settle();
+        popupHandler = nullptr;
+        check(linkBefore == QStringLiteral("+ Create category 91\u2026"),
+            QStringLiteral("Add product: a missing category must offer '+ Create category 91...', got: %1").arg(linkBefore));
+        check(lockedId == QStringLiteral("91"),
+            QStringLiteral("The category form opened from the product form must have Id 91 locked, got: %1").arg(lockedId));
+        check(fileText(categoryFile) == categoriesBefore + QStringLiteral("91 Imported_goods IMP#\n"),
+            QStringLiteral("Creating category 91 from the product form must append it to PCategory.txt."));
+        check(categoryAfter.contains(QStringLiteral("91 \u00B7 Imported goods (IMP)")) && linkHiddenAfter,
+            QStringLiteral("After creating it, the product form must show category 91 and hide the link, saw: %1").arg(categoryAfter));
+        Pos::deleteCategory(categoryFile, QStringLiteral("Data/Product.txt"), QStringLiteral("91"), error);
     }
 
 }

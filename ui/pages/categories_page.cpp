@@ -45,8 +45,10 @@ QString buttonStyle(bool primary)
         .arg(kNavy, kLine);
 }
 
-// Add / Edit form. Returns true if the category was saved.
-bool showCategoryDialog(QWidget *parent, const Pos::Category *existing)
+// Add / Edit form. Returns true if the category was saved. presetId (Add
+// only) fills in and locks the Id: used from the Add product form.
+bool showCategoryDialog(QWidget *parent, const Pos::Category *existing,
+    const QString &categoryFile = Pos::DataPaths::categories(), const QString &presetId = QString())
 {
     QDialog dialog(parent);
     dialog.setWindowTitle(existing ? QStringLiteral("Edit category") : QStringLiteral("Add category"));
@@ -59,8 +61,10 @@ bool showCategoryDialog(QWidget *parent, const Pos::Category *existing)
     auto *title = new QLabel(dialog.windowTitle(), &dialog);
     title->setStyleSheet(QStringLiteral("color: %1; font-size: 15px; font-weight: 700;").arg(kInk));
     layout->addWidget(title);
-    auto *hint = new QLabel(QStringLiteral(
-        "The Category Id (10 to 99) is the first two digits of the barcode of every product in this category."), &dialog);
+    auto *hint = new QLabel(presetId.isEmpty()
+        ? QStringLiteral("The Category Id (10 to 99) is the first two digits of the barcode of every product in this category.")
+        : QStringLiteral("Category %1 comes from the first two digits of the barcode you typed. "
+              "Check the barcode is right before creating it.").arg(presetId), &dialog);
     hint->setWordWrap(true);
     hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
     layout->addWidget(hint);
@@ -95,6 +99,12 @@ bool showCategoryDialog(QWidget *parent, const Pos::Category *existing)
         name->setText(display(existing->name));
         acronym->setText(display(existing->acronym));
     }
+    else if (!presetId.isEmpty())
+    {
+        id->setText(presetId);
+        id->setEnabled(false);
+        id->setToolTip(QStringLiteral("Taken from the barcode: change the barcode to use another category."));
+    }
 
     auto *error = new QLabel(&dialog);
     error->setWordWrap(true);
@@ -121,8 +131,8 @@ bool showCategoryDialog(QWidget *parent, const Pos::Category *existing)
         const Pos::Category category{id->text(), name->text(), acronym->text()};
         QString message;
         const bool saved = existing
-            ? Pos::updateCategory(Pos::DataPaths::categories(), category, message)
-            : Pos::addCategory(Pos::DataPaths::categories(), category, message);
+            ? Pos::updateCategory(categoryFile, category, message)
+            : Pos::addCategory(categoryFile, category, message);
         if (!saved)
         {
             error->setText(message);
@@ -131,7 +141,7 @@ bool showCategoryDialog(QWidget *parent, const Pos::Category *existing)
         }
         dialog.accept();
     });
-    (existing ? name : id)->setFocus();
+    (existing || !presetId.isEmpty() ? name : id)->setFocus();
     return dialog.exec() == QDialog::Accepted;
 }
 
@@ -395,4 +405,10 @@ private:
 QWidget *UiPages::createCategoriesPage(QWidget *parent)
 {
     return new CategoriesPage(parent);
+}
+
+bool UiPages::showAddCategoryForBarcode(QWidget *parent, const QString &categoryFile,
+    const QString &categoryId)
+{
+    return showCategoryDialog(parent, nullptr, categoryFile, categoryId);
 }
