@@ -165,6 +165,16 @@ int main(int argc, char *argv[])
     invalid.discountPerUnit = 300;
     if (Pos::validateProduct(invalid, error))
         return fail(QStringLiteral("A discount above the price must be rejected."));
+    // Product Id: capital P + exactly 4 digits.
+    for (const QString &badId : { QStringLiteral("P11"), QStringLiteral("p0001"),
+             QStringLiteral("P00001"), QStringLiteral("PA001"), QStringLiteral("0001"),
+             QString() })
+    {
+        invalid = juice;
+        invalid.id = badId;
+        if (Pos::validateProduct(invalid, error) || !error.contains(QStringLiteral("P followed by 4 digits")))
+            return fail(QStringLiteral("Product id '%1' must be rejected.").arg(badId));
+    }
     invalid = juice;
     invalid.categoryId = QStringLiteral("20");
     if (Pos::validateProduct(invalid, error))
@@ -193,36 +203,46 @@ int main(int argc, char *argv[])
     milk.name = QStringLiteral("Dairy_milk");
     milk.quantity = 35;
     milk.barcodeImage = QStringLiteral("barcodes/100002.bmp");
-    if (!Pos::addProduct(productFile, milk, error))
+    QString nextId;
+    if (!Pos::nextProductId(productFile, nextId, error) || nextId != QStringLiteral("P0004"))
+        return fail(QStringLiteral("nextProductId must be one more than the highest id (P0003), got %1.").arg(nextId));
+    QString assignedId;
+    if (!Pos::addProduct(productFile, milk, error, &assignedId))
         return fail(error);
     if (!Pos::readProducts(productFile, loaded, error) || loaded.last().categoryId != QStringLiteral("10"))
         return fail(QStringLiteral("addProduct must store the Category Id (req 2)."));
+    // The id typed in (P0002) is ignored: the next one, P0004, is assigned.
     if (!Pos::readProducts(productFile, loaded, error) || loaded.size() != 3 ||
-        loaded.at(2).id != milk.id)
-        return fail(QStringLiteral("addProduct did not add the product."));
+        loaded.at(2).id != QStringLiteral("P0004") || assignedId != QStringLiteral("P0004"))
+        return fail(QStringLiteral("addProduct must add the product with the next id P0004, got %1.").arg(assignedId));
     if (loaded.at(2).barcodeImage != QStringLiteral("Data/barcodes/100002.png") ||
         !QFile::exists(dataDir.filePath(QStringLiteral("barcodes/100002.png"))))
         return fail(QStringLiteral("addProduct must create the barcode image and store its path."));
-    Pos::Product sameId = milk;
-    sameId.barcode = QStringLiteral("100009");
-    if (Pos::addProduct(productFile, sameId, error))
-        return fail(QStringLiteral("addProduct accepted a duplicate id."));
     Pos::Product sameBarcode = milk;
-    sameBarcode.id = QStringLiteral("P0009");
     if (Pos::addProduct(productFile, sameBarcode, error))
         return fail(QStringLiteral("addProduct accepted a duplicate barcode."));
     const QString newFile = dataDir.filePath(QStringLiteral("New.txt"));
-    if (!Pos::addProduct(newFile, milk, error))
-        return fail(QStringLiteral("addProduct must create a missing Product.txt: ") + error);
+    if (!Pos::addProduct(newFile, milk, error, &assignedId) || assignedId != QStringLiteral("P0001"))
+        return fail(QStringLiteral("addProduct must create a missing Product.txt with id P0001: ") + error);
+    {
+        const QString fullFile = dataDir.filePath(QStringLiteral("Full.txt"));
+        QFile full(fullFile);
+        if (!full.open(QIODevice::WriteOnly | QIODevice::Text))
+            return fail(QStringLiteral("Could not write a test file."));
+        full.write("P9999 100001 CHP Chips count 100.00 5.00 0.00 60 Data/barcodes/100001.png 10#\n");
+        full.close();
+        if (Pos::nextProductId(fullFile, nextId, error))
+            return fail(QStringLiteral("nextProductId must fail once P9999 is used."));
+    }
 
     // updateProduct
-    if (!Pos::updateProduct(productFile, QStringLiteral("P0002"), 190, 5, 30, error))
+    if (!Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, 5, 30, error))
         return fail(error);
     if (!Pos::readProducts(productFile, loaded, error) ||
         loaded.at(2).unitPrice != 190 || loaded.at(2).discountPerUnit != 5 ||
         loaded.at(2).quantity != 30 || loaded.at(2).name != milk.name)
         return fail(QStringLiteral("updateProduct did not change price, discount and stock."));
-    if (Pos::updateProduct(productFile, QStringLiteral("P0002"), 190, 5, -1, error))
+    if (Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, 5, -1, error))
         return fail(QStringLiteral("updateProduct accepted a negative stock."));
     if (Pos::updateProduct(productFile, QStringLiteral("P9999"), 10, 0, 1, error))
         return fail(QStringLiteral("updateProduct accepted an unknown product."));
@@ -236,11 +256,10 @@ int main(int argc, char *argv[])
         details.write("26111701 P0001 100001 2#\n");
     }
     Pos::Product spare = milk;
-    spare.id = QStringLiteral("P0010");
     spare.barcode = QStringLiteral("100010");
-    if (!Pos::addProduct(productFile, spare, error))
-        return fail(error);
-    if (!Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0010"), error))
+    if (!Pos::addProduct(productFile, spare, error, &assignedId) || assignedId != QStringLiteral("P0005"))
+        return fail(QStringLiteral("The next product must get P0005: ") + error);
+    if (!Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0005"), error))
         return fail(QStringLiteral("An unsold product must be deletable: ") + error);
     if (Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0001"), error))
         return fail(QStringLiteral("A product that is in an order must not be deleted."));
@@ -249,7 +268,7 @@ int main(int argc, char *argv[])
     if (!Pos::readProducts(productFile, loaded, error) || loaded.size() != 3)
         return fail(QStringLiteral("deleteProduct changed the wrong products."));
 
-    // searchProducts and lowStockProducts (P0001 x45, P0003 x10, P0002 x30)
+    // searchProducts and lowStockProducts (P0001 x45, P0003 x10, P0004 x30)
     if (Pos::searchProducts(loaded, QStringLiteral("dairy milk")).size() != 1 ||
         Pos::searchProducts(loaded, QStringLiteral("10000")).size() != 3 ||
         Pos::searchProducts(loaded, QString()).size() != 3 ||
