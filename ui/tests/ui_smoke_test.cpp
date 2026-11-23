@@ -35,6 +35,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -167,8 +168,37 @@ QWidget *openDashboard(QStackedWidget *stack, const QString &role)
 }
 
 // Clicks every sidebar page and checks the header shows its name.
+// In dark mode, every visible part of a page must have a dark background. A
+// light colour the theme does not know stays light (e.g. a new icon tile);
+// this finds it.
+void checkNoLightBackgrounds(QWidget *root, const QString &where)
+{
+    static const QRegularExpression background(
+        QStringLiteral("background(?:-color)?\\s*:\\s*(#[0-9A-Fa-f]{6}|white)\\b"));
+    QStringList light;
+    for (QWidget *widget : root->findChildren<QWidget *>())
+    {
+        if (!widget->isVisible())
+            continue;
+        auto it = background.globalMatch(widget->styleSheet());
+        while (it.hasNext())
+        {
+            const QColor color(it.next().captured(1));
+            if (color.lightnessF() > 0.80)
+                light << QStringLiteral("%1 (%2)").arg(color.name(),
+                    widget->objectName().isEmpty() ? QString::fromLatin1(widget->metaObject()->className())
+                                                   : widget->objectName());
+        }
+    }
+    light.removeDuplicates();
+    check(light.isEmpty(), QStringLiteral("%1: light background(s) in dark mode: %2")
+        .arg(where, light.join(QStringLiteral(", "))));
+}
+
 void visitAllPages(QWidget *dashboard, const QString &who)
 {
+    if (UiTheme::isDark())
+        checkNoLightBackgrounds(dashboard, who + QStringLiteral(" Dashboard"));
     for (const QString &page : sidebarPages(dashboard))
     {
         QPushButton *b = nullptr;
@@ -181,6 +211,8 @@ void visitAllPages(QWidget *dashboard, const QString &who)
         settle();
         check(hasLabel(dashboard, page),
             QStringLiteral("%1: the %2 page did not open.").arg(who, page));
+        if (UiTheme::isDark())
+            checkNoLightBackgrounds(dashboard, QStringLiteral("%1 %2").arg(who, page));
     }
 }
 

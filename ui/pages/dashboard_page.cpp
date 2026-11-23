@@ -395,7 +395,7 @@ private:
                 {QStringLiteral("Products"), QStringLiteral("box"),
                     QStringLiteral("Manage inventory"), QStringLiteral("#F59E0B"), QStringLiteral("#FEF3DC")},
                 {QStringLiteral("Categories"), QStringLiteral("tag"),
-                    QStringLiteral("Set up product categories"), QStringLiteral("#16845B"), QStringLiteral("#E3F5EC")},
+                    QStringLiteral("Set up product categories"), QStringLiteral("#16845B"), QStringLiteral("#E1F7EE")},
                 history,
                 {QStringLiteral("Cashier Accounts"), QStringLiteral("user"),
                     QStringLiteral("Create cashier logins"), QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")}
