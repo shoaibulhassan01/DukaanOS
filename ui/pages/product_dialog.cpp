@@ -68,7 +68,7 @@ public:
         root->addWidget(title);
 
         auto *hint = new QLabel(mode == Mode::Add
-            ? QStringLiteral("All fields are saved to Product.txt. Barcode: 6 digits; its first two digits are the Category Id (set up on the Categories page). The barcode picture is created for you.")
+            ? QStringLiteral("All fields are saved to Product.txt. The product id is assigned automatically. Barcode: 6 digits; its first two digits are the Category Id (set up on the Categories page). The barcode picture is created for you.")
             : QStringLiteral("Only the price, discount and available stock can be changed."), this);
         hint->setWordWrap(true);
         hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
@@ -80,7 +80,7 @@ public:
         form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
 
         id_ = new QLineEdit(this);
-        id_->setPlaceholderText(QStringLiteral("e.g. P0004"));
+        id_->setToolTip(QStringLiteral("Assigned automatically: one more than the highest product id"));
         barcode_ = new QLineEdit(this);
         barcode_->setPlaceholderText(QStringLiteral("e.g. 100004"));
         barcode_->setMaxLength(6);
@@ -171,6 +171,15 @@ public:
 
         if (mode == Mode::Add)
         {
+            // The id is not typed: the next free number is shown, and
+            // addProduct assigns the same one when the product is saved.
+            QString nextId;
+            QString idError;
+            if (Pos::nextProductId(productFile_, nextId, idError))
+                id_->setText(nextId);
+            else
+                id_->setPlaceholderText(idError);
+            id_->setEnabled(false);
             // Suggest the image path from the barcode; it can still be edited.
             connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
                 if (!imageEdited_)
