@@ -10,7 +10,9 @@
 //                (req 2). The requirements do not say WHERE the Category Id
 //                goes, so it is accepted in any position as long as it is the
 //                same on every line and equals the first two digits of the
-//                barcode (req 1).
+//                barcode (req 1). Product Id is P + exactly 4 digits
+//                (P0001): a team rule, not a requirement, so every member's
+//                data uses the same Id style; new Ids come from addProduct.
 //   Bill         exactly these 14 fields in this order (req 8): Bill Id (9
 //                digits, never repeated), customer name, Order Id (in
 //                Order.txt), total without tax, total tax, total discount,
@@ -376,8 +378,12 @@ Result checkProducts(const QString &projectDir, Report &report)
     }
     QHash<QString, int> ids;
     QHash<QString, int> barcodes;
+    static const QRegularExpression productId(QStringLiteral("^P\\d{4}$"));
     for (const Product &p : pf.products)
     {
+        if (!productId.match(p.id).hasMatch())
+            report.problems << QStringLiteral("Product.txt line %1: product id %2 must be P followed by 4 digits, e.g. P0016.")
+                .arg(p.line).arg(p.id);
         if (ids.contains(p.id))
             report.problems << QStringLiteral("Product.txt line %1: product id %2 is already used on line %3.")
                 .arg(p.line).arg(p.id).arg(ids.value(p.id));

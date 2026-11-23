@@ -2,11 +2,13 @@
 
 #include "product_repository.h"
 #include "barcode_image.h"
+#include "../category/category_service.h"
 #include "../common/record_codec.h"
 
 #include <QFile>
 #include <QFileInfo>
 #include <QDir>
+#include <QRegularExpression>
 #include <QTextStream>
 
 namespace Pos
@@ -85,6 +87,13 @@ bool reduceStock(QString productFile, QVector<CartItem> soldItems, QString &erro
 
 namespace
 {
+// Product Id format: capital P + exactly 4 digits, e.g. P0016.
+const QRegularExpression &productIdPattern()
+{
+    static const QRegularExpression pattern(QStringLiteral("^P\\d{4}$"));
+    return pattern;
+}
+
 bool hasNoSpaceOrHash(const QString &value)
 {
     return !value.contains(QLatin1Char(' ')) && !value.contains(QLatin1Char('#'));
@@ -136,8 +145,8 @@ bool validateProduct(Product product, QString &error)
         }
     }
 
-    if (product.id.isEmpty())
-        error = QStringLiteral("Product id is required.");
+    if (!productIdPattern().match(product.id).hasMatch())
+        error = QStringLiteral("Product id must be P followed by 4 digits, e.g. P0016.");
     else if (!isSixDigitBarcode(product.barcode))
         error = QStringLiteral("Barcode must be exactly 6 digits and cannot start with 0.");
     else if (product.acronym.isEmpty() || product.acronym.size() > 8)
@@ -158,6 +167,9 @@ bool validateProduct(Product product, QString &error)
         error = QStringLiteral("Quantity cannot be negative.");
     else if (product.barcodeImage.isEmpty())
         error = QStringLiteral("Barcode image path is required.");
+    else if (!product.categoryId.isEmpty() && product.categoryId != product.barcode.left(2))
+        error = QStringLiteral("Category Id %1 must be the first two digits of the barcode (%2).")
+            .arg(product.categoryId, product.barcode.left(2));
     else
     {
         error.clear();
@@ -166,13 +178,55 @@ bool validateProduct(Product product, QString &error)
     return false;
 }
 
-// Owner: Umar Khan - validate, check uniqueness, then save.
-bool addProduct(QString productFile, Product product, QString &error)
+QString unitLabel(const QString &unit)
 {
+    return unit == QStringLiteral("weight") ? QStringLiteral("weight (kg)") : unit;
+}
+
+QString quantityText(int quantity, const QString &unit)
+{
+    return unit == QStringLiteral("weight") ? QStringLiteral("%1 kg").arg(quantity)
+                                             : QStringLiteral("%1 %2").arg(quantity).arg(unit).trimmed();
+}
+
+bool nextProductId(const QString &productFile, QString &id, QString &error)
+{
+    QVector<Product> products;
+    if (!loadForEdit(productFile, products, error))
+        return false;
+    int highest = 0;
+    for (const Product &product : products)
+    {
+        if (productIdPattern().match(product.id).hasMatch())
+            highest = qMax(highest, product.id.mid(1).toInt());
+    }
+    if (highest >= 9999)
+    {
+        error = QStringLiteral("All product Ids up to P9999 are used; no new product can be added.");
+        return false;
+    }
+    id = QStringLiteral("P%1").arg(highest + 1, 4, 10, QLatin1Char('0'));
+    error.clear();
+    return true;
+}
+
+// Owner: Umar Khan - assign the next Id, validate, check uniqueness, then save.
+bool addProduct(QString productFile, Product product, QString &error, QString *assignedId)
+{
+    if (!nextProductId(productFile, product.id, error))
+        return false;
     product.barcode = product.barcode.trimmed();
     product.barcodeImage = QStringLiteral("Data/barcodes/%1.png").arg(product.barcode);
     if (!validateProduct(product, error))
         return false;
+
+    // Req 1: the first two digits of the barcode are the Category Id, and the
+    // category must be set up first.
+    Category category;
+    const QString categoryFile = QFileInfo(productFile).absoluteDir().filePath(QStringLiteral("PCategory.txt"));
+    if (!findCategoryForBarcode(categoryFile, product.barcode, category, error))
+        return false;
+    product.categoryId = category.id;   // req 2: stored in Product.txt
 
     QVector<Product> products;
     if (!loadForEdit(productFile, products, error))
@@ -199,7 +253,11 @@ bool addProduct(QString productFile, Product product, QString &error)
         return false;
 
     products.append(product);
-    return saveProducts(productFile, products, error);
+    if (!saveProducts(productFile, products, error))
+        return false;
+    if (assignedId)
+        *assignedId = product.id;
+    return true;
 }
 
 // Owner: Umar Khan - change only price, discount and quantity.

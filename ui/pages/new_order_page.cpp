@@ -73,7 +73,11 @@ QString fieldStyle()
         "QLineEdit, QSpinBox, QComboBox { background: #FAFAFD; color: %1;"
         " border: 1px solid %2; border-radius: 9px; padding: 0 11px; font-size: 12px; }"
         "QLineEdit:focus, QSpinBox:focus, QComboBox:focus { background: white;"
-        " border: 1px solid %3; }")
+        " border: 1px solid %3; }"
+        // The arrow sits inside the field: no separate box or divider around it.
+        "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
+        " width: 28px; border: none; background: transparent; }"
+        "QComboBox::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }")
         .arg(kInk, kLine, kNavy);
 }
 
