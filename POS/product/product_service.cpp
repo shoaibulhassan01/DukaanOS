@@ -2,6 +2,7 @@
 
 #include "product_repository.h"
 #include "barcode_image.h"
+#include "../category/category_service.h"
 #include "../common/record_codec.h"
 
 #include <QFile>
@@ -158,6 +159,9 @@ bool validateProduct(Product product, QString &error)
         error = QStringLiteral("Quantity cannot be negative.");
     else if (product.barcodeImage.isEmpty())
         error = QStringLiteral("Barcode image path is required.");
+    else if (!product.categoryId.isEmpty() && product.categoryId != product.barcode.left(2))
+        error = QStringLiteral("Category Id %1 must be the first two digits of the barcode (%2).")
+            .arg(product.categoryId, product.barcode.left(2));
     else
     {
         error.clear();
@@ -173,6 +177,14 @@ bool addProduct(QString productFile, Product product, QString &error)
     product.barcodeImage = QStringLiteral("Data/barcodes/%1.png").arg(product.barcode);
     if (!validateProduct(product, error))
         return false;
+
+    // Req 1: the first two digits of the barcode are the Category Id, and the
+    // category must be set up first.
+    Category category;
+    const QString categoryFile = QFileInfo(productFile).absoluteDir().filePath(QStringLiteral("PCategory.txt"));
+    if (!findCategoryForBarcode(categoryFile, product.barcode, category, error))
+        return false;
+    product.categoryId = category.id;   // req 2: stored in Product.txt
 
     QVector<Product> products;
     if (!loadForEdit(productFile, products, error))

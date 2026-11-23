@@ -35,11 +35,15 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QStackedWidget>
 #include <QTemporaryDir>
 #include <QTextStream>
-#include <QTimer>
 #include <QTableWidget>
+#include <QTimer>
+
+#include <functional>
+#include <memory>
 
 #ifndef DUKAANOS_SOURCE_DIR
 #error "DUKAANOS_SOURCE_DIR must point at the project folder (set in CMakeLists.txt)."
@@ -164,8 +168,37 @@ QWidget *openDashboard(QStackedWidget *stack, const QString &role)
 }
 
 // Clicks every sidebar page and checks the header shows its name.
+// In dark mode, every visible part of a page must have a dark background. A
+// light colour the theme does not know stays light (e.g. a new icon tile);
+// this finds it.
+void checkNoLightBackgrounds(QWidget *root, const QString &where)
+{
+    static const QRegularExpression background(
+        QStringLiteral("background(?:-color)?\\s*:\\s*(#[0-9A-Fa-f]{6}|white)\\b"));
+    QStringList light;
+    for (QWidget *widget : root->findChildren<QWidget *>())
+    {
+        if (!widget->isVisible())
+            continue;
+        auto it = background.globalMatch(widget->styleSheet());
+        while (it.hasNext())
+        {
+            const QColor color(it.next().captured(1));
+            if (color.lightnessF() > 0.80)
+                light << QStringLiteral("%1 (%2)").arg(color.name(),
+                    widget->objectName().isEmpty() ? QString::fromLatin1(widget->metaObject()->className())
+                                                   : widget->objectName());
+        }
+    }
+    light.removeDuplicates();
+    check(light.isEmpty(), QStringLiteral("%1: light background(s) in dark mode: %2")
+        .arg(where, light.join(QStringLiteral(", "))));
+}
+
 void visitAllPages(QWidget *dashboard, const QString &who)
 {
+    if (UiTheme::isDark())
+        checkNoLightBackgrounds(dashboard, who + QStringLiteral(" Dashboard"));
     for (const QString &page : sidebarPages(dashboard))
     {
         QPushButton *b = nullptr;
@@ -178,16 +211,25 @@ void visitAllPages(QWidget *dashboard, const QString &who)
         settle();
         check(hasLabel(dashboard, page),
             QStringLiteral("%1: the %2 page did not open.").arg(who, page));
+        if (UiTheme::isDark())
+            checkNoLightBackgrounds(dashboard, QStringLiteral("%1 %2").arg(who, page));
     }
 }
 
 // Clicks Close on any pop-up (bill dialog) that opens, so exec() returns.
+// A test can set this to fill in and answer the next pop-up itself (for
+// example the Add category form). It returns true while it is handling the
+// pop-up; then the default Close/OK handling below is skipped.
+std::function<bool(QWidget *)> popupHandler;
+
 void closePopupsAutomatically()
 {
     auto *timer = new QTimer(qApp);
     QObject::connect(timer, &QTimer::timeout, []() {
         QWidget *popup = QApplication::activeModalWidget();
         if (!popup)
+            return;
+        if (popupHandler && popupHandler(popup))
             return;
         bool hasPdfButton = false;
         const QList<QPushButton *> buttons = popup->findChildren<QPushButton *>();
@@ -281,7 +323,8 @@ void testRoles(QStackedWidget *stack)
 {
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
     check(sidebarPages(manager) == QStringList({QStringLiteral("Dashboard"), QStringLiteral("Scan Product"),
-                                                QStringLiteral("Products"), QStringLiteral("Order History"),
+                                                QStringLiteral("Products"), QStringLiteral("Categories"),
+                                                QStringLiteral("Order History"),
                                                 QStringLiteral("Cashier Accounts")}),
         QStringLiteral("Manager sees the wrong pages: %1").arg(sidebarPages(manager).join(", ")));
     for (QComboBox *box : manager->findChildren<QComboBox *>())
@@ -312,11 +355,249 @@ void testRoles(QStackedWidget *stack)
         QStringLiteral("A cashier must not be able to open Products."));
     check(!sidebarPages(cashier).contains(QStringLiteral("Cashier Accounts")),
         QStringLiteral("A cashier must not be able to open Cashier Accounts."));
+    check(!sidebarPages(cashier).contains(QStringLiteral("Categories")),
+        QStringLiteral("A cashier must not be able to open Categories."));
     visitAllPages(cashier, QStringLiteral("Cashier"));
 
     QWidget *unknown = openDashboard(stack, QStringLiteral("admin"));
     check(sidebarPages(unknown) == cashierPages,
         QStringLiteral("An unknown role must get the least access (Cashier)."));
+}
+
+QString fileText(const QString &path)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+        return QString();
+    return QString::fromUtf8(file.readAll());
+}
+
+// Fills the Add category form in the next pop-up and presses "Add category".
+// If the form is still open afterwards (the category was refused), records
+// the error shown and presses Cancel.
+void answerCategoryForm(const QString &id, const QString &name, const QString &acronym,
+    QString *shownError)
+{
+    auto stage = std::make_shared<int>(0);
+    popupHandler = [=](QWidget *popup) {
+        QLineEdit *idField = field(popup, QStringLiteral("e.g. 10"));
+        if (!idField)
+            return false;
+        if (*stage == 0)
+        {
+            idField->setText(id);
+            field(popup, QStringLiteral("e.g. Beverages"))->setText(name);
+            field(popup, QStringLiteral("e.g. BEV"))->setText(acronym);
+            *stage = 1;
+            if (QPushButton *add = button(popup, QStringLiteral("Add category")))
+                add->click();
+            return true;
+        }
+        for (QLabel *label : popup->findChildren<QLabel *>())
+            if (label->isVisible() && label->styleSheet().contains(QStringLiteral("B42318")))
+                *shownError = label->text();
+        if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+            cancel->click();
+        popupHandler = nullptr;
+        return true;
+    };
+}
+
+// Categories page (Increment 3, req 1): lists the sample categories, adds one
+// through the form, refuses a duplicate Id, refuses deleting a category that
+// products use, deletes an unused one.
+void testCategoriesPage(QStackedWidget *stack)
+{
+    const QString categoryFile = QStringLiteral("Data/PCategory.txt");
+    QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
+    QPushButton *page = button(manager, QStringLiteral("Categories"));
+    check(page, QStringLiteral("Manager has no Categories page."));
+    if (!page)
+        return;
+    page->click();
+    settle();
+    check(hasLabel(manager, QStringLiteral("Product categories")),
+        QStringLiteral("The Categories page did not open."));
+    const QString original = fileText(categoryFile);
+    check(showsText(manager, QStringLiteral("Beverages")) && showsText(manager, QStringLiteral("Grains and pulses")),
+        QStringLiteral("Categories page must list the categories in PCategory.txt."));
+
+    QPushButton *add = button(manager, QStringLiteral("+ Add category"));
+    check(add, QStringLiteral("Categories page: no Add category button."));
+    if (!add)
+        return;
+    QString shownError;
+    answerCategoryForm(QStringLiteral("90"), QStringLiteral("Frozen food"), QStringLiteral("FRZ"), &shownError);
+    add->click();
+    settle();
+    popupHandler = nullptr;
+    check(fileText(categoryFile) == original + QStringLiteral("90 Frozen_food FRZ#\n"),
+        QStringLiteral("Adding a category through the form must append \"90 Frozen_food FRZ#\", got: %1")
+            .arg(fileText(categoryFile)));
+    check(showsText(manager, QStringLiteral("Frozen food")),
+        QStringLiteral("The new category must appear in the table."));
+    DataFormat::Report format;
+    check(DataFormat::runGroup(QStringLiteral("PCategory"), QDir::currentPath(), format)
+              == DataFormat::Result::Passed,
+        QStringLiteral("PCategory.txt written by the Categories page is in the wrong format: %1")
+            .arg(format.problems.join(QStringLiteral("; "))));
+
+    // Same Id again: the form must refuse it and show why.
+    shownError.clear();
+    answerCategoryForm(QStringLiteral("10"), QStringLiteral("Dairy"), QStringLiteral("DRY"), &shownError);
+    add->click();
+    settle();
+    popupHandler = nullptr;
+    check(shownError.contains(QStringLiteral("already used")),
+        QStringLiteral("A duplicate Category Id must be refused with a message, got: '%1'").arg(shownError));
+    check(fileText(categoryFile) == original + QStringLiteral("90 Frozen_food FRZ#\n"),
+        QStringLiteral("A refused duplicate must not change PCategory.txt."));
+
+    // Products 100001-100004 belong to category 10 (first row), so it cannot
+    // be deleted; the new, unused category 90 (last row) can.
+    QTableWidget *table = nullptr;
+    for (QTableWidget *t : manager->findChildren<QTableWidget *>())
+        if (t->isVisible())
+            table = t;
+    QPushButton *remove = button(manager, QStringLiteral("Delete"));
+    check(table && remove, QStringLiteral("Categories page: no table or Delete button."));
+    if (table && remove)
+    {
+        table->selectRow(0);
+        popupHandler = [](QWidget *popup) {
+            if (QPushButton *yes = button(popup, QStringLiteral("&Yes")))
+            {
+                yes->click();
+                popupHandler = nullptr;   // the warning that follows is closed with OK
+                return true;
+            }
+            return false;
+        };
+        remove->click();
+        settle();
+        popupHandler = nullptr;
+        check(fileText(categoryFile) == original + QStringLiteral("90 Frozen_food FRZ#\n"),
+            QStringLiteral("A category used by products must not be deleted."));
+
+        table->selectRow(table->rowCount() - 1);
+        popupHandler = [](QWidget *popup) {
+            if (QPushButton *yes = button(popup, QStringLiteral("&Yes")))
+            {
+                yes->click();
+                popupHandler = nullptr;
+                return true;
+            }
+            return false;
+        };
+        remove->click();
+        settle();
+        popupHandler = nullptr;
+        check(fileText(categoryFile) == original,
+            QStringLiteral("Deleting the unused category 90 must remove only its line."));
+    }
+
+    // Products page: each product shows its category (first two digits of
+    // the barcode), or "not found" when PCategory.txt has no such Id.
+    QPushButton *productsPage = button(manager, QStringLiteral("Products"));
+    check(productsPage, QStringLiteral("Manager has no Products page."));
+    if (productsPage)
+    {
+        productsPage->click();
+        settle();
+        check(showsText(manager, QStringLiteral("10 \u00B7 Beverages")),
+            QStringLiteral("Products page: products with barcode 10xxxx must show category Beverages."));
+        check(showsText(manager, QStringLiteral("34 \u00B7 Snacks")) &&
+                showsText(manager, QStringLiteral("60 \u00B7 Grains and pulses")),
+            QStringLiteral("Products page: every product must show its category."));
+        check(!showsText(manager, QStringLiteral("not found")),
+            QStringLiteral("Products page: no sample product may be without a category."));
+
+        // Add product form: the category appears as the barcode is typed, and
+        // a product whose category does not exist cannot be saved.
+        QStringList seen;
+        popupHandler = [&seen](QWidget *popup) {
+            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
+            if (!barcode)
+                return false;
+            auto labels = [popup]() {
+                QStringList texts;
+                for (QLabel *label : popup->findChildren<QLabel *>())
+                    if (label->isVisible())
+                        texts << label->text();
+                return texts.join(QStringLiteral(" | "));
+            };
+            barcode->setText(QStringLiteral("100009"));
+            seen << labels();
+            barcode->setText(QStringLiteral("990001"));
+            seen << labels();
+            field(popup, QStringLiteral("e.g. P0004"))->setText(QStringLiteral("P0099"));
+            field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("CI"));
+            field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("CI item"));
+            for (QLineEdit *money : popup->findChildren<QLineEdit *>())
+                if (money->placeholderText() == QStringLiteral("e.g. 250.00"))
+                    money->setText(QStringLiteral("1.00"));
+            for (QLineEdit *quantity : popup->findChildren<QLineEdit *>())
+                if (quantity->placeholderText() == QStringLiteral("e.g. 10"))
+                    quantity->setText(QStringLiteral("5"));
+            if (QPushButton *save = button(popup, QStringLiteral("Add product")))
+                save->click();
+            seen << labels();
+            if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+                cancel->click();
+            popupHandler = nullptr;
+            return true;
+        };
+        if (QPushButton *addProduct = button(manager, QStringLiteral("+ Add product")))
+            addProduct->click();
+        settle();
+        popupHandler = nullptr;
+        check(seen.size() == 3, QStringLiteral("Add product form did not open."));
+        if (seen.size() == 3)
+        {
+            check(seen.at(0).contains(QStringLiteral("10 \u00B7 Beverages (BEV)")),
+                QStringLiteral("Typing barcode 100009 must show category 10 Beverages, saw: %1").arg(seen.at(0)));
+            check(seen.at(1).contains(QStringLiteral("Category 99 not found")),
+                QStringLiteral("Typing barcode 990001 must show 'Category 99 not found', saw: %1").arg(seen.at(1)));
+            check(seen.at(2).contains(QStringLiteral("No category with Id 99")),
+                QStringLiteral("Saving a product without a category must be refused, saw: %1").arg(seen.at(2)));
+        }
+        // Edit product form: shows the category stored for the product.
+        QString editSaw;
+        QTableWidget *productTable = nullptr;
+        for (QTableWidget *t : manager->findChildren<QTableWidget *>())
+            if (t->isVisible())
+                productTable = t;
+        QPushButton *editProduct = button(manager, QStringLiteral("Edit selected"));
+        if (productTable && editProduct)
+        {
+            productTable->selectRow(0);   // P0001 Apple juice, category 10
+            popupHandler = [&editSaw](QWidget *popup) {
+                if (!button(popup, QStringLiteral("Save changes")))
+                    return false;
+                for (QLabel *label : popup->findChildren<QLabel *>())
+                    if (label->isVisible())
+                        editSaw += label->text() + QStringLiteral(" | ");
+                if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+                    cancel->click();
+                popupHandler = nullptr;
+                return true;
+            };
+            editProduct->click();
+            settle();
+            popupHandler = nullptr;
+        }
+        check(editSaw.contains(QStringLiteral("10 \u00B7 Beverages (BEV)")),
+            QStringLiteral("Edit product form must show the stored category, saw: %1").arg(editSaw));
+
+        QVector<Pos::Product> products;
+        QString error;
+        Pos::readProducts(QStringLiteral("Data/Product.txt"), products, error);
+        bool added = false;
+        for (const Pos::Product &product : products)
+            added = added || product.id == QStringLiteral("P0099");
+        check(!added, QStringLiteral("A product without a category must not be saved to Product.txt."));
+    }
+
 }
 
 void testCashierAccountCreation(QStackedWidget *stack)
@@ -596,6 +877,7 @@ int main(int argc, char *argv[])
 
     testLogin(window);
     testRoles(stack);
+    testCategoriesPage(stack);
     testCashierAccountCreation(stack);
     testSale(stack);
 
