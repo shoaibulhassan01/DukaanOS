@@ -45,6 +45,21 @@ int main(int argc, char *argv[])
         authenticatedUser.role != QStringLiteral("manager"))
         return fail(QStringLiteral("Login did not return the manager account."));
 
+    QFile storedUsersFile(usersPath);
+    if (!storedUsersFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        return fail(QStringLiteral("Could not inspect stored user records."));
+    const QByteArray storedUsers = storedUsersFile.readAll();
+    storedUsersFile.close();
+    if (storedUsers.contains("manager test123 manager#"))
+        return fail(QStringLiteral("Successful legacy login did not replace the plaintext password."));
+
+    if (!Pos::readUsers(usersPath, users, error))
+        return fail(error);
+    if (users.size() != 2)
+        return fail(QStringLiteral("Legacy login changed the number of users."));
+    if (!Pos::verifyPassword(users.at(0).password, QStringLiteral("test123")))
+        return fail(QStringLiteral("Migrated manager password did not verify."));
+
     if (Pos::login(usersPath, QStringLiteral("manager"), QStringLiteral("wrong"),
             authenticatedUser, error))
         return fail(QStringLiteral("Login accepted an incorrect password."));
@@ -58,6 +73,16 @@ int main(int argc, char *argv[])
     if (!Pos::createCashierAccount(usersPath, QStringLiteral("newcashier"),
             QStringLiteral("newpass123"), error))
         return fail(error);
+    if (!storedUsersFile.open(QIODevice::ReadOnly | QIODevice::Text))
+        return fail(QStringLiteral("Could not inspect saved user records."));
+    const QByteArray savedUsers = storedUsersFile.readAll();
+    storedUsersFile.close();
+    if (savedUsers.contains("cashier cashier123 cashier#")
+        || savedUsers.contains("newcashier newpass123 cashier#"))
+    {
+        return fail(QStringLiteral("Cashier account creation left a plaintext password in storage."));
+    }
+
     if (!Pos::login(usersPath, QStringLiteral("newcashier"),
             QStringLiteral("newpass123"), authenticatedUser, error)
         || authenticatedUser.role != QStringLiteral("cashier"))

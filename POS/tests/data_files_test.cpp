@@ -14,6 +14,7 @@
 #include "../order/order_repository.h"
 #include "../product/product_repository.h"
 #include "../product/product_service.h"
+#include "../user/auth_service.h"
 #include "../user/user_repository.h"
 
 #include <QCoreApplication>
@@ -91,6 +92,10 @@ int main(int argc, char *argv[])
     QVector<Pos::User> users;
     check(Pos::readUsers(data.filePath(QStringLiteral("Users.txt")), users, error),
         QStringLiteral("Users.txt does not read: %1").arg(error));
+    Pos::User sampleManager;
+    check(Pos::login(data.filePath(QStringLiteral("Users.txt")), QStringLiteral("manager"),
+            QStringLiteral("manager123"), sampleManager, error),
+        QStringLiteral("Sample manager password hash does not verify: %1").arg(error));
     QSet<QString> usernames;
     int managers = 0;
     int cashiers = 0;

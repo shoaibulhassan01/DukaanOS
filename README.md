@@ -91,7 +91,7 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 
 Order status: `in-progress`, `on-hold`, `paid`, `archived`. Payment mode: `cash`, `card`, `wallet`.
 
-`Users.txt` credentials are plain-text demonstration data for local UI testing only. Do not use real or reused passwords.
+`Users.txt` stores usernames and roles in plain text, but passwords use salted PBKDF2-HMAC-SHA-256 hashes. Existing plaintext passwords are upgraded after a successful login, and new cashier accounts are hashed before they are saved. The sample accounts are for local UI testing only; do not use real or reused passwords.
 
 ## Workflow
 
