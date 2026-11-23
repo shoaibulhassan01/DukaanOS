@@ -126,8 +126,8 @@ int main(int argc, char *argv[])
     for (const Pos::Product &product : products)
     {
         QString why;
-        check(Pos::validateProduct(product, why),
-            QStringLiteral("Product %1 is not valid: %2").arg(product.id, why));
+        const bool valid = Pos::validateProduct(product, why);   // fills why first
+        check(valid, QStringLiteral("Product %1 is not valid: %2").arg(product.id, why));
         check(!productById.contains(product.id),
             QStringLiteral("Product id %1 appears twice.").arg(product.id));
         check(!barcodes.contains(product.barcode),

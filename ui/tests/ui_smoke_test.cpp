@@ -18,6 +18,8 @@
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
+#include "../../POS/category/category_service.h"
+#include "../../POS/product/product_service.h"
 #include "../../POS/report/report_service.h"
 #include "../../POS/user/auth_service.h"
 
@@ -456,6 +458,31 @@ void testCategoriesPage(QStackedWidget *stack)
     check(fileText(categoryFile) == original + QStringLiteral("90 Frozen_food FRZ#\n"),
         QStringLiteral("A refused duplicate must not change PCategory.txt."));
 
+    // Search box: filters the table, and clearing it shows every category.
+    QLineEdit *categorySearch = field(manager, QStringLiteral("Search by name, ID or acronym"));
+    check(categorySearch, QStringLiteral("Categories page: no search box."));
+    if (categorySearch)
+    {
+        auto visibleRows = [manager]() {
+            for (QTableWidget *t : manager->findChildren<QTableWidget *>())
+                if (t->isVisible())
+                    return t->rowCount();
+            return 0;
+        };
+        const int allRows = visibleRows();
+        categorySearch->setText(QStringLiteral("frozen"));
+        settle();
+        check(visibleRows() == 1 && showsText(manager, QStringLiteral("Frozen food")),
+            QStringLiteral("Searching 'frozen' must show only Frozen food, rows: %1").arg(visibleRows()));
+        categorySearch->setText(QStringLiteral("zzz"));
+        settle();
+        check(visibleRows() == 0 && showsText(manager, QStringLiteral("No categories match your search.")),
+            QStringLiteral("A search with no match must show an empty-search message."));
+        categorySearch->clear();
+        settle();
+        check(visibleRows() == allRows, QStringLiteral("Clearing the search must show every category again."));
+    }
+
     // Products 100001-100004 belong to category 10 (first row), so it cannot
     // be deleted; the new, unused category 90 (last row) can.
     QTableWidget *table = nullptr;
@@ -544,7 +571,11 @@ void testCategoriesPage(QStackedWidget *stack)
         // Add product form: the category appears as the barcode is typed, and
         // a product whose category does not exist cannot be saved.
         QStringList seen;
-        popupHandler = [&seen](QWidget *popup) {
+        QString expectedId;
+        QString idError;
+        Pos::nextProductId(QStringLiteral("Data/Product.txt"), expectedId, idError);
+        QString shownId;
+        popupHandler = [&seen, &shownId](QWidget *popup) {
             QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
             if (!barcode)
                 return false;
@@ -559,7 +590,9 @@ void testCategoriesPage(QStackedWidget *stack)
             seen << labels();
             barcode->setText(QStringLiteral("990001"));
             seen << labels();
-            field(popup, QStringLiteral("e.g. P0004"))->setText(QStringLiteral("P0099"));
+            for (QLineEdit *edit : popup->findChildren<QLineEdit *>())
+                if (edit->toolTip().startsWith(QStringLiteral("Assigned automatically")))
+                    shownId = edit->isEnabled() ? QStringLiteral("editable") : edit->text();
             field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("CI"));
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("CI item"));
             for (QLineEdit *money : popup->findChildren<QLineEdit *>())
@@ -590,6 +623,10 @@ void testCategoriesPage(QStackedWidget *stack)
             check(seen.at(2).contains(QStringLiteral("No category with Id 99")),
                 QStringLiteral("Saving a product without a category must be refused, saw: %1").arg(seen.at(2)));
         }
+        // The product id is not typed: the form shows the next one, locked.
+        check(shownId == expectedId,
+            QStringLiteral("Add product must show the next product id %1, locked; got: %2")
+                .arg(expectedId, shownId));
         // Edit product form: shows the category stored for the product.
         QString editSaw;
         QTableWidget *productTable = nullptr;
@@ -623,7 +660,7 @@ void testCategoriesPage(QStackedWidget *stack)
         Pos::readProducts(QStringLiteral("Data/Product.txt"), products, error);
         bool added = false;
         for (const Pos::Product &product : products)
-            added = added || product.id == QStringLiteral("P0099");
+            added = added || product.barcode == QStringLiteral("990001");
         check(!added, QStringLiteral("A product without a category must not be saved to Product.txt."));
 
         // A product added as "weight (kg)" is saved as "weight" in Product.txt.
@@ -633,7 +670,6 @@ void testCategoriesPage(QStackedWidget *stack)
             if (!barcode)
                 return false;
             barcode->setText(QStringLiteral("100098"));
-            field(popup, QStringLiteral("e.g. P0004"))->setText(QStringLiteral("P0098"));
             field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("SGR"));
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Sugar"));
             for (QComboBox *unit : popup->findChildren<QComboBox *>())
@@ -661,8 +697,71 @@ void testCategoriesPage(QStackedWidget *stack)
             QStringLiteral("Add product: units must be offered as 'count' and 'weight (kg)', got: %1")
                 .arg(unitChoices.join(QStringLiteral(", "))));
         check(fileText(QStringLiteral("Data/Product.txt")).contains(
-                  QStringLiteral("P0098 100098 SGR Sugar weight 1.00 1.00 1.00 2 Data/barcodes/100098.png 10#")),
-            QStringLiteral("A product added as 'weight (kg)' must be saved with unit 'weight' in Product.txt."));
+                  expectedId + QStringLiteral(" 100098 SGR Sugar weight 1.00 1.00 1.00 2 Data/barcodes/100098.png 10#")),
+            QStringLiteral("A product added as 'weight (kg)' must be saved with unit 'weight' and the next id %1 in Product.txt.")
+                .arg(expectedId));
+        QString afterId;
+        Pos::nextProductId(QStringLiteral("Data/Product.txt"), afterId, error);
+        check(afterId == QStringLiteral("P%1").arg(expectedId.mid(1).toInt() + 1, 4, 10, QLatin1Char('0')),
+            QStringLiteral("After adding %1 the next product id must go up by one, got %2.").arg(expectedId, afterId));
+
+        // Shortcut: a missing category can be created from the Add product
+        // form. It opens the Add category form with the Id (91, from barcode
+        // 910001) locked; once saved, the form shows the category in green.
+        const QString categoriesBefore = fileText(categoryFile);
+        QString linkBefore;
+        QString lockedId;
+        QString categoryAfter;
+        bool linkHiddenAfter = false;
+        popupHandler = [&](QWidget *popup) {
+            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
+            if (!barcode)
+                return false;
+            barcode->setText(QStringLiteral("910001"));
+            QPushButton *create = nullptr;
+            for (QPushButton *b : popup->findChildren<QPushButton *>())
+                if (b->text().startsWith(QStringLiteral("+ Create category")))
+                    create = b;
+            linkBefore = create && create->isVisible() ? create->text() : QStringLiteral("(no visible link)");
+            if (create)
+            {
+                // The category form opens inside the product form: answer it
+                // from a separate timer.
+                QTimer::singleShot(200, [&lockedId]() {
+                    QWidget *form = QApplication::activeModalWidget();
+                    QLineEdit *id = form ? field(form, QStringLiteral("e.g. 10")) : nullptr;
+                    if (!id)
+                        return;
+                    lockedId = id->isEnabled() ? QStringLiteral("editable") : id->text();
+                    field(form, QStringLiteral("e.g. Beverages"))->setText(QStringLiteral("Imported goods"));
+                    field(form, QStringLiteral("e.g. BEV"))->setText(QStringLiteral("IMP"));
+                    if (QPushButton *add = button(form, QStringLiteral("Add category")))
+                        add->click();
+                });
+                create->click();
+                linkHiddenAfter = !create->isVisible();
+            }
+            for (QLabel *label : popup->findChildren<QLabel *>())
+                if (label->isVisible() && label->text().startsWith(QStringLiteral("91 ")))
+                    categoryAfter = label->text();
+            if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+                cancel->click();
+            popupHandler = nullptr;   // last: this clears the lambda itself
+            return true;
+        };
+        if (QPushButton *addProduct = button(manager, QStringLiteral("+ Add product")))
+            addProduct->click();
+        settle();
+        popupHandler = nullptr;
+        check(linkBefore == QStringLiteral("+ Create category 91\u2026"),
+            QStringLiteral("Add product: a missing category must offer '+ Create category 91...', got: %1").arg(linkBefore));
+        check(lockedId == QStringLiteral("91"),
+            QStringLiteral("The category form opened from the product form must have Id 91 locked, got: %1").arg(lockedId));
+        check(fileText(categoryFile) == categoriesBefore + QStringLiteral("91 Imported_goods IMP#\n"),
+            QStringLiteral("Creating category 91 from the product form must append it to PCategory.txt."));
+        check(categoryAfter.contains(QStringLiteral("91 \u00B7 Imported goods (IMP)")) && linkHiddenAfter,
+            QStringLiteral("After creating it, the product form must show category 91 and hide the link, saw: %1").arg(categoryAfter));
+        Pos::deleteCategory(categoryFile, QStringLiteral("Data/Product.txt"), QStringLiteral("91"), error);
     }
 
 }
