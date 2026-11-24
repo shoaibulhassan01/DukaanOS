@@ -649,6 +649,7 @@ private:
     {
         auto *button = new QPushButton(parent);
         button->setObjectName(QStringLiteral("actionCard"));
+        button->setAccessibleName(item.title);
         button->setCursor(Qt::PointingHandCursor);
         button->setMinimumHeight(92);
         button->setStyleSheet(QStringLiteral(
@@ -691,7 +692,12 @@ private:
                  static_cast<QWidget *>(desc), static_cast<QWidget *>(chevron)})
             child->setAttribute(Qt::WA_TransparentForMouseEvents, true);
 
-        connect(button, &QPushButton::clicked, this, [this, item]() { navigateTo(item.title); });
+        connect(button, &QPushButton::clicked, this, [this, item]() {
+            if (item.title == QStringLiteral("Resume latest order"))
+                resumeLatestHeldOrder();
+            else
+                navigateTo(item.title);
+        });
         return button;
     }
 
@@ -762,6 +768,13 @@ private:
                 ++row;
             }
         }
+        if (roleCombo_->currentText() == QStringLiteral("Cashier") && heldOrderCount_ > 0)
+        {
+            const NavItem resume{QStringLiteral("Resume latest order"), QStringLiteral("hold"),
+                QStringLiteral("Continue the most recent held order"),
+                QStringLiteral("#0EA5E9"), QStringLiteral("#E0F4FE")};
+            actions->addWidget(createActionCard(page, resume), row, column);
+        }
         layout->addLayout(actions);
         layout->addStretch(1);
 
@@ -770,6 +783,7 @@ private:
 
     void refreshDashboardStats()
     {
+        heldOrderCount_ = 0;
         QVector<Pos::Order> orders;
         QString error;
         if (!Pos::readOrders(Pos::DataPaths::orders(), orders, error))
@@ -785,6 +799,8 @@ private:
         double sales = 0;
         for (const Pos::Order &order : orders)
         {
+            if (order.status == QStringLiteral("on-hold"))
+                ++heldOrderCount_;
             if (order.date != today)
                 continue;
             ++orderCount;
@@ -886,6 +902,49 @@ private:
             }));
     }
 
+    void resumeLatestHeldOrder()
+    {
+        QVector<Pos::Order> savedOrders;
+        QString error;
+        if (!Pos::readHeldOrders(savedOrders, error))
+        {
+            QMessageBox::warning(this, QStringLiteral("Held orders unavailable"), error);
+            return;
+        }
+        if (savedOrders.isEmpty())
+        {
+            navigateTo(QStringLiteral("Held Orders"));
+            return;
+        }
+
+        int latestIndex = 0;
+        QDateTime latestDateTime = QDateTime::fromString(
+            QStringLiteral("%1 %2").arg(savedOrders.first().date, savedOrders.first().time),
+            QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        for (int i = 1; i < savedOrders.size(); ++i)
+        {
+            const Pos::Order &order = savedOrders.at(i);
+            const QDateTime dateTime = QDateTime::fromString(
+                QStringLiteral("%1 %2").arg(order.date, order.time),
+                QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+            if (!latestDateTime.isValid() || (dateTime.isValid() && dateTime >= latestDateTime))
+            {
+                latestIndex = i;
+                latestDateTime = dateTime;
+            }
+        }
+
+        OrderPreview preview;
+        if (!makeHeldOrderPreview(savedOrders.at(latestIndex), preview, error))
+        {
+            QMessageBox::warning(this, QStringLiteral("Latest held order unavailable"), error);
+            return;
+        }
+        resumeOrder_ = preview;
+        hasResumeOrder_ = true;
+        navigateTo(QStringLiteral("New Order"));
+    }
+
     void showPlaceholder(const QString &pageName)
     {
         auto *placeholder = new QFrame(contentHost_);
@@ -919,6 +978,7 @@ private:
     QString currentPage_ = QStringLiteral("Dashboard");
     QLabel *totalOrdersValue_ = nullptr;
     QLabel *totalSalesValue_ = nullptr;
+    int heldOrderCount_ = 0;
     QVector<OrderPreview> heldOrders_;
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
