@@ -708,6 +708,7 @@ void testCategoriesPage(QStackedWidget *stack)
         // Edit product form: shows the category stored for the product.
         QString editSaw;
         bool editPreviewReady = false;
+        int editableMoney = 0;
         QTableWidget *productTable = nullptr;
         for (QTableWidget *t : manager->findChildren<QTableWidget *>())
             if (t->isVisible())
@@ -716,7 +717,7 @@ void testCategoriesPage(QStackedWidget *stack)
         if (productTable && editProduct)
         {
             productTable->selectRow(0);   // P0001 Apple juice, category 10
-            popupHandler = [&editSaw, &editPreviewReady](QWidget *popup) {
+            popupHandler = [&editSaw, &editPreviewReady, &editableMoney](QWidget *popup) {
                 if (!button(popup, QStringLiteral("Save changes")))
                     return false;
                 QLabel *preview = popup->findChild<QLabel *>(QStringLiteral("barcodePreview"));
@@ -726,6 +727,10 @@ void testCategoriesPage(QStackedWidget *stack)
                 if (QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory")))
                     editSaw = category->currentText()
                         + (category->isEnabled() ? QStringLiteral(" (editable)") : QString());
+                // Price, tax and discount can be edited (req 6).
+                for (QLineEdit *money : popup->findChildren<QLineEdit *>())
+                    if (money->placeholderText() == QStringLiteral("e.g. 250.00") && money->isEnabled())
+                        ++editableMoney;
                 if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
                     cancel->click();
                 popupHandler = nullptr;
@@ -739,6 +744,8 @@ void testCategoriesPage(QStackedWidget *stack)
             QStringLiteral("Edit product form must show the stored category, locked; saw: %1").arg(editSaw));
         check(editPreviewReady,
             QStringLiteral("Edit product must use the Add product layout with its barcode preview."));
+        check(editableMoney == 3,
+            QStringLiteral("Edit product: price, tax and discount must be editable, %1 of 3 are.").arg(editableMoney));
 
         QVector<Pos::Product> products;
         QString error;

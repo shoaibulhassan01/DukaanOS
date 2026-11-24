@@ -143,7 +143,7 @@ public:
         editButton_->setCursor(Qt::PointingHandCursor);
         editButton_->setFixedHeight(36);
         editButton_->setEnabled(false);
-        editButton_->setToolTip(QStringLiteral("Change price, discount or stock (or double-click a row)"));
+        editButton_->setToolTip(QStringLiteral("Change price, tax, discount or stock (or double-click a row)"));
         editButton_->setStyleSheet(QStringLiteral(
             "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
             " border-radius: 9px; padding: 0 15px; font-size: 11px; font-weight: 600; }"

@@ -104,7 +104,7 @@ public:
 
         auto *hint = new QLabel(mode == Mode::Add
             ? QStringLiteral("Choose a category: its Id becomes the first two digits of the barcode, so you only type the last 4. The product ID and barcode picture are created for you.")
-            : QStringLiteral("Only the price, discount and available stock can be changed."), this);
+            : QStringLiteral("Only the price, tax, discount and available stock can be changed."), this);
         hint->setWordWrap(true);
         hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
         root->addWidget(hint);
@@ -347,7 +347,7 @@ public:
             for (QWidget *locked : { static_cast<QWidget *>(id_), static_cast<QWidget *>(barcode_),
                      static_cast<QWidget *>(category_),
                      static_cast<QWidget *>(acronym_), static_cast<QWidget *>(name_),
-                     static_cast<QWidget *>(unit_), static_cast<QWidget *>(tax_),
+                     static_cast<QWidget *>(unit_),
                      static_cast<QWidget *>(image_) })
                 locked->setEnabled(false);
             price_->setFocus();
@@ -610,19 +610,21 @@ private:
         else
         {
             bool validPrice = false;
+            bool validTax = false;
             bool validDiscount = false;
             bool validQuantity = false;
             const double price = QLocale::c().toDouble(price_->text().trimmed(), &validPrice);
+            const double tax = QLocale::c().toDouble(tax_->text().trimmed(), &validTax);
             const double discount = QLocale::c().toDouble(
                 discount_->text().trimmed(), &validDiscount);
             const int quantity = quantity_->text().trimmed().toInt(&validQuantity);
-            if (!validPrice || !validDiscount || !validQuantity)
+            if (!validPrice || !validTax || !validDiscount || !validQuantity)
             {
-                error_->setText(QStringLiteral("Enter valid price, discount and quantity values."));
+                error_->setText(QStringLiteral("Enter valid price, tax, discount and quantity values."));
                 error_->show();
                 return;
             }
-            ok = Pos::updateProduct(productFile_, original_.id, price, discount, quantity, error);
+            ok = Pos::updateProduct(productFile_, original_.id, price, tax, discount, quantity, error);
         }
         if (ok)
         {

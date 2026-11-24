@@ -46,10 +46,12 @@ bool nextProductId(const QString &productFile, QString &id, QString &error);
 bool addProduct(QString productFile, Product product, QString &error,
     QString *assignedId = nullptr);
 
-// Owner: Umar Khan - edit the price, discount per unit and available
-// quantity of an existing product, found by its product id.
+// Owner: Umar Khan - edit the price, tax per unit, discount per unit and
+// available quantity of an existing product, found by its product id (req 6:
+// the manager can edit any product). Bills already saved keep their own tax
+// totals, so a new tax only affects later orders.
 bool updateProduct(QString productFile, QString productId, double unitPrice,
-    double discountPerUnit, int quantity, QString &error);
+    double tax, double discountPerUnit, int quantity, QString &error);
 
 // Owner: Umar Khan - products whose id, barcode, acronym or name contains
 // the search text (not case sensitive; spaces match the underscores used in

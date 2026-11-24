@@ -319,9 +319,9 @@ bool addProduct(QString productFile, Product product, QString &error, QString *a
     return true;
 }
 
-// Owner: Umar Khan - change only price, discount and quantity.
+// Owner: Umar Khan - change only price, tax, discount and quantity.
 bool updateProduct(QString productFile, QString productId, double unitPrice,
-    double discountPerUnit, int quantity, QString &error)
+    double tax, double discountPerUnit, int quantity, QString &error)
 {
     QVector<Product> products;
     if (!loadForEdit(productFile, products, error))
@@ -336,6 +336,7 @@ bool updateProduct(QString productFile, QString productId, double unitPrice,
 
     Product updated = products.at(index);
     updated.unitPrice = unitPrice;
+    updated.tax = tax;
     updated.discountPerUnit = discountPerUnit;
     updated.quantity = quantity;
     if (!validateProduct(updated, error))

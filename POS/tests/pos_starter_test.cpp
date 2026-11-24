@@ -245,15 +245,18 @@ int main(int argc, char *argv[])
     }
 
     // updateProduct
-    if (!Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, 5, 30, error))
+    if (!Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, 9.5, 5, 30, error))
         return fail(error);
     if (!Pos::readProducts(productFile, loaded, error) ||
-        loaded.at(2).unitPrice != 190 || loaded.at(2).discountPerUnit != 5 ||
+        loaded.at(2).unitPrice != 190 || loaded.at(2).tax != 9.5 ||
+        loaded.at(2).discountPerUnit != 5 ||
         loaded.at(2).quantity != 30 || loaded.at(2).name != milk.name)
-        return fail(QStringLiteral("updateProduct did not change price, discount and stock."));
-    if (Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, 5, -1, error))
+        return fail(QStringLiteral("updateProduct did not change price, tax, discount and stock."));
+    if (Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, 9.5, 5, -1, error))
         return fail(QStringLiteral("updateProduct accepted a negative stock."));
-    if (Pos::updateProduct(productFile, QStringLiteral("P9999"), 10, 0, 1, error))
+    if (Pos::updateProduct(productFile, QStringLiteral("P0004"), 190, -1, 5, 30, error))
+        return fail(QStringLiteral("updateProduct accepted a negative tax."));
+    if (Pos::updateProduct(productFile, QStringLiteral("P9999"), 10, 0, 0, 1, error))
         return fail(QStringLiteral("updateProduct accepted an unknown product."));
 
     // deleteProduct: an unsold product can go, a sold one cannot
