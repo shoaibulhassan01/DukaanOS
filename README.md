@@ -1,6 +1,6 @@
 # DukaanOS
 
-A Point of Sale (POS) system being built with C++ and Qt.
+A Point of Sale (POS) system currently being built with C++ and Qt.
 
 ## Current UI
 
