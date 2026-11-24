@@ -7,6 +7,9 @@
 #include <QTemporaryDir>
 #include <QDir>
 #include <QDebug>
+#include <QFile>
+#include <QTextStream>
+#include <cstdio>
 
 int main(int argc, char *argv[])
 {
@@ -45,12 +48,12 @@ int main(int argc, char *argv[])
     {
         if (condition)
         {
-            qInfo() << "[PASS]" << message;
+            std::printf("[PASS] %s\n", qPrintable(message));
             passed++;
         }
         else
         {
-            qCritical() << "[FAIL]" << message;
+            std::fprintf(stderr, "[FAIL] %s\n", qPrintable(message));
             failed++;
         }
     };
@@ -63,6 +66,17 @@ int main(int argc, char *argv[])
 
     check(Pos::addSeason(first, error),
         "Add valid season");
+    QFile savedSeasonFile(Pos::DataPaths::seasons());
+    QString savedSeasonLine;
+    if (savedSeasonFile.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        QTextStream input(&savedSeasonFile);
+        savedSeasonLine = input.readLine().trimmed();
+        savedSeasonFile.close();
+    }
+    check(savedSeasonLine.split(QLatin1Char(' '), Qt::SkipEmptyParts).size() == 4
+        && savedSeasonLine.endsWith(QLatin1Char('#')),
+        "Save the required four-field Seasons.txt record");
 
     Pos::Season overlapping;
     overlapping.startDate = QDate(2026, 1, 31);

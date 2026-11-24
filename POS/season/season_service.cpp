@@ -13,23 +13,6 @@ namespace
 {
 bool validateSeason(const Season &season, QString &error)
 {
-    if (season.name.isEmpty()
-        || season.name.trimmed() != season.name)
-    {
-        error = QStringLiteral("Invalid season name.");
-        return false;
-    }
-
-    for (QChar ch : season.name)
-    {
-        if (ch.isSpace() || ch == '#')
-        {
-            error = QStringLiteral(
-                "Season name must be a single word.");
-            return false;
-        }
-    }
-
     if (!season.startDate.isValid()
         || !season.endDate.isValid())
     {

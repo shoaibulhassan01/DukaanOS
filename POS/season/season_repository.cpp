@@ -38,34 +38,17 @@ bool readSeasons(QString filePath, QVector<Season> &seasons,
 
         QStringList fields;
 
-        if (!splitRecord(line, fields) || fields.size() != 5)
+        if (!splitRecord(line, fields) || fields.size() != 4)
         {
             error = QStringLiteral("Invalid season record.");
             return false;
         }
 
-        QString name = fields.at(0);
-
-        if (name.isEmpty() || name.trimmed() != name)
-        {
-            error = QStringLiteral("Invalid season name.");
-            return false;
-        }
-
-        for (QChar ch : name)
-        {
-            if (ch.isSpace() || ch == '#')
-            {
-                error = QStringLiteral("Season name must be a single word.");
-                return false;
-            }
-        }
-
-        QDate start = QDate::fromString(fields.at(1), Qt::ISODate);
-        QDate end = QDate::fromString(fields.at(2), Qt::ISODate);
+        QDate start = QDate::fromString(fields.at(0), Qt::ISODate);
+        QDate end = QDate::fromString(fields.at(1), Qt::ISODate);
 
         bool percentageOk = false;
-        double percentage = fields.at(3).toDouble(&percentageOk);
+        double percentage = fields.at(2).toDouble(&percentageOk);
 
         if (!start.isValid() || !end.isValid()
             || start > end
@@ -78,8 +61,8 @@ bool readSeasons(QString filePath, QVector<Season> &seasons,
             return false;
         }
 
-        if (fields.at(4) != QStringLiteral("true")
-            && fields.at(4) != QStringLiteral("false"))
+        if (fields.at(3) != QStringLiteral("true")
+            && fields.at(3) != QStringLiteral("false"))
         {
             error = QStringLiteral("Invalid season status.");
             return false;
@@ -87,12 +70,11 @@ bool readSeasons(QString filePath, QVector<Season> &seasons,
 
         Season season;
 
-        season.name = name;
         season.startDate = start;
         season.endDate = end;
         season.percentage = percentage;
         season.isActive =
-            fields.at(4) == QStringLiteral("true");
+            fields.at(3) == QStringLiteral("true");
 
         loaded.append(season);
     }
@@ -126,9 +108,7 @@ bool saveSeasons(QString filePath, const QVector<Season> &seasons,
 
     for (const Season &season : seasons)
     {
-        if (season.name.isEmpty()
-            || season.name.trimmed() != season.name
-            || !season.startDate.isValid()
+        if (!season.startDate.isValid()
             || !season.endDate.isValid()
             || season.startDate > season.endDate
             || !std::isfinite(season.percentage)
@@ -140,22 +120,11 @@ bool saveSeasons(QString filePath, const QVector<Season> &seasons,
             return false;
         }
 
-        for (QChar ch : season.name)
-        {
-            if (ch.isSpace() || ch == '#')
-            {
-                error = QStringLiteral("Season name must be a single word.");
-                file.cancelWriting();
-                return false;
-            }
-        }
-
         QString status = season.isActive
             ? QStringLiteral("true")
             : QStringLiteral("false");
 
         QString line = makeRecord({
-            season.name,
             season.startDate.toString(Qt::ISODate),
             season.endDate.toString(Qt::ISODate),
             QString::number(season.percentage, 'g', 15),

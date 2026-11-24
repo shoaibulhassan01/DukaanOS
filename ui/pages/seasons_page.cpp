@@ -15,7 +15,6 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
-#include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
@@ -86,9 +85,6 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     auto *layout = new QVBoxLayout(&dialog);
     auto *form = new QFormLayout;
 
-    auto *name = new QLineEdit(&dialog);
-    name->setPlaceholderText(QStringLiteral("Enter season name"));
-
     auto *startDate = new QDateEdit(QDate::currentDate(), &dialog);
     startDate->setCalendarPopup(true);
     startDate->setDisplayFormat(QStringLiteral("dd MMM yyyy"));
@@ -107,14 +103,12 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
 
     if (existing)
     {
-        name->setText(existing->name);
         startDate->setDate(existing->startDate);
         endDate->setDate(existing->endDate);
         percentage->setValue(existing->percentage);
         active->setChecked(existing->isActive);
     }
 
-    form->addRow(QStringLiteral("Season Name:"), name);
     form->addRow(QStringLiteral("Start Date:"), startDate);
     form->addRow(QStringLiteral("End Date:"), endDate);
     form->addRow(QStringLiteral("Discount:"), percentage);
@@ -137,14 +131,6 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     if (dialog.exec() != QDialog::Accepted)
         return false;
 
-    if (name->text().trimmed().isEmpty())
-    {
-        QMessageBox::warning(parent, QStringLiteral("Invalid Season"),
-            QStringLiteral("Season name cannot be empty."));
-        return false;
-    }
-
-    result.name = name->text().trimmed();
     result.startDate = startDate->date();
     result.endDate = endDate->date();
     result.percentage = percentage->value();
@@ -261,10 +247,9 @@ public:
         layout->addLayout(heading);
 
         table_ = new QTableWidget(card);
-        table_->setColumnCount(5);
+        table_->setColumnCount(4);
 
         table_->setHorizontalHeaderLabels({
-            QStringLiteral("SEASON"),
             QStringLiteral("START DATE"),
             QStringLiteral("END DATE"),
             QStringLiteral("DISCOUNT"),
@@ -276,7 +261,7 @@ public:
         table_->horizontalHeader()->setSectionResizeMode(
             0, QHeaderView::Stretch);
 
-        for (int column = 1; column < 5; ++column)
+        for (int column = 1; column < 4; ++column)
         {
             table_->horizontalHeader()->setSectionResizeMode(
                 column, QHeaderView::ResizeToContents);
@@ -430,17 +415,15 @@ private:
         {
             const Pos::Season &season = seasons_.at(row);
 
-            setCell(row, 0, season.name);
-
-            setCell(row, 1,
+            setCell(row, 0,
                 season.startDate.toString(
                     QStringLiteral("dd MMM yyyy")));
 
-            setCell(row, 2,
+            setCell(row, 1,
                 season.endDate.toString(
                     QStringLiteral("dd MMM yyyy")));
 
-            setCell(row, 3,
+            setCell(row, 2,
                 QStringLiteral("%1%").arg(
                     season.percentage, 0, 'f', 2));
 
@@ -457,7 +440,7 @@ private:
 
             status->setTextAlignment(Qt::AlignCenter);
 
-            table_->setItem(row, 4, status);
+            table_->setItem(row, 3, status);
 
             table_->setRowHeight(row, 48);
         }
@@ -536,8 +519,9 @@ private:
         const auto answer = QMessageBox::question(
             this,
             QStringLiteral("Delete Season"),
-            QStringLiteral("Delete season '%1'?\nThis cannot be undone.")
-                .arg(season.name),
+            QStringLiteral("Delete the season from %1 to %2?\nThis cannot be undone.")
+                .arg(season.startDate.toString(Qt::ISODate),
+                     season.endDate.toString(Qt::ISODate)),
             QMessageBox::Yes | QMessageBox::No,
             QMessageBox::No);
 

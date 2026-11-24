@@ -164,7 +164,7 @@ static void testCheckout(const QString &dir)
         "P001 100001 MLK1L Milk_1L count 280.00 14.00 0.00 50 Data/barcodes/100001.png#\n"
         "P002 100002 SUGR1KG Sugar_1kg weight 160.00 8.00 5.00 40 Data/barcodes/100002.png#\n"));
     CHECK(writeFile("Data/Seasons.txt",
-        QStringLiteral("Summer 2026-06-01 2026-08-31 10 false#\n").toUtf8()));
+        QStringLiteral("2026-06-01 2026-08-31 10 false#\n").toUtf8()));
 
     CheckoutRequest request;
     request.customerName = QStringLiteral("Ali Raza");
@@ -237,7 +237,7 @@ static void testCheckout(const QString &dir)
     CHECK(readLines("Data/Bill.txt").size() == 1);
 
     CHECK(writeFile("Data/Seasons.txt",
-        (QStringLiteral("Winter %1 %2 10 true#\n")
+        (QStringLiteral("%1 %2 10 true#\n")
             .arg(QDate::currentDate().addDays(-30).toString(Qt::ISODate),
                  QDate::currentDate().addDays(30).toString(Qt::ISODate))).toUtf8()));
     CheckoutRequest seasonalRequest = request;
