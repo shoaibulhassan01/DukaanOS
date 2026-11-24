@@ -136,7 +136,10 @@ void testReportsAndOrderEditing(const QString &root)
 		QStringLiteral("Completed report had wrong orders/total: %1").arg(error));
 
 	Pos::OrderSession paid;
-	check(!Pos::openOrderForEditing(QStringLiteral("00000001"), false, paid, error)
+	bool managerApprovalRequired = false;
+	check(!Pos::openOrderForEditing(QStringLiteral("00000001"), false, paid, error,
+			&managerApprovalRequired)
+			&& managerApprovalRequired
 			&& error.contains(QStringLiteral("approval"), Qt::CaseInsensitive),
 		QStringLiteral("Paid order did not require manager approval."));
 	check(Pos::openOrderForEditing(QStringLiteral("00000001"), true, paid, error),
@@ -167,12 +170,16 @@ void testReportsAndOrderEditing(const QString &root)
 			.arg(billId, oldPaidDate).toUtf8()),
 		QStringLiteral("Could not set test paid date."));
 	Pos::OrderSession expired;
-	check(!Pos::openOrderForEditing(QStringLiteral("00000001"), true, expired, error)
-			&& error.contains(QStringLiteral("7 days")),
+	managerApprovalRequired = true;
+	check(!Pos::openOrderForEditing(QStringLiteral("00000001"), false, expired, error,
+			&managerApprovalRequired)
+			&& !managerApprovalRequired && error.contains(QStringLiteral("7 days")),
 		QStringLiteral("Paid order older than seven days was not refused."));
 
 	Pos::OrderSession held;
-	check(Pos::openOrderForEditing(QStringLiteral("00000002"), false, held, error),
+	managerApprovalRequired = true;
+	check(Pos::openOrderForEditing(QStringLiteral("00000002"), false, held, error,
+			&managerApprovalRequired) && !managerApprovalRequired,
 		QStringLiteral("On-hold order should open without approval: %1").arg(error));
 	if (!held.items.isEmpty())
 		held.items[0].quantity = 4;

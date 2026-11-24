@@ -24,6 +24,8 @@ struct OrderPreview
     double subtotal = 0;
     double tax = 0;
     double discount = 0;
+    double seasonalDiscount = 0;
+    double specialDiscount = 0;
     double total = 0;
     int itemCount = 0;
 };

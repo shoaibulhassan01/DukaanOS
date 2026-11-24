@@ -6,6 +6,7 @@
 #include "../../POS/product/product_service.h"
 #include "../../POS/checkout/checkout_service.h"
 #include "../../POS/common/data_paths.h"
+#include "../../POS/order/order_service.h"
 #include "../../POS/payment/payment_method.h"
 #include "product_details_view.h"
 #include "wheel_guard.h"
@@ -13,6 +14,7 @@
 #include <QCoreApplication>
 #include <QComboBox>
 #include <QDoubleSpinBox>
+#include <QHash>
 #include <QSignalBlocker>
 #include <QDir>
 #include <QFileInfo>
@@ -92,9 +94,12 @@ class NewOrderPage : public QWidget
 public:
     explicit NewOrderPage(QWidget *parent, const OrderPreview *initialOrder,
         std::function<void(const OrderPreview &)> onGenerateBill,
-        std::function<void(const OrderPreview &)> onHoldOrder)
+        std::function<void(const OrderPreview &)> onHoldOrder,
+        std::function<void(const OrderPreview &)> onSaveEdits,
+        bool editExistingOrder, bool managerApproved)
         : QWidget(parent), onGenerateBill_(std::move(onGenerateBill)),
-          onHoldOrder_(std::move(onHoldOrder))
+          onHoldOrder_(std::move(onHoldOrder)), onSaveEdits_(std::move(onSaveEdits)),
+          editExistingOrder_(editExistingOrder), managerApproved_(managerApproved)
     {
         scanner_ = new CameraBarcodeScanner(this);
         scanner_->setHandlers(
@@ -131,15 +136,36 @@ public:
         body->addWidget(createSummaryCard(), 4);
         root->addLayout(body);
 
-        auto *notice = new QLabel(
+        notice_ = new QLabel(
             QStringLiteral("When the bill is generated it is saved to Order.txt, OrderDetail.txt, Bill.txt and BillDetail.txt, stock is reduced, and the bill opens."),
             this);
-        notice->setStyleSheet(QStringLiteral(
+        notice_->setWordWrap(true);
+        notice_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent; padding-left: 2px;")
             .arg(kMuted));
-        root->addWidget(notice);
+        root->addWidget(notice_);
         if (initialOrder)
             loadOrder(*initialOrder);
+        if (editExistingOrder_)
+        {
+            paymentFields_->hide();
+            holdButton_->hide();
+            checkoutButton_->setText(QStringLiteral("Save changes"));
+            if (existingOrderStatus_ == QStringLiteral("paid"))
+            {
+                summarySubtitle_->setText(QStringLiteral("Editing paid order %1 · amount stays unchanged")
+                    .arg(orderId_));
+                notice_->setText(QStringLiteral(
+                    "Manager-approved edits update order items and stock; the original paid amount and bill stay unchanged."));
+            }
+            else
+            {
+                summarySubtitle_->setText(QStringLiteral("Editing on-hold order %1")
+                    .arg(orderId_));
+                notice_->setText(QStringLiteral(
+                    "Saving updates this on-hold order. Stock is adjusted when the order is paid."));
+            }
+        }
         updatePaymentFields();
     }
 
@@ -371,10 +397,10 @@ private:
 
         layout->addWidget(createSectionTitle(QStringLiteral("Order summary"), card));
         layout->addSpacing(5);
-        auto *subtitle = new QLabel(QStringLiteral("Review totals before checkout"), card);
-        subtitle->setStyleSheet(QStringLiteral(
+        summarySubtitle_ = new QLabel(QStringLiteral("Review totals before checkout"), card);
+        summarySubtitle_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
-        layout->addWidget(subtitle);
+        layout->addWidget(summarySubtitle_);
         layout->addSpacing(20);
 
         itemsValue_ = addSummaryRow(layout, card, QStringLiteral("Items"), QStringLiteral("0"));
@@ -404,42 +430,42 @@ private:
         layout->addLayout(total);
         layout->addSpacing(20);
 
-        layout->addWidget(createFieldLabel(QStringLiteral("Payment method"), card));
-        layout->addSpacing(7);
-        paymentMethod_ = new QComboBox(card);
+        paymentFields_ = new QWidget(card);
+        auto *paymentLayout = new QVBoxLayout(paymentFields_);
+        paymentLayout->setContentsMargins(0, 0, 0, 0);
+        paymentLayout->setSpacing(7);
+        paymentLayout->addWidget(createFieldLabel(QStringLiteral("Payment method"), paymentFields_));
+        paymentMethod_ = new QComboBox(paymentFields_);
         paymentMethod_->addItems({QStringLiteral("Cash"), QStringLiteral("Card"),
             QStringLiteral("Wallet")});
         paymentMethod_->setFixedHeight(42);
         paymentMethod_->setStyleSheet(fieldStyle());
-        layout->addWidget(paymentMethod_);
-        layout->addSpacing(10);
+        paymentLayout->addWidget(paymentMethod_);
 
         // Card / Wallet: bank or wallet name. Cash: amount received and change.
-        merchantLabel_ = createFieldLabel(QStringLiteral("Bank / wallet name"), card);
-        layout->addWidget(merchantLabel_);
-        layout->addSpacing(7);
-        merchantEdit_ = new QLineEdit(card);
+        merchantLabel_ = createFieldLabel(QStringLiteral("Bank / wallet name"), paymentFields_);
+        paymentLayout->addWidget(merchantLabel_);
+        merchantEdit_ = new QLineEdit(paymentFields_);
         merchantEdit_->setPlaceholderText(QStringLiteral("e.g. HBL, ABL, JazzCash, Easypaisa"));
         merchantEdit_->setFixedHeight(42);
         merchantEdit_->setStyleSheet(fieldStyle());
-        layout->addWidget(merchantEdit_);
+        paymentLayout->addWidget(merchantEdit_);
 
-        cashLabel_ = createFieldLabel(QStringLiteral("Cash received (PKR)"), card);
-        layout->addWidget(cashLabel_);
-        layout->addSpacing(7);
-        cashReceived_ = new QDoubleSpinBox(card);
+        cashLabel_ = createFieldLabel(QStringLiteral("Cash received (PKR)"), paymentFields_);
+        paymentLayout->addWidget(cashLabel_);
+        cashReceived_ = new QDoubleSpinBox(paymentFields_);
         cashReceived_->setRange(0, 100000000);
         cashReceived_->setDecimals(2);
         cashReceived_->setButtonSymbols(QAbstractSpinBox::NoButtons);
         UiPages::ignoreMouseWheel(cashReceived_);
         cashReceived_->setFixedHeight(42);
         cashReceived_->setStyleSheet(fieldStyle());
-        layout->addWidget(cashReceived_);
-        layout->addSpacing(6);
-        changeLabel_ = new QLabel(card);
+        paymentLayout->addWidget(cashReceived_);
+        changeLabel_ = new QLabel(paymentFields_);
         changeLabel_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
-        layout->addWidget(changeLabel_);
+        paymentLayout->addWidget(changeLabel_);
+        layout->addWidget(paymentFields_);
         layout->addSpacing(14);
         connect(paymentMethod_, &QComboBox::currentTextChanged, this, [this]() { updatePaymentFields(); });
         connect(cashReceived_, &QDoubleSpinBox::valueChanged, this, [this]() { updatePaymentFields(); });
@@ -475,7 +501,12 @@ private:
         layout->addWidget(checkoutMessage_);
         layout->addStretch(1);
         connect(holdButton_, &QPushButton::clicked, this, [this]() { holdOrder(); });
-        connect(checkoutButton_, &QPushButton::clicked, this, [this]() { generateBill(); });
+        connect(checkoutButton_, &QPushButton::clicked, this, [this]() {
+            if (editExistingOrder_)
+                saveEdits();
+            else
+                generateBill();
+        });
         return card;
     }
 
@@ -648,12 +679,11 @@ private:
             }
         }
 
-        // Requirement 5: the required quantity must be less than the stock.
-        if (!Pos::checkStock(currentProduct_, existingQuantity + requestedQuantity))
+        if (!hasAvailableStock(currentProduct_, existingQuantity + requestedQuantity))
         {
-            setStatus(QStringLiteral(
-                "Required quantity must be less than the available stock (%1).")
-                .arg(currentProduct_.quantity), true);
+            setStatus(QStringLiteral("Required quantity %1 the available stock (%2).")
+                .arg(isPaidOrderEdit() ? QStringLiteral("cannot exceed") : QStringLiteral("must be less than"))
+                .arg(availableStock(currentProduct_)), true);
             return;
         }
 
@@ -675,16 +705,40 @@ private:
             return;
 
         CartLine &line = cartLines_[row];
-        if (change > 0 && !Pos::checkStock(line.product, line.quantity + change))
+        if (change < 0 && line.quantity + change <= 0 && editExistingOrder_)
         {
-            setStatus(QStringLiteral(
-                "Required quantity must be less than the available stock (%1).")
-                .arg(line.product.quantity), true);
+            cartLines_.removeAt(row);
+            refreshCart();
+            return;
+        }
+        if (change > 0 && !hasAvailableStock(line.product, line.quantity + change))
+        {
+            setStatus(QStringLiteral("Required quantity %1 the available stock (%2).")
+                .arg(isPaidOrderEdit() ? QStringLiteral("cannot exceed") : QStringLiteral("must be less than"))
+                .arg(availableStock(line.product)), true);
             return;
         }
 
         line.quantity = qMax(1, line.quantity + change);
         refreshCart();
+    }
+
+    bool isPaidOrderEdit() const
+    {
+        return editExistingOrder_ && existingOrderStatus_ == QStringLiteral("paid");
+    }
+
+    int availableStock(const Pos::Product &product) const
+    {
+        return product.quantity + (isPaidOrderEdit()
+                ? originalQuantity_.value(product.id) : 0);
+    }
+
+    bool hasAvailableStock(const Pos::Product &product, int requestedQuantity) const
+    {
+        if (isPaidOrderEdit())
+            return requestedQuantity > 0 && requestedQuantity <= availableStock(product);
+        return Pos::checkStock(product, requestedQuantity);
     }
 
     void refreshCart()
@@ -748,8 +802,8 @@ private:
                 [this, row]() { adjustCartQuantity(row, -1); });
             connect(increase, &QPushButton::clicked, this,
                 [this, row]() { adjustCartQuantity(row, 1); });
-            decrease->setEnabled(line.quantity > 1);
-            increase->setEnabled(line.quantity + 1 < line.product.quantity);
+            decrease->setEnabled(line.quantity > 1 || editExistingOrder_);
+            increase->setEnabled(hasAvailableStock(line.product, line.quantity + 1));
             cartTable_->setCellWidget(row, 3, quantityControl);
 
             setCell(4, QStringLiteral("PKR %1").arg(lineSubtotal, 0, 'f', 2));
@@ -822,14 +876,19 @@ private:
     void loadOrder(const OrderPreview &order)
     {
         orderId_ = order.orderId;
+        existingOrderStatus_ = order.status;
         customerNameEdit_->setText(order.customerName);
         customerPhoneEdit_->setText(order.phone);
         const int paymentIndex = paymentMethod_->findText(order.paymentMethod);
         if (paymentIndex >= 0)
             paymentMethod_->setCurrentIndex(paymentIndex);
         cartLines_.clear();
+        originalQuantity_.clear();
         for (const OrderPreviewLine &line : order.lines)
+        {
             cartLines_.append(CartLine{line.product, line.quantity});
+            originalQuantity_[line.product.id] += line.quantity;
+        }
         refreshCart();
     }
 
@@ -889,9 +948,39 @@ private:
         order.subtotal = result.totals.withoutTax;
         order.tax = result.totals.tax;
         order.discount = result.totals.discount;
+        order.seasonalDiscount = result.totals.seasonalDiscount;
         order.total = result.totals.payable;
         if (onGenerateBill_)
             onGenerateBill_(order);
+    }
+
+    void saveEdits()
+    {
+        OrderPreview order = createOrderPreview();
+        if (order.lines.isEmpty())
+        {
+            checkoutMessage_->setText(QStringLiteral("Add at least one product before saving changes."));
+            checkoutMessage_->show();
+            return;
+        }
+
+        Pos::OrderSession session;
+        session.orderId = orderId_;
+        session.customerName = order.customerName;
+        session.customerContact = order.phone;
+        for (const CartLine &line : cartLines_)
+            session.items.append(Pos::CartItem{line.product, line.quantity});
+
+        QString error;
+        if (!Pos::saveOrderEdits(session, managerApproved_, error))
+        {
+            checkoutMessage_->setText(QStringLiteral("Changes not saved: %1").arg(error));
+            checkoutMessage_->show();
+            return;
+        }
+        checkoutMessage_->hide();
+        if (onSaveEdits_)
+            onSaveEdits_(order);
     }
 
     CameraBarcodeScanner *scanner_ = nullptr;
@@ -905,6 +994,9 @@ private:
     double currentTotal_ = 0;
     bool cashEdited_ = false;
     QLabel *checkoutMessage_ = nullptr;
+    QLabel *summarySubtitle_ = nullptr;
+    QLabel *notice_ = nullptr;
+    QWidget *paymentFields_ = nullptr;
     QPushButton *holdButton_ = nullptr;
     QPushButton *checkoutButton_ = nullptr;
     QLineEdit *barcodeEdit_ = nullptr;
@@ -924,17 +1016,25 @@ private:
     QLabel *totalValue_ = nullptr;
     Pos::Product currentProduct_;
     QString orderId_;
+    QString existingOrderStatus_;
+    QHash<QString, int> originalQuantity_;
     QVector<CartLine> cartLines_;
     bool hasMatchedProduct_ = false;
+    bool editExistingOrder_ = false;
+    bool managerApproved_ = false;
     std::function<void(const OrderPreview &)> onGenerateBill_;
     std::function<void(const OrderPreview &)> onHoldOrder_;
+    std::function<void(const OrderPreview &)> onSaveEdits_;
 };
 }
 
 QWidget *UiPages::createNewOrderPage(QWidget *parent, const OrderPreview *initialOrder,
     std::function<void(const OrderPreview &)> onGenerateBill,
-    std::function<void(const OrderPreview &)> onHoldOrder)
+    std::function<void(const OrderPreview &)> onHoldOrder,
+    std::function<void(const OrderPreview &)> onSaveEdits,
+    bool editExistingOrder, bool managerApproved)
 {
     return new NewOrderPage(parent, initialOrder,
-        std::move(onGenerateBill), std::move(onHoldOrder));
+        std::move(onGenerateBill), std::move(onHoldOrder),
+        std::move(onSaveEdits), editExistingOrder, managerApproved);
 }

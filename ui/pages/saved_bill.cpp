@@ -77,6 +77,8 @@ bool UiPages::loadSavedBill(const Pos::Order &order, OrderPreview &bill, QString
     bill.subtotal = saved.totalWithoutTax;
     bill.tax = saved.totalTax;
     bill.discount = saved.totalDiscount;
+    bill.seasonalDiscount = saved.seasonalDiscount;
+    bill.specialDiscount = saved.specialDiscount;
     bill.total = saved.totalPayable;
     error.clear();
     return true;

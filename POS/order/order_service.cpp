@@ -37,7 +37,7 @@ bool findOrder(const QString &orderId, Order &order, QString &error)
 }
 
 bool checkEditPermission(const Order &order, bool managerApproved,
-    QString &error)
+    QString &error, bool *managerApprovalRequired = nullptr)
 {
     if (order.status == QStringLiteral("on-hold"))
     {
@@ -69,6 +69,8 @@ bool checkEditPermission(const Order &order, bool managerApproved,
     }
     if (!managerApproved)
     {
+        if (managerApprovalRequired)
+            *managerApprovalRequired = true;
         error = QStringLiteral("Manager approval is required to edit a paid order.");
         return false;
     }
@@ -269,13 +271,16 @@ bool holdOrder(OrderSession &session, QString &error)
 }
 
 bool openOrderForEditing(QString orderId, bool managerApproved,
-    OrderSession &session, QString &error)
+    OrderSession &session, QString &error, bool *managerApprovalRequired)
 {
+    if (managerApprovalRequired)
+        *managerApprovalRequired = false;
     session = OrderSession{};
     error.clear();
     Order order;
-    if (!findOrder(orderId, order, error)
-        || !checkEditPermission(order, managerApproved, error))
+    if (!findOrder(orderId, order, error))
+        return false;
+    if (!checkEditPermission(order, managerApproved, error, managerApprovalRequired))
         return false;
 
     QVector<OrderDetail> details;

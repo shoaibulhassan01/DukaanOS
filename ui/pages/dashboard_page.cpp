@@ -9,6 +9,7 @@
 #include "order_history_page.h"
 #include "products_page.h"
 #include "scan_product_page.h"
+#include "seasons_page.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/order/order_repository.h"
 #include "../../POS/order/order_service.h"
@@ -397,6 +398,8 @@ private:
                     QStringLiteral("Manage inventory"), QStringLiteral("#F59E0B"), QStringLiteral("#FEF3DC")},
                 {QStringLiteral("Categories"), QStringLiteral("tag"),
                     QStringLiteral("Set up product categories"), QStringLiteral("#16845B"), QStringLiteral("#E1F7EE")},
+                {QStringLiteral("Season Management"), QStringLiteral("trend"),
+                    QStringLiteral("Manage seasonal discounts"), QStringLiteral("#7C4DFF"), QStringLiteral("#F0EAFF")},
                 history,
                 {QStringLiteral("Reports"), QStringLiteral("trend"),
                     QStringLiteral("Sales and stock reports"), QStringLiteral("#4F46E5"), QStringLiteral("#EEF0FF")},
@@ -480,7 +483,10 @@ private:
             showDashboard(items);
         else if (currentPage_ == QStringLiteral("New Order"))
         {
-            const OrderPreview *initialOrder = hasResumeOrder_ ? &resumeOrder_ : nullptr;
+            const bool editExistingOrder = hasEditOrder_;
+            const bool managerApproved = managerApproved_;
+            const OrderPreview *initialOrder = hasResumeOrder_ || editExistingOrder
+                ? &resumeOrder_ : nullptr;
             contentLayout_->addWidget(UiPages::createNewOrderPage(contentHost_, initialOrder,
                 [this](const OrderPreview &order) {
                     // The bill is already saved; show it in a pop-up, then
@@ -503,22 +509,41 @@ private:
                     }
                     hasResumeOrder_ = false;
                     navigateTo(QStringLiteral("Held Orders"));
-                }));
+                },
+                [this](const OrderPreview &order) {
+                    QMessageBox::information(this, QStringLiteral("Order updated"),
+                        QStringLiteral("Changes to order %1 were saved.")
+                            .arg(order.orderId));
+                    hasEditOrder_ = false;
+                    managerApproved_ = false;
+                    navigateTo(QStringLiteral("Order History"));
+                },
+                editExistingOrder, managerApproved));
             hasResumeOrder_ = false;
+            hasEditOrder_ = false;
+            managerApproved_ = false;
         }
         else if (currentPage_ == QStringLiteral("Held Orders"))
             showHeldOrders();
         else if (currentPage_ == QStringLiteral("Order History"))
             contentLayout_->addWidget(UiPages::createOrderHistoryPage(contentHost_,
-                [this]() { navigateTo(QStringLiteral("New Order")); }));
+                [this]() { navigateTo(QStringLiteral("New Order")); },
+                [this](const OrderPreview &order, bool managerApproved) {
+                    resumeOrder_ = order;
+                    hasEditOrder_ = true;
+                    managerApproved_ = managerApproved;
+                    navigateTo(QStringLiteral("New Order"));
+                }));
         else if (currentPage_ == QStringLiteral("Scan Product"))
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
-        else if (currentPage_ == QStringLiteral("Reports"))
-            contentLayout_->addWidget(UiPages::createReportsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Categories"))
             contentLayout_->addWidget(UiPages::createCategoriesPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Season Management"))
+            contentLayout_->addWidget(UiPages::createSeasonsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Reports"))
+            contentLayout_->addWidget(UiPages::createReportsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Cashier Accounts"))
             contentLayout_->addWidget(UiPages::createCashierAccountsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
@@ -898,6 +923,8 @@ private:
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
     bool hasResumeOrder_ = false;
+    bool hasEditOrder_ = false;
+    bool managerApproved_ = false;
     bool hasBillPreview_ = false;
 };
 }
@@ -905,4 +932,4 @@ private:
 QWidget *UiPages::createDashboardPage(QWidget *parent, const QString &initialRole)
 {
     return new DashboardWindow(parent, initialRole);
-}
+}
