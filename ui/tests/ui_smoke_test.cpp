@@ -9,6 +9,7 @@
 // manager access to the saved bill and PDF export.
 
 #include "../ui.h"
+#include "../pages/product_dialog.h"
 #include "../theme.h"
 #include "../pages/bill_page.h"
 #include "../pages/dashboard_page.h"
@@ -179,7 +180,9 @@ void checkNoLightBackgrounds(QWidget *root, const QString &where)
     static const QRegularExpression background(
         QStringLiteral("background(?:-color)?\\s*:\\s*(#[0-9A-Fa-f]{6}|white)\\b"));
     QStringList light;
-    for (QWidget *widget : root->findChildren<QWidget *>())
+    QList<QWidget *> widgets = root->findChildren<QWidget *>();
+    widgets.prepend(root);   // a pop-up form's own background counts too
+    for (QWidget *widget : widgets)
     {
         if (!widget->isVisible())
             continue;
@@ -829,6 +832,77 @@ void testCategoriesPage(QStackedWidget *stack)
 
 // Reports page (Increment 3, req 11): both of Umar's reports show what the
 // report logic (tested in ReportTest) calculates from the sample data.
+// Pop-up forms in dark mode: the Add / Edit product forms (with the barcode
+// preview filled in) and the Add category form opened from them. Their
+// colours are not covered by visiting the pages.
+void testFormsInDarkMode()
+{
+    UiTheme::setDark(true);
+    settle();
+    QStringList opened;
+    popupHandler = [&opened](QWidget *popup) {
+        QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
+        if (!category || !button(popup, QStringLiteral("Add product")))
+            return false;
+        opened << QStringLiteral("Add product");
+        checkNoLightBackgrounds(popup, QStringLiteral("Add product form (empty)"));
+        category->setCurrentIndex(category->findData(QStringLiteral("10")));
+        if (QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004")))
+            barcode->insert(QStringLiteral("0777"));
+        field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Dark tea"));
+        settle();
+        checkNoLightBackgrounds(popup, QStringLiteral("Add product form (with barcode preview)"));
+        for (QPushButton *b : popup->findChildren<QPushButton *>())
+            if (b->text().startsWith(QStringLiteral("+ Add new category")))
+            {
+                // The category form opens inside the product form: check it
+                // from a separate timer, then cancel it.
+                QTimer::singleShot(200, [&opened]() {
+                    QWidget *form = QApplication::activeModalWidget();
+                    if (!form || !field(form, QStringLiteral("e.g. 10")))
+                        return;
+                    opened << QStringLiteral("Add category");
+                    checkNoLightBackgrounds(form, QStringLiteral("Add category form"));
+                    if (QPushButton *cancel = button(form, QStringLiteral("Cancel")))
+                        cancel->click();
+                });
+                b->click();
+            }
+        if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+            cancel->click();
+        popupHandler = nullptr;   // last: this clears the lambda itself
+        return true;
+    };
+    UiPages::showAddProductDialog(nullptr, QStringLiteral("Data/Product.txt"));
+    settle();
+
+    QVector<Pos::Product> products;
+    QString error;
+    Pos::readProducts(QStringLiteral("Data/Product.txt"), products, error);
+    if (!products.isEmpty())
+    {
+        popupHandler = [&opened](QWidget *popup) {
+            if (!button(popup, QStringLiteral("Save changes")))
+                return false;
+            opened << QStringLiteral("Edit product");
+            checkNoLightBackgrounds(popup, QStringLiteral("Edit product form"));
+            if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+                cancel->click();
+            popupHandler = nullptr;
+            return true;
+        };
+        UiPages::showEditProductDialog(nullptr, QStringLiteral("Data/Product.txt"), products.first());
+        settle();
+    }
+    popupHandler = nullptr;
+    check(opened == QStringList({ QStringLiteral("Add product"), QStringLiteral("Add category"),
+                                  QStringLiteral("Edit product") }),
+        QStringLiteral("Dark-mode form check: expected Add product, Add category and Edit product to open, got: %1")
+            .arg(opened.join(QStringLiteral(", "))));
+    UiTheme::setDark(false);
+    settle();
+}
+
 void testReportsPage(QStackedWidget *stack)
 {
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
@@ -1302,6 +1376,7 @@ int main(int argc, char *argv[])
     testLogin(window);
     testRoles(stack);
     testCategoriesPage(stack);
+    testFormsInDarkMode();
     testReportsPage(stack);
     testCashierAccountCreation(stack);
     testSale(stack);
