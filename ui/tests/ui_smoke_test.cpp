@@ -1445,6 +1445,38 @@ void testSale(QStackedWidget *stack)
             && UiPages::writeBillPdf(managerBill, pdfs.filePath(QStringLiteral("manager.pdf")))
             && isPdfFile(pdfs.filePath(QStringLiteral("manager.pdf"))),
         QStringLiteral("Manager bill could not be exported as a valid PDF (%1).").arg(error));
+
+    // Req 3: a signed-in manager edits a paid order with no approval form
+    // (the approval is for cashiers), gets the edit form (not Dashboard),
+    // and returns to Order History after saving.
+    historyTable->clearSelection();
+    historyTable->item(managerSaleRow, 0)->setSelected(true);
+    QPushButton *managerEdit = button(manager, QStringLiteral("Edit order"));
+    check(managerEdit && managerEdit->isEnabled(),
+        QStringLiteral("Manager: a recent paid order should offer Edit order."));
+    if (!managerEdit || !managerEdit->isEnabled())
+        return;
+    bool approvalAsked = false;
+    popupHandler = [&approvalAsked](QWidget *popup) {
+        if (popup->objectName() != QStringLiteral("managerApprovalDialog"))
+            return false;
+        approvalAsked = true;
+        if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+            cancel->click();
+        return true;
+    };
+    managerEdit->click();
+    settle();
+    popupHandler = nullptr;
+    check(!approvalAsked,
+        QStringLiteral("A signed-in manager must not be asked for manager approval."));
+    check(button(manager, QStringLiteral("Save changes")) && !hasLabel(manager, QStringLiteral("Order History")),
+        QStringLiteral("Manager edit must open the edit form, not fall back to another page."));
+    if (QPushButton *save = button(manager, QStringLiteral("Save changes")))
+        save->click();
+    settle();
+    check(hasLabel(manager, QStringLiteral("Order History")),
+        QStringLiteral("After saving an edit, the manager must be back on Order History."));
 }
 }
 

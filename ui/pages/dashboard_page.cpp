@@ -431,6 +431,10 @@ private:
 
     void navigateTo(const QString &page)
     {
+        // A manager reaches New Order only to edit an order; leaving it
+        // ends that.
+        if (page != QStringLiteral("New Order"))
+            managerEditing_ = false;
         currentPage_ = page;
         updateRole();
     }
@@ -438,7 +442,8 @@ private:
     void updateRole()
     {
         const QVector<NavItem> items = itemsForRole();
-        bool pageAvailable = currentPage_ == QStringLiteral("Bill");
+        bool pageAvailable = currentPage_ == QStringLiteral("Bill")
+            || (currentPage_ == QStringLiteral("New Order") && managerEditing_);
         for (const NavItem &item : items)
             pageAvailable = pageAvailable || item.title == currentPage_;
         if (!pageAvailable)
@@ -490,9 +495,11 @@ private:
             contentLayout_->addWidget(UiPages::createNewOrderPage(contentHost_, initialOrder,
                 [this](const OrderPreview &order) {
                     // The bill is already saved; show it in a pop-up, then
-                    // start a fresh order when it is closed.
+                    // start a fresh order when it is closed (a manager who
+                    // was editing goes back to Order History).
                     UiPages::showBillDialog(order, this);
-                    navigateTo(QStringLiteral("New Order"));
+                    navigateTo(managerEditing_ ? QStringLiteral("Order History")
+                                               : QStringLiteral("New Order"));
                 },
                 [this](const OrderPreview &order) {
                     Pos::OrderSession session;
@@ -532,8 +539,12 @@ private:
                     resumeOrder_ = order;
                     hasEditOrder_ = true;
                     managerApproved_ = managerApproved;
+                    // Managers have no New Order page in their menu: open it
+                    // for this edit only (it used to fall back to Dashboard).
+                    managerEditing_ = roleCombo_->currentText() == QStringLiteral("Manager");
                     navigateTo(QStringLiteral("New Order"));
-                }));
+                },
+                roleCombo_->currentText() == QStringLiteral("Manager")));
         else if (currentPage_ == QStringLiteral("Scan Product"))
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
@@ -985,6 +996,7 @@ private:
     bool hasResumeOrder_ = false;
     bool hasEditOrder_ = false;
     bool managerApproved_ = false;
+    bool managerEditing_ = false;   // a manager is editing an order on New Order
     bool hasBillPreview_ = false;
 };
 }
