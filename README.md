@@ -98,7 +98,7 @@ Shoaib's UI can call `readIncompleteOrdersReport(report, error)` and `readComple
 
 For editing, call `openOrderForEditing(orderId, false, session, error)`. On-hold orders open without approval. For a paid order, the service returns an approval message if it was paid within 7 days; after the UI authenticates a manager, retry with `managerApproved=true`. The UI then edits `session.items` and calls `saveOrderEdits(session, managerApproved, error)`. Paid edits adjust stock by the quantity difference; on-hold edits do not change stock. Orders paid more than 7 days ago are refused even with approval.
 
-`Users.txt` credentials are plain-text demonstration data for local UI testing only. Do not use real or reused passwords.
+`Users.txt` stores usernames and roles in plain text, but passwords use salted PBKDF2-HMAC-SHA-256 hashes. Existing plaintext passwords are upgraded after a successful login, and new cashier accounts are hashed before they are saved. The sample accounts are for local UI testing only; do not use real or reused passwords.
 
 ## Workflow
 

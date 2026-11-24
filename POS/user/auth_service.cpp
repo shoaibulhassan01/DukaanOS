@@ -20,10 +20,18 @@ bool login(QString filePath, QString username, QString password,
         return false;
 
     User matchedUser;
-    if (!findUser(users, username, matchedUser) || matchedUser.password != password)
+    if (!findUser(users, username, matchedUser)
+        || !verifyPassword(matchedUser.password, password))
     {
         error = QStringLiteral("Invalid username or password.");
         return false;
+    }
+
+    if (!matchedUser.password.startsWith(QStringLiteral("pbkdf2_sha256$")))
+    {
+        if (!updateUserPassword(filePath, username, password, error))
+            return false;
+        matchedUser.password.clear();
     }
 
     if (matchedUser.role != QStringLiteral("manager") &&
@@ -33,6 +41,7 @@ bool login(QString filePath, QString username, QString password,
         return false;
     }
 
+    matchedUser.password.clear();
     loggedInUser = matchedUser;
     error.clear();
     return true;

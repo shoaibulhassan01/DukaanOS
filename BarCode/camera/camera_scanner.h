@@ -48,9 +48,11 @@ private:
     ResultHandler resultHandler;
     ErrorHandler errorHandler;
     QElapsedTimer previewTimer;
+    QElapsedTimer resultRetryTimer;
     bool running = false;
     bool receivedFrame = false;
     bool resultFound = false;
     bool decoding = false;   // a worker thread is decoding a frame right now
     int failedScans = 0;     // every Nth failed scan runs the thorough pass
+    int resultMisses = 0;
 };
