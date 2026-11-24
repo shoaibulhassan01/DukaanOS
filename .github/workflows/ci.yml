@@ -25,6 +25,13 @@ jobs:
           arch: win64_mingw
           modules: qtmultimedia
           tools: tools_mingw1310,qt.tools.win64_mingw1310
+          cache: true
+
+      - name: Cache C++ compilations
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          variant: sccache
+          key: windows-mingw-13.1-qt-6.8.3
 
       - name: Configure and build
         run: |
@@ -44,6 +51,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$qtPrefix" `
             -DCMAKE_CXX_COMPILER="$compiler" `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache `
             -DBUILD_TESTING=ON
           cmake --build build-ci --config Release
 
