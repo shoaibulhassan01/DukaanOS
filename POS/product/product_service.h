@@ -46,10 +46,12 @@ bool nextProductId(const QString &productFile, QString &id, QString &error);
 bool addProduct(QString productFile, Product product, QString &error,
     QString *assignedId = nullptr);
 
-// Owner: Umar Khan - edit the price, discount per unit and available
-// quantity of an existing product, found by its product id.
+// Owner: Umar Khan - edit the price, tax per unit, discount per unit and
+// available quantity of an existing product, found by its product id (req 6:
+// the manager can edit any product). Bills already saved keep their own tax
+// totals, so a new tax only affects later orders.
 bool updateProduct(QString productFile, QString productId, double unitPrice,
-    double discountPerUnit, int quantity, QString &error);
+    double tax, double discountPerUnit, int quantity, QString &error);
 
 // Owner: Umar Khan - products whose id, barcode, acronym or name contains
 // the search text (not case sensitive; spaces match the underscores used in
@@ -59,7 +61,9 @@ QVector<Product> searchProducts(QVector<Product> products, QString text);
 // Owner: Umar Khan - remove a product from Product.txt (Manager).
 // A product that already appears in OrderDetail.txt cannot be deleted,
 // because old orders refer to it by id and barcode; set its stock to 0
-// instead. A missing orderDetailFile means no orders yet.
+// instead. A missing orderDetailFile means no orders yet. Its barcode
+// picture (barcodes/<name>_<barcode>.png next to productFile) is deleted
+// too, unless another product still points to the same file.
 bool deleteProduct(QString productFile, QString orderDetailFile, QString productId,
     QString &error);
 
