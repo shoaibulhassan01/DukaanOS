@@ -10,6 +10,7 @@
 
 #include "../ui.h"
 #include "../pages/product_dialog.h"
+#include "../pages/seasons_page.h"
 #include "../theme.h"
 #include "../pages/bill_page.h"
 #include "../pages/dashboard_page.h"
@@ -851,7 +852,8 @@ void testCategoriesPage(QStackedWidget *stack)
 // Reports page (Increment 3, req 11): both of Umar's reports show what the
 // report logic (tested in ReportTest) calculates from the sample data.
 // Pop-up forms in dark mode: the Add / Edit product forms (with the barcode
-// preview filled in) and the Add category form opened from them. Their
+// preview filled in), the Add category form opened from them, and the Add
+// season form. Their
 // colours are not covered by visiting the pages.
 void testFormsInDarkMode()
 {
@@ -913,8 +915,29 @@ void testFormsInDarkMode()
         settle();
     }
     popupHandler = nullptr;
+
+    // Add season form (Seasons page), cancelled without saving.
+    QWidget *seasons = UiPages::createSeasonsPage();
+    seasons->show();
+    settle();
+    popupHandler = [&opened](QWidget *popup) {
+        if (!button(popup, QStringLiteral("Add season")))
+            return false;
+        opened << QStringLiteral("Add season");
+        checkNoLightBackgrounds(popup, QStringLiteral("Add season form"));
+        if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+            cancel->click();
+        popupHandler = nullptr;
+        return true;
+    };
+    if (QPushButton *addSeason = button(seasons, QStringLiteral("+ Add Season")))
+        addSeason->click();
+    settle();
+    popupHandler = nullptr;
+    delete seasons;
+
     check(opened == QStringList({ QStringLiteral("Add product"), QStringLiteral("Add category"),
-                                  QStringLiteral("Edit product") }),
+                                  QStringLiteral("Edit product"), QStringLiteral("Add season") }),
         QStringLiteral("Dark-mode form check: expected Add product, Add category and Edit product to open, got: %1")
             .arg(opened.join(QStringLiteral(", "))));
     UiTheme::setDark(false);

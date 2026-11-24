@@ -12,6 +12,7 @@
 #include <QDoubleSpinBox>
 #include <QFormLayout>
 #include <QFrame>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -71,35 +72,91 @@ QFrame *createStatCard(QWidget *parent, const QString &heading,
     return card;
 }
 
+// Add / Edit season form, styled like the other forms (Add category, Add
+// product): labels above fields, rounded inputs, Cancel / Save buttons.
+// Returns true if the manager saved; the caller checks and stores it.
 bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     Pos::Season &result)
 {
     QDialog dialog(parent);
-
     dialog.setWindowTitle(existing
-        ? QStringLiteral("Edit Season")
-        : QStringLiteral("Add Season"));
-
-    dialog.setMinimumWidth(380);
+        ? QStringLiteral("Edit season")
+        : QStringLiteral("Add season"));
+    dialog.setMinimumWidth(420);
+    dialog.setStyleSheet(QStringLiteral(
+        "QDialog { background: white; }"
+        "QDateEdit, QDoubleSpinBox { background: #FAFAFD; color: %1; border: 1px solid %2;"
+        " border-radius: 8px; padding: 0 10px; font-size: 12px; }"
+        "QDateEdit:focus, QDoubleSpinBox:focus { background: white; border: 1px solid %3; }"
+        "QDateEdit::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
+        " width: 28px; border: none; background: transparent; }"
+        "QDateEdit::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }")
+        .arg(kInk, kLine, kNavy));
 
     auto *layout = new QVBoxLayout(&dialog);
-    auto *form = new QFormLayout;
+    layout->setContentsMargins(22, 20, 22, 18);
+    layout->setSpacing(8);
 
-    auto *startDate = new QDateEdit(QDate::currentDate(), &dialog);
-    startDate->setCalendarPopup(true);
-    startDate->setDisplayFormat(QStringLiteral("dd MMM yyyy"));
+    auto *title = new QLabel(dialog.windowTitle(), &dialog);
+    title->setStyleSheet(QStringLiteral(
+        "color: %1; font-size: 15px; font-weight: 700;").arg(kInk));
+    layout->addWidget(title);
+    auto *hint = new QLabel(QStringLiteral(
+        "While a season is active and today is between its dates, its discount "
+        "is applied to every bill."), &dialog);
+    hint->setWordWrap(true);
+    hint->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
+    layout->addWidget(hint);
+    layout->addSpacing(4);
 
-    auto *endDate = new QDateEdit(QDate::currentDate().addMonths(1), &dialog);
-    endDate->setCalendarPopup(true);
-    endDate->setDisplayFormat(QStringLiteral("dd MMM yyyy"));
+    auto caption = [&dialog](const QString &text) {
+        auto *label = new QLabel(text, &dialog);
+        label->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 11px; font-weight: 600;").arg(kInk));
+        return label;
+    };
+    auto dateBox = [&dialog](const QDate &date) {
+        auto *box = new QDateEdit(date, &dialog);
+        box->setCalendarPopup(true);
+        box->setDisplayFormat(QStringLiteral("dd MMM yyyy"));
+        box->setFixedHeight(38);
+        return box;
+    };
 
+    // Start and end date side by side.
+    auto *dates = new QGridLayout;
+    dates->setHorizontalSpacing(12);
+    dates->setVerticalSpacing(6);
+    auto *startDate = dateBox(QDate::currentDate());
+    auto *endDate = dateBox(QDate::currentDate().addMonths(1));
+    dates->addWidget(caption(QStringLiteral("Start date")), 0, 0);
+    dates->addWidget(caption(QStringLiteral("End date")), 0, 1);
+    dates->addWidget(startDate, 1, 0);
+    dates->addWidget(endDate, 1, 1);
+    layout->addLayout(dates);
+
+    layout->addWidget(caption(QStringLiteral("Discount (%)")));
     auto *percentage = new QDoubleSpinBox(&dialog);
     percentage->setRange(0.01, 100.00);
     percentage->setDecimals(2);
     percentage->setSuffix(QStringLiteral(" %"));
+    percentage->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    percentage->setFixedHeight(38);
+    layout->addWidget(percentage);
 
+    layout->addSpacing(4);
     auto *active = new QCheckBox(QStringLiteral("Active"), &dialog);
     active->setChecked(true);
+    active->setCursor(Qt::PointingHandCursor);
+    active->setStyleSheet(QStringLiteral(
+        "QCheckBox { color: %1; font-size: 11px; font-weight: 600; spacing: 8px; }"
+        "QCheckBox::indicator { width: 18px; height: 18px; }"
+        "QCheckBox::indicator:unchecked { background: white; border: 1px solid %2;"
+        " border-radius: 4px; }"
+        "QCheckBox::indicator:checked { background: %3; border: 1px solid %3;"
+        " border-radius: 4px; image: url(:/assets/checkbox_check.png); }")
+        .arg(kInk, kLine, kNavy));
+    layout->addWidget(active);
 
     if (existing)
     {
@@ -109,24 +166,31 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
         active->setChecked(existing->isActive);
     }
 
-    form->addRow(QStringLiteral("Start Date:"), startDate);
-    form->addRow(QStringLiteral("End Date:"), endDate);
-    form->addRow(QStringLiteral("Discount:"), percentage);
-    form->addRow(QStringLiteral("Status:"), active);
+    auto *buttons = new QHBoxLayout;
+    buttons->addStretch(1);
+    auto *cancel = new QPushButton(QStringLiteral("Cancel"), &dialog);
+    cancel->setCursor(Qt::PointingHandCursor);
+    cancel->setFixedHeight(36);
+    cancel->setStyleSheet(QStringLiteral(
+        "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+        " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+        "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
+    auto *save = new QPushButton(existing ? QStringLiteral("Save changes")
+                                          : QStringLiteral("Add season"), &dialog);
+    save->setCursor(Qt::PointingHandCursor);
+    save->setFixedHeight(36);
+    save->setDefault(true);
+    save->setStyleSheet(QStringLiteral(
+        "QPushButton { background: %1; color: white; border: none; border-radius: 8px;"
+        " padding: 0 14px; font-size: 10px; font-weight: 700; }"
+        "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
+    buttons->addWidget(cancel);
+    buttons->addWidget(save);
+    layout->addSpacing(8);
+    layout->addLayout(buttons);
 
-    layout->addLayout(form);
-
-    auto *buttons = new QDialogButtonBox(
-        QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
-        &dialog);
-
-    layout->addWidget(buttons);
-
-    QObject::connect(buttons, &QDialogButtonBox::accepted,
-        &dialog, &QDialog::accept);
-
-    QObject::connect(buttons, &QDialogButtonBox::rejected,
-        &dialog, &QDialog::reject);
+    QObject::connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
+    QObject::connect(save, &QPushButton::clicked, &dialog, &QDialog::accept);
 
     if (dialog.exec() != QDialog::Accepted)
         return false;
