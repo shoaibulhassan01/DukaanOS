@@ -34,7 +34,6 @@
 #include <QEventLoop>
 #include <QEvent>
 #include <QFile>
-#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -966,21 +965,20 @@ void testSale(QStackedWidget *stack)
     check(customer && barcode, QStringLiteral("New Order: customer or barcode field missing."));
     check(!button(cashier, QStringLiteral("Add item")),
         QStringLiteral("New Order should add products without an Add item button."));
+    QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
+    check(hold && !hold->isEnabled(),
+        QStringLiteral("Hold order should be visible but disabled while the cart is empty."));
     if (!customer || !barcode)
         return;
     customer->setText(QStringLiteral("CI Test"));
     barcode->setText(QStringLiteral("100001"));
-    waitFor(300);
-    check(showsText(cashier, QStringLiteral("Unit price: PKR 250.00")),
-        QStringLiteral("Entering a complete barcode must show product details before Enter."));
-    QKeyEvent enter(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
-    QApplication::sendEvent(barcode, &enter);
-    settle();
+    waitFor(400);
     check(showsText(cashier, QStringLiteral("100001")),
-        QStringLiteral("Pressing Enter must add the matched barcode to the cart."));
+        QStringLiteral("Entering a complete barcode must add the matched product automatically."));
+    check(hold && hold->isEnabled(),
+        QStringLiteral("Hold order should become available as soon as a product is added."));
 
     // Hold the order, then resume it from Held Orders.
-    QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
     check(hold, QStringLiteral("New Order: no Hold order button."));
     if (!hold)
         return;
@@ -1046,6 +1044,27 @@ void testSale(QStackedWidget *stack)
 
     // A newly created dashboard after sign-out must reload the held order from disk.
     cashier = openDashboard(stack, QStringLiteral("Cashier"));
+    QPushButton *resumeQuickAction = nullptr;
+    for (QPushButton *candidate : cashier->findChildren<QPushButton *>())
+        if (candidate->isVisible()
+            && candidate->accessibleName() == QStringLiteral("Resume latest order"))
+            resumeQuickAction = candidate;
+    check(resumeQuickAction,
+        QStringLiteral("Dashboard should offer direct resume when an order is held."));
+    if (resumeQuickAction)
+    {
+        resumeQuickAction->click();
+        settle();
+        check(hasLabel(cashier, QStringLiteral("New Order")),
+            QStringLiteral("The dashboard Resume action should open New Order directly."));
+        QPushButton *dashboard = button(cashier, QStringLiteral("Dashboard"));
+        check(dashboard, QStringLiteral("Cashier: no Dashboard navigation button."));
+        if (dashboard)
+        {
+            dashboard->click();
+            settle();
+        }
+    }
     QPushButton *heldOrders = button(cashier, QStringLiteral("Held Orders"));
     check(heldOrders, QStringLiteral("Cashier: no Held Orders button after signing in again."));
     if (!heldOrders)
