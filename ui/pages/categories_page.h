@@ -10,9 +10,8 @@ namespace UiPages
 QWidget *createCategoriesPage(QWidget *parent = nullptr);
 
 // Owner: Umar Khan - the same Add category form, opened from the Add product
-// form when the barcode's category does not exist yet. The Id (the barcode's
-// first two digits) is filled in and locked. Saves through addCategory into
-// categoryFile; returns true if the category was added.
-bool showAddCategoryForBarcode(QWidget *parent, const QString &categoryFile,
-    const QString &categoryId);
+// form ("+ Add new category"). Saves through addCategory into categoryFile;
+// returns true if a category was added and puts its Id in createdId.
+bool showAddCategoryDialog(QWidget *parent, const QString &categoryFile,
+    QString *createdId = nullptr);
 }
