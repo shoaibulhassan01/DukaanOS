@@ -66,7 +66,7 @@ bool calculateBillLine(QString billId, Product product, int quantity,
 }
 
 bool buildBill(QString billId, Order order, QVector<CartItem> items,
-    Bill &bill, QString &error)
+    Bill &bill, QString &error, double seasonalDiscountPercentage)
 {
     error.clear();
     bill = Bill{};
@@ -107,6 +107,22 @@ bool buildBill(QString billId, Order order, QVector<CartItem> items,
     built.totalDiscount = round2(built.totalDiscount);
     built.totalPayable = round2(
         built.totalWithoutTax + built.totalTax - built.totalDiscount);
+    if (!std::isfinite(seasonalDiscountPercentage)
+        || seasonalDiscountPercentage < 0
+        || seasonalDiscountPercentage > 100)
+    {
+        error = QStringLiteral("Seasonal discount percentage is invalid.");
+        return false;
+    }
+    if (seasonalDiscountPercentage > 0)
+    {
+        const double seasonalBase = round2(
+            built.totalWithoutTax + built.totalTax - built.totalDiscount);
+        built.seasonalDiscount = round2(
+            seasonalBase * seasonalDiscountPercentage / 100.0);
+        built.totalPayable = round2(
+            seasonalBase - built.seasonalDiscount);
+    }
     if (!std::isfinite(built.totalWithoutTax)
         || !std::isfinite(built.totalTax)
         || !std::isfinite(built.totalDiscount)

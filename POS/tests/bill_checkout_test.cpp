@@ -94,6 +94,14 @@ static void testBillCalculations()
     CHECK(bill.totalWithoutTax == 1040 && bill.totalTax == 52);
     CHECK(bill.totalDiscount == 15 && bill.totalPayable == 1077);
     CHECK(bill.details.at(1).totalDiscount == 15);
+
+    Bill seasonalBill;
+    CHECK(buildBill("000000002", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2},
+        {makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3}
+    }, seasonalBill, error, 10));
+    CHECK(seasonalBill.seasonalDiscount == 107.70
+        && seasonalBill.totalPayable == 969.30);
 }
 
 static void testBillRepository(const QString &dir)
@@ -155,6 +163,8 @@ static void testCheckout(const QString &dir)
     CHECK(writeFile("Data/Product.txt",
         "P001 100001 MLK1L Milk_1L count 280.00 14.00 0.00 50 Data/barcodes/100001.png#\n"
         "P002 100002 SUGR1KG Sugar_1kg weight 160.00 8.00 5.00 40 Data/barcodes/100002.png#\n"));
+    CHECK(writeFile("Data/Seasons.txt",
+        QStringLiteral("Summer 2026-06-01 2026-08-31 10 false#\n").toUtf8()));
 
     CheckoutRequest request;
     request.customerName = QStringLiteral("Ali Raza");
@@ -225,6 +235,19 @@ static void testCheckout(const QString &dir)
     CHECK(!generateBill(tooMuch, result, error));
     CHECK(readLines("Data/Order.txt").size() == 1);
     CHECK(readLines("Data/Bill.txt").size() == 1);
+
+    CHECK(writeFile("Data/Seasons.txt",
+        (QStringLiteral("Winter %1 %2 10 true#\n")
+            .arg(QDate::currentDate().addDays(-30).toString(Qt::ISODate),
+                 QDate::currentDate().addDays(30).toString(Qt::ISODate))).toUtf8()));
+    CheckoutRequest seasonalRequest = request;
+    seasonalRequest.amountPaid = 969.30;
+    CheckoutResult seasonalResult;
+    CHECK(generateBill(seasonalRequest, seasonalResult, error));
+    CHECK(seasonalResult.bill.seasonalDiscount == 107.70
+        && seasonalResult.bill.totalPayable == 969.30);
+    CHECK(seasonalResult.totals.seasonalDiscount == 107.70
+        && seasonalResult.totals.payable == 969.30);
 }
 
 static void testHeldOrderResume(const QString &dir)

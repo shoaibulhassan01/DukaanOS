@@ -83,7 +83,7 @@ if errorlevel 1 (
 )
 
 echo Building DukaanOS...
-"%CMAKE_EXE%" --build "%BUILD_DIR%" --target DukaanOS
+"%CMAKE_EXE%" --build "%BUILD_DIR%" --target DukaanOS --parallel 1
 if errorlevel 1 (
     echo Build failed.
     pause

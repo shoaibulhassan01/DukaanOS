@@ -164,6 +164,10 @@ bool exportBillPdfFile(const OrderPreview &order, const QString &path)
     drawTotal(QStringLiteral("Subtotal"), money(order.subtotal), false);
     drawTotal(QStringLiteral("Tax"), money(order.tax), false);
     drawTotal(QStringLiteral("Discount"), QStringLiteral("- %1").arg(money(order.discount)), false);
+    if (order.seasonalDiscount > 0)
+        drawTotal(QStringLiteral("Seasonal Discount"), QStringLiteral("- %1").arg(money(order.seasonalDiscount)), false);
+    if (order.specialDiscount > 0)
+        drawTotal(QStringLiteral("Special Discount"), QStringLiteral("- %1").arg(money(order.specialDiscount)), false);
     painter.setPen(QPen(QColor(kLine), 1));
     painter.drawLine(left, y, right, y);
     y += 7;
@@ -300,10 +304,22 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
     addTotal(0, QStringLiteral("Subtotal"), money(order.subtotal));
     addTotal(1, QStringLiteral("Tax"), money(order.tax));
     addTotal(2, QStringLiteral("Discount"), QStringLiteral("- %1").arg(money(order.discount)));
+    int nextTotalRow = 3;
+    if (order.seasonalDiscount > 0)
+    {
+        addTotal(nextTotalRow++, QStringLiteral("Seasonal Discount"),
+            QStringLiteral("- %1").arg(money(order.seasonalDiscount)));
+    }
+    if (order.specialDiscount > 0)
+    {
+        addTotal(nextTotalRow++, QStringLiteral("Special Discount"),
+            QStringLiteral("- %1").arg(money(order.specialDiscount)));
+    }
     auto *divider = new QFrame(receipt);
     divider->setFrameShape(QFrame::HLine);
     divider->setStyleSheet(QStringLiteral("color: %1;").arg(kLine));
-    totals->addWidget(divider, 3, 0, 1, 2);
+    totals->addWidget(divider, nextTotalRow, 0, 1, 2);
+    const int totalRow = nextTotalRow + 1;
     auto *totalLabel = makeLabel(order.status.isEmpty() || order.status == QStringLiteral("paid")
             ? QStringLiteral("TOTAL PAID") : QStringLiteral("TOTAL"),
         QStringLiteral("color: %1; font-size: 11px; font-weight: 800; background: transparent;")
@@ -312,8 +328,8 @@ QWidget *createBillContents(const OrderPreview &order, QWidget *parent)
         QStringLiteral("color: %1; font-size: 17px; font-weight: 800; background: transparent;")
             .arg(kNavy), receipt);
     totalValue->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    totals->addWidget(totalLabel, 4, 0);
-    totals->addWidget(totalValue, 4, 1);
+    totals->addWidget(totalLabel, totalRow, 0);
+    totals->addWidget(totalValue, totalRow, 1);
     layout->addLayout(totals);
     layout->addSpacing(20);
     auto *footer = makeLabel(QStringLiteral("Thank you for shopping with us!"),

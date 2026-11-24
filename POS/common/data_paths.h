@@ -6,20 +6,21 @@ namespace Pos
 {
 namespace DataPaths
 {
-// Owner: Umar Khan - the one place that knows where the data files live.
-// Uses the "Data" folder in the current working folder when it exists
-// (run.bat starts the app from the project folder; tests point the working
-// folder at a temporary copy), otherwise searches next to the .exe or in the
+    // Owner: Umar Khan - the one place that knows where the data files live.
+    // Uses the "Data" folder in the current working folder when it exists
+    // (run.bat starts the app from the project folder; tests point the working
+    // folder at a temporary copy), otherwise searches next to the .exe or in the
 
-QString dataDir();
+    QString dataDir();
 
-QString users();          // Users.txt
-QString products();       // Product.txt
-QString orders();         // Order.txt
-QString orderDetail();    // OrderDetail.txt
-QString bills();          // Bill.txt
-QString billDetails();    // BillDetail.txt
-QString categories();     // PCategory.txt (product categories)
-QString barcodeFolder();  // barcodes/ (product barcode images)
+    QString users();          // Users.txt
+    QString products();       // Product.txt
+    QString orders();         // Order.txt
+    QString orderDetail();    // OrderDetail.txt
+    QString bills();          // Bill.txt
+    QString billDetails();    // BillDetail.txt
+    QString categories();     // PCategory.txt (product categories)
+    QString barcodeFolder();  // barcodes/ (product barcode images)
+    QString seasons();        // Seasons.txt
 }
 }
