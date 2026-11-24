@@ -595,7 +595,9 @@ void testCategoriesPage(QStackedWidget *stack)
         QString idError;
         Pos::nextProductId(QStringLiteral("Data/Product.txt"), expectedId, idError);
         QString shownId;
-        popupHandler = [&seen, &shownId](QWidget *popup) {
+        bool suggestedAcronym = false;
+        bool preservedManualAcronym = false;
+        popupHandler = [&seen, &shownId, &suggestedAcronym, &preservedManualAcronym](QWidget *popup) {
             QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
             if (!barcode)
                 return false;
@@ -613,7 +615,13 @@ void testCategoriesPage(QStackedWidget *stack)
             for (QLineEdit *edit : popup->findChildren<QLineEdit *>())
                 if (edit->toolTip().startsWith(QStringLiteral("Assigned automatically")))
                     shownId = edit->isEnabled() ? QStringLiteral("editable") : edit->text();
+            field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("CI item"));
+            suggestedAcronym = field(popup, QStringLiteral("Up to 8 characters"))->text()
+                == QStringLiteral("CII");
             field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("CI"));
+            field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Changed name"));
+            preservedManualAcronym = field(popup, QStringLiteral("Up to 8 characters"))->text()
+                == QStringLiteral("CI");
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("CI item"));
             for (QLineEdit *money : popup->findChildren<QLineEdit *>())
                 if (money->placeholderText() == QStringLiteral("e.g. 250.00"))
@@ -647,6 +655,10 @@ void testCategoriesPage(QStackedWidget *stack)
         check(shownId == expectedId,
             QStringLiteral("Add product must show the next product id %1, locked; got: %2")
                 .arg(expectedId, shownId));
+        check(suggestedAcronym,
+            QStringLiteral("Add product must suggest the first three name characters as the acronym."));
+        check(preservedManualAcronym,
+            QStringLiteral("Changing the name must not overwrite a manually changed acronym."));
         // Edit product form: shows the category stored for the product.
         QString editSaw;
         QTableWidget *productTable = nullptr;
@@ -690,8 +702,8 @@ void testCategoriesPage(QStackedWidget *stack)
             if (!barcode)
                 return false;
             barcode->setText(QStringLiteral("100098"));
-            field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("SGR"));
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Sugar"));
+            field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("SGR"));
             if (QComboBox *unit = popup->findChild<QComboBox *>(QStringLiteral("productUnit")))
             {
                 for (int i = 0; i < unit->count(); ++i)
