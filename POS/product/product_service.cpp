@@ -274,7 +274,8 @@ bool addProduct(QString productFile, Product product, QString &error, QString *a
     {
         product.categoryId = product.barcode.left(2);
     }
-    product.barcodeImage = QStringLiteral("Data/barcodes/%1.png").arg(product.barcode);
+    const QString imageFileName = barcodeImageFileName(product.barcode, product.name);
+    product.barcodeImage = QStringLiteral("Data/barcodes/%1").arg(imageFileName);
     if (!validateProduct(product, error))
         return false;
 
@@ -307,7 +308,7 @@ bool addProduct(QString productFile, Product product, QString &error, QString *a
 
     QString imagePath;
     const QString imageFolder = QFileInfo(productFile).absoluteDir().filePath(QStringLiteral("barcodes"));
-    if (!createBarcodeImage(product.barcode, imageFolder, imagePath, error))
+    if (!createBarcodeImage(product.barcode, product.name, imageFolder, imagePath, error))
         return false;
 
     products.append(product);

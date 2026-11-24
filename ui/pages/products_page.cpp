@@ -100,11 +100,11 @@ public:
     explicit ProductsPage(QWidget *parent) : QWidget(parent)
     {
         auto *root = new QVBoxLayout(this);
-        root->setContentsMargins(0, 0, 0, 18);
-        root->setSpacing(16);
+        root->setContentsMargins(0, 0, 0, 10);
+        root->setSpacing(10);
 
         auto *stats = new QHBoxLayout;
-        stats->setSpacing(12);
+        stats->setSpacing(14);
         stats->addWidget(createStatCard(this, QStringLiteral("TOTAL PRODUCTS"),
             QStringLiteral("#4F46E5"), &productCount_, QStringLiteral("In your product list")), 1);
         stats->addWidget(createStatCard(this, QStringLiteral("LOW STOCK"),
@@ -115,21 +115,30 @@ public:
 
         auto *card = createCard(this);
         auto *layout = new QVBoxLayout(card);
-        layout->setContentsMargins(18, 18, 18, 16);
-        layout->setSpacing(13);
+        layout->setContentsMargins(18, 14, 18, 14);
+        layout->setSpacing(10);
 
         auto *heading = new QHBoxLayout;
+        auto *titleBlock = new QVBoxLayout;
+        titleBlock->setSpacing(4);
         auto *title = new QLabel(QStringLiteral("Product inventory"), card);
         title->setStyleSheet(QStringLiteral(
-            "color: %1; font-size: 15px; font-weight: 700; background: transparent;").arg(kInk));
-        heading->addWidget(title);
-        heading->addStretch(1);
+            "color: %1; font-size: 18px; font-weight: 700; background: transparent;").arg(kInk));
+        auto *subtitle = new QLabel(QStringLiteral(
+            "Review stock, prices and product details at a glance."), card);
+        subtitle->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
+        titleBlock->addWidget(title);
+        titleBlock->addWidget(subtitle);
+        heading->addLayout(titleBlock, 1);
         countLabel_ = new QLabel(card);
         countLabel_->setStyleSheet(QStringLiteral(
-            "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
+            "color: %1; background: #F0F0FF; border: 1px solid #E1E2FA;"
+            " border-radius: 10px; padding: 7px 11px; font-size: 10px; font-weight: 700;").arg(kNavy));
         heading->addWidget(countLabel_);
-        heading->addSpacing(10);
+        layout->addLayout(heading);
 
+        heading->addSpacing(8);
         editButton_ = new QPushButton(QStringLiteral("Edit selected"), card);
         editButton_->setCursor(Qt::PointingHandCursor);
         editButton_->setFixedHeight(36);
@@ -137,7 +146,7 @@ public:
         editButton_->setToolTip(QStringLiteral("Change price, discount or stock (or double-click a row)"));
         editButton_->setStyleSheet(QStringLiteral(
             "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
-            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            " border-radius: 9px; padding: 0 15px; font-size: 11px; font-weight: 600; }"
             "QPushButton:hover { background: #E8E9FF; }"
             "QPushButton:disabled { color: #A9ABBD; background: #F6F6FA; border-color: %2; }")
             .arg(kNavy, kLine));
@@ -150,7 +159,7 @@ public:
         deleteButton_->setToolTip(QStringLiteral("Delete a product that has never been sold"));
         deleteButton_->setStyleSheet(QStringLiteral(
             "QPushButton { background: #FEF3F2; color: #B42318; border: 1px solid #FECDCA;"
-            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            " border-radius: 9px; padding: 0 15px; font-size: 11px; font-weight: 600; }"
             "QPushButton:hover { background: #FEE4E2; }"
             "QPushButton:disabled { color: #A9ABBD; background: #F6F6FA; border-color: %1; }")
             .arg(kLine));
@@ -161,7 +170,7 @@ public:
         categoryButton->setFixedHeight(36);
         categoryButton->setStyleSheet(QStringLiteral(
             "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
-            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            " border-radius: 9px; padding: 0 15px; font-size: 11px; font-weight: 600; }"
             "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
         heading->addWidget(categoryButton);
 
@@ -170,18 +179,20 @@ public:
         addButton->setFixedHeight(36);
         addButton->setStyleSheet(QStringLiteral(
             "QPushButton { background: %1; color: white; border: none; border-radius: 8px;"
-            " padding: 0 14px; font-size: 10px; font-weight: 700; }"
+            " padding: 0 16px; font-size: 11px; font-weight: 700; }"
             "QPushButton:hover { background: #0D0D6B; }").arg(kNavy));
         heading->addWidget(addButton);
         layout->addLayout(heading);
 
         auto *filters = new QHBoxLayout;
+        filters->setSpacing(14);
         search_ = new QLineEdit(card);
         search_->setPlaceholderText(QStringLiteral("Search by name, barcode, ID or acronym"));
+        search_->setClearButtonEnabled(true);
         search_->setFixedHeight(40);
         search_->setStyleSheet(QStringLiteral(
             "QLineEdit { background: #FAFAFD; color: %1; border: 1px solid %2;"
-            " border-radius: 8px; padding: 0 12px; font-size: 11px; }"
+            " border-radius: 10px; padding: 0 13px; font-size: 12px; }"
             "QLineEdit:focus { background: white; border: 1px solid %3; }")
             .arg(kInk, kLine, kNavy));
         filters->addWidget(search_, 1);
@@ -189,8 +200,8 @@ public:
         lowStockOnly_ = new QCheckBox(QStringLiteral("Low stock only"), card);
         lowStockOnly_->setCursor(Qt::PointingHandCursor);
         lowStockOnly_->setStyleSheet(QStringLiteral(
-            "QCheckBox { color: %1; font-size: 10px; font-weight: 600; spacing: 7px; }"
-            "QCheckBox::indicator { width: 16px; height: 16px; }"
+            "QCheckBox { color: %1; font-size: 11px; font-weight: 600; spacing: 8px; }"
+            "QCheckBox::indicator { width: 18px; height: 18px; }"
             "QCheckBox::indicator:unchecked { background: white; border: 1px solid %2;"
             " border-radius: 4px; }"
             "QCheckBox::indicator:checked { background: %3; border: 1px solid %3;"
@@ -211,17 +222,23 @@ public:
         table_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
         for (int column = 1; column < 8; ++column)
             table_->horizontalHeader()->setSectionResizeMode(column, QHeaderView::ResizeToContents);
-        table_->horizontalHeader()->setFixedHeight(40);
+        table_->horizontalHeader()->setFixedHeight(46);
+        table_->setMinimumHeight(46 + 4 * 64 + 2);
         table_->setShowGrid(false);
+        table_->setAlternatingRowColors(true);
+        table_->setWordWrap(false);
+        table_->setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
+        table_->setHorizontalScrollMode(QAbstractItemView::ScrollPerPixel);
         table_->setEditTriggers(QAbstractItemView::NoEditTriggers);
         table_->setSelectionBehavior(QAbstractItemView::SelectRows);
         table_->setSelectionMode(QAbstractItemView::SingleSelection);
         table_->setStyleSheet(QStringLiteral(
-            "QTableWidget { background: white; border: none; color: %1; outline: 0; }"
-            "QTableWidget::item { padding: 5px 8px; border-bottom: 1px solid #F0F1F6; }"
+            "QTableWidget { background: white; alternate-background-color: #FAFAFD;"
+            " border: none; color: %1; outline: 0; }"
+            "QTableWidget::item { padding: 8px 10px; border-bottom: 1px solid #F0F1F6; }"
             "QTableWidget::item:selected { background: #F0F0FF; color: %2; }"
             "QHeaderView::section { background: #F8F8FC; color: %3; border: none;"
-            " border-bottom: 1px solid %4; padding: 0 8px; font-size: 9px; font-weight: 700; }")
+            " border-bottom: 1px solid %4; padding: 0 10px; font-size: 10px; font-weight: 700; }")
             .arg(kInk, kNavy, kMuted, kLine));
         layout->addWidget(table_, 1);
 
@@ -329,7 +346,7 @@ private:
             productLayout->setContentsMargins(6, 4, 6, 4);
             productLayout->setSpacing(10);
             auto *image = new QLabel(productCell);
-            image->setFixedSize(72, 38);
+            image->setFixedSize(84, 48);
             image->setAlignment(Qt::AlignCenter);
             image->setStyleSheet(QStringLiteral("background: #F8F8FC; border-radius: 5px;"));
             const QPixmap barcode(barcodeImagePath(product.barcodeImage));
@@ -342,7 +359,7 @@ private:
                 .arg(name.toHtmlEscaped(), kMuted, product.id.toHtmlEscaped(),
                     product.acronym.toHtmlEscaped()));
             nameLabel->setStyleSheet(QStringLiteral(
-                "color: %1; font-size: 11px; background: transparent;").arg(kInk));
+                "color: %1; font-size: 12px; background: transparent;").arg(kInk));
             productLayout->addWidget(image);
             productLayout->addWidget(nameLabel, 1);
             table_->setCellWidget(row, 0, productCell);
@@ -369,8 +386,10 @@ private:
             stock->setTextAlignment(Qt::AlignCenter);
             stock->setForeground(UiTheme::textColor(QColor(isLowStock
                 ? QStringLiteral("#B7791F") : QStringLiteral("#18764A"))));
+            stock->setBackground(UiTheme::surfaceColor(QColor(isLowStock
+                ? QStringLiteral("#FEF3DC") : QStringLiteral("#F0FBF6"))));
             table_->setItem(row, 7, stock);
-            table_->setRowHeight(row, 58);
+            table_->setRowHeight(row, 64);
         }
 
         const bool hasVisibleProducts = visibleCount > 0;

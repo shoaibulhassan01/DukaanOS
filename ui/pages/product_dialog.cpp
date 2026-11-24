@@ -4,11 +4,13 @@
 #include "../../POS/category/category_service.h"
 #include "../../POS/product/product_service.h"
 #include "../../POS/product/product_category.h"
+#include "../../POS/product/barcode_image.h"
 
 #include <QComboBox>
 #include <QDialog>
 #include <QDir>
 #include <QDoubleValidator>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
@@ -26,6 +28,7 @@
 #include <QTableWidget>
 #include <QHeaderView>
 #include <QMessageBox>
+#include <QPixmap>
 #include <QRegularExpression>
 
 namespace
@@ -37,8 +40,8 @@ const QString kLine = QStringLiteral("#E7E9F3");
 
 const QString kInputStyle = QStringLiteral(
     "QLineEdit, QComboBox { background: #FAFAFD; color: %1;"
-    " border: 1px solid %2; border-radius: 7px; padding: 0 9px; min-height: 32px;"
-    " font-size: 11px; }"
+    " border: 1px solid %2; border-radius: 9px; padding: 0 11px; min-height: 40px;"
+    " font-size: 12px; }"
     "QLineEdit:focus, QComboBox:focus"
     " { background: white; border: 1px solid %3; }"
     "QLineEdit:disabled, QComboBox:disabled { color: %4; background: #F1F2F7; }"
@@ -61,16 +64,16 @@ public:
         setWindowTitle(mode == Mode::Add ? QStringLiteral("Add product")
                                          : QStringLiteral("Edit product"));
         setModal(true);
-        setMinimumWidth(440);
+        setMinimumSize(820, 600);
         setStyleSheet(QStringLiteral("QDialog { background: white; }") + kInputStyle);
 
         auto *root = new QVBoxLayout(this);
-        root->setContentsMargins(22, 20, 22, 18);
-        root->setSpacing(12);
+        root->setContentsMargins(28, 24, 28, 22);
+        root->setSpacing(16);
 
         auto *title = new QLabel(windowTitle(), this);
         title->setStyleSheet(QStringLiteral(
-            "color: %1; font-size: 16px; font-weight: 700;").arg(kInk));
+            "color: %1; font-size: 20px; font-weight: 700;").arg(kInk));
         root->addWidget(title);
 
         auto *hint = new QLabel(mode == Mode::Add
@@ -81,9 +84,9 @@ public:
         root->addWidget(hint);
 
         auto *form = new QFormLayout;
-        form->setHorizontalSpacing(14);
-        form->setVerticalSpacing(9);
-        form->setLabelAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        form->setHorizontalSpacing(18);
+        form->setVerticalSpacing(12);
+        form->setLabelAlignment(Qt::AlignLeft | Qt::AlignVCenter);
 
         id_ = new QLineEdit(this);
         id_->setToolTip(QStringLiteral("Assigned automatically: one more than the highest product id"));
@@ -144,12 +147,66 @@ public:
 
         auto *formContent = new QWidget(this);
         formContent->setLayout(form);
+        formContent->setMinimumWidth(440);
         auto *formScroll = new QScrollArea(this);
         formScroll->setWidgetResizable(true);
         formScroll->setFrameShape(QFrame::NoFrame);
         formScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         formScroll->setWidget(formContent);
-        root->addWidget(formScroll, 1);
+
+        auto *content = new QHBoxLayout;
+        content->setSpacing(18);
+        content->addWidget(formScroll, 3);
+
+        barcodeCard_ = new QFrame(this);
+        barcodeCard_->setObjectName(QStringLiteral("barcodeCard"));
+        barcodeCard_->setMinimumWidth(290);
+        barcodeCard_->setMaximumWidth(360);
+        barcodeCard_->setStyleSheet(QStringLiteral(
+            "QFrame#barcodeCard { background: #F8F9FF; border: 1px solid %1; border-radius: 14px; }")
+            .arg(kLine));
+        auto *barcodeLayout = new QVBoxLayout(barcodeCard_);
+        barcodeLayout->setContentsMargins(18, 18, 18, 18);
+        barcodeLayout->setSpacing(12);
+        auto *barcodeTitle = new QLabel(QStringLiteral("Barcode preview"), barcodeCard_);
+        barcodeTitle->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 14px; font-weight: 700; background: transparent;").arg(kInk));
+        barcodeLayout->addWidget(barcodeTitle);
+        auto *barcodeHint = new QLabel(
+            QStringLiteral("Your product name and barcode will appear on the saved image."),
+            barcodeCard_);
+        barcodeHint->setWordWrap(true);
+        barcodeHint->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 11px; background: transparent;").arg(kMuted));
+        barcodeLayout->addWidget(barcodeHint);
+        barcodePreview_ = new QLabel(QStringLiteral("Enter a product name and 6-digit barcode."),
+            barcodeCard_);
+        barcodePreview_->setObjectName(QStringLiteral("barcodePreview"));
+        barcodePreview_->setAlignment(Qt::AlignCenter);
+        barcodePreview_->setMinimumHeight(190);
+        barcodePreview_->setWordWrap(true);
+        barcodePreview_->setStyleSheet(QStringLiteral(
+            "background: white; border: 1px dashed %1; border-radius: 10px;"
+            " color: %2; font-size: 11px; padding: 8px;").arg(kLine, kMuted));
+        barcodeLayout->addWidget(barcodePreview_, 1);
+        barcodeFileLabel_ = new QLabel(QStringLiteral("PNG image · ready after name and barcode"),
+            barcodeCard_);
+        barcodeFileLabel_->setWordWrap(true);
+        barcodeFileLabel_->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
+        barcodeLayout->addWidget(barcodeFileLabel_);
+        downloadBarcodeButton_ = new QPushButton(QStringLiteral("Download barcode"), barcodeCard_);
+        downloadBarcodeButton_->setCursor(Qt::PointingHandCursor);
+        downloadBarcodeButton_->setFixedHeight(42);
+        downloadBarcodeButton_->setEnabled(false);
+        downloadBarcodeButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: white; border: none; border-radius: 9px;"
+            " padding: 0 16px; font-size: 12px; font-weight: 700; }"
+            "QPushButton:hover { background: #0D0D6B; }"
+            "QPushButton:disabled { background: #B9BADD; color: white; }").arg(kNavy));
+        barcodeLayout->addWidget(downloadBarcodeButton_);
+        content->addWidget(barcodeCard_, 2);
+        root->addLayout(content, 1);
 
         error_ = new QLabel(this);
         error_->setWordWrap(true);
@@ -183,16 +240,21 @@ public:
 
         if (QScreen *screen = QGuiApplication::primaryScreen())
         {
-            const int maxHeight = qMax(360, screen->availableGeometry().height() * 9 / 10);
+            const int maxHeight = qMax(600, screen->availableGeometry().height() * 9 / 10);
             setMaximumHeight(maxHeight);
-            resize(qMax(width(), 500), qMin(700, maxHeight));
+            resize(qMax(820, qMin(1040, screen->availableGeometry().width() * 9 / 10)),
+                qMin(780, maxHeight));
         }
 
         connect(cancel, &QPushButton::clicked, this, &QDialog::reject);
         connect(save, &QPushButton::clicked, this, [this]() { trySave(); });
+        connect(downloadBarcodeButton_, &QPushButton::clicked, this,
+            [this]() { downloadBarcode(); });
 
         if (mode == Mode::Add)
         {
+            image_->setReadOnly(true);
+            image_->setPlaceholderText(QStringLiteral("Generated from product name and barcode"));
             QString nextId;
             QString idError;
             if (Pos::nextProductId(productFile_, nextId, idError))
@@ -206,19 +268,20 @@ public:
             });
             connect(name_, &QLineEdit::textChanged, this, [this](const QString &text) {
                 if (acronymManuallyEdited_)
+                {
+                    updateBarcodePreview();
                     return;
+                }
                 QString suggestion = text.simplified();
                 suggestion.remove(QLatin1Char(' '));
                 suggestedAcronym_ = suggestion.left(3).toUpper();
                 acronym_->setText(suggestedAcronym_);
+                updateBarcodePreview();
             });
             connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
-                if (!imageEdited_)
-                    image_->setText(text.trimmed().isEmpty()
-                        ? QString() : QStringLiteral("Data/barcodes/%1.png").arg(text.trimmed()));
                 showCategory(text);
+                updateBarcodePreview();
             });
-            connect(image_, &QLineEdit::textEdited, this, [this]() { imageEdited_ = true; });
             connect(createCategory_, &QPushButton::clicked, this, [this]() {
                 const QString categoryId = barcode_->text().trimmed().left(2);
                 if (UiPages::showAddCategoryForBarcode(this, categoryFile_, categoryId))
@@ -229,6 +292,7 @@ public:
         else
         {
             fill(product);
+            updateBarcodePreview();
             showStoredCategory(product.categoryId);
             for (QWidget *locked : { static_cast<QWidget *>(id_), static_cast<QWidget *>(barcode_),
                      static_cast<QWidget *>(acronym_), static_cast<QWidget *>(name_),
@@ -240,6 +304,65 @@ public:
     }
 
 private:
+    void updateBarcodePreview()
+    {
+        const QString barcode = barcode_->text().trimmed();
+        const QString productName = name_->text().simplified();
+        currentBarcodeImage_ = {};
+        downloadBarcodeButton_->setEnabled(false);
+        if (barcode.size() != 6 || productName.isEmpty())
+        {
+            barcodePreview_->setPixmap(QPixmap());
+            barcodePreview_->setText(QStringLiteral("Enter a product name and 6-digit barcode."));
+            image_->clear();
+            barcodeFileLabel_->setText(QStringLiteral("PNG image · ready after name and barcode"));
+            return;
+        }
+
+        QString storedName = productName;
+        storedName.replace(QLatin1Char(' '), QLatin1Char('_'));
+        const QString fileName = Pos::barcodeImageFileName(barcode, storedName);
+        if (mode_ == Mode::Add)
+            image_->setText(QStringLiteral("Data/barcodes/%1").arg(fileName));
+        barcodeFileLabel_->setText(mode_ == Mode::Add
+            ? fileName : QStringLiteral("Download as %1").arg(fileName));
+        QString error;
+        currentBarcodeImage_ = Pos::renderBarcodeImage(barcode, storedName, error);
+        if (currentBarcodeImage_.isNull())
+        {
+            barcodePreview_->setPixmap(QPixmap());
+            barcodePreview_->setText(error);
+            return;
+        }
+        barcodePreview_->setText(QString());
+        barcodePreview_->setPixmap(QPixmap::fromImage(currentBarcodeImage_).scaled(
+            barcodePreview_->size().expandedTo(QSize(250, 150)),
+            Qt::KeepAspectRatio, Qt::SmoothTransformation));
+        downloadBarcodeButton_->setEnabled(true);
+    }
+
+    void downloadBarcode()
+    {
+        if (currentBarcodeImage_.isNull())
+            return;
+        const QString defaultName = Pos::barcodeImageFileName(
+            barcode_->text().trimmed(),
+            name_->text().simplified().replace(QLatin1Char(' '), QLatin1Char('_')));
+        const QString path = QFileDialog::getSaveFileName(this,
+            QStringLiteral("Download barcode"), defaultName,
+            QStringLiteral("PNG image (*.png)"));
+        if (path.isEmpty())
+            return;
+        if (!currentBarcodeImage_.save(path, "PNG"))
+        {
+            QMessageBox::warning(this, QStringLiteral("Download failed"),
+                QStringLiteral("Could not save the barcode image to %1.").arg(path));
+            return;
+        }
+        QMessageBox::information(this, QStringLiteral("Barcode downloaded"),
+            QStringLiteral("Barcode image saved to %1.").arg(path));
+    }
+
     QLabel *label(const QString &text)
     {
         auto *l = new QLabel(text, this);
@@ -431,7 +554,11 @@ private:
     QString categoryFile_;
     QLabel *categoryInfo_ = nullptr;
     QPushButton *createCategory_ = nullptr;
-    bool imageEdited_ = false;
+    QFrame *barcodeCard_ = nullptr;
+    QLabel *barcodePreview_ = nullptr;
+    QLabel *barcodeFileLabel_ = nullptr;
+    QPushButton *downloadBarcodeButton_ = nullptr;
+    QImage currentBarcodeImage_;
     bool acronymManuallyEdited_ = false;
     QString suggestedAcronym_;
     QLineEdit *id_ = nullptr;

@@ -9,10 +9,10 @@
 #include "../../BarCode/decoder/decoder.h"
 #include "../../BarCode/scanner/scanner.h"
 
-#include <QCoreApplication>
 #include <QDate>
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
 #include <QImage>
 #include <QTemporaryDir>
 #include <QTextStream>
@@ -78,7 +78,7 @@ void testCategoryBarcode(const QString &root)
 			&& saved.first().categoryId == QStringLiteral("10"),
 		QStringLiteral("Product barcode/category was saved incorrectly."));
 
-	const QString imagePath = QDir(dataDir).filePath(QStringLiteral("barcodes/100001.png"));
+	const QString imagePath = QDir(dataDir).filePath(QStringLiteral("barcodes/tea_100001.png"));
 	const QImage image(imagePath);
 	check(!image.isNull(), QStringLiteral("Generated barcode PNG cannot be opened."));
 	if (image.isNull())
@@ -197,7 +197,8 @@ void testReportsAndOrderEditing(const QString &root)
 
 int main(int argc, char *argv[])
 {
-	QCoreApplication app(argc, argv);
+	qputenv("QT_QPA_PLATFORM", "offscreen");
+	QGuiApplication app(argc, argv);
 	QTemporaryDir temporary;
 	if (!temporary.isValid())
 	{

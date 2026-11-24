@@ -563,6 +563,8 @@ void testCategoriesPage(QStackedWidget *stack)
         for (int c = 0; productList && c < productList->columnCount(); ++c)
             if (productList->horizontalHeaderItem(c) && productList->horizontalHeaderItem(c)->text() == QStringLiteral("CATEGORY"))
                 categoryColumn = c;
+        check(productList && productList->height() >= 302,
+            QStringLiteral("Products inventory must show at least four product rows at once."));
         QStringList shown;
         for (int r = 0; productList && categoryColumn >= 0 && r < productList->rowCount(); ++r)
             if (productList->item(r, categoryColumn))
@@ -597,7 +599,9 @@ void testCategoriesPage(QStackedWidget *stack)
         QString shownId;
         bool suggestedAcronym = false;
         bool preservedManualAcronym = false;
-        popupHandler = [&seen, &shownId, &suggestedAcronym, &preservedManualAcronym](QWidget *popup) {
+        bool barcodePreviewReady = false;
+        popupHandler = [&seen, &shownId, &suggestedAcronym, &preservedManualAcronym,
+                           &barcodePreviewReady](QWidget *popup) {
             QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
             if (!barcode)
                 return false;
@@ -623,6 +627,10 @@ void testCategoriesPage(QStackedWidget *stack)
             preservedManualAcronym = field(popup, QStringLiteral("Up to 8 characters"))->text()
                 == QStringLiteral("CI");
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("CI item"));
+            QLabel *preview = popup->findChild<QLabel *>(QStringLiteral("barcodePreview"));
+            QPushButton *download = button(popup, QStringLiteral("Download barcode"));
+            barcodePreviewReady = preview && preview->text().isEmpty()
+                && download && download->isEnabled();
             for (QLineEdit *money : popup->findChildren<QLineEdit *>())
                 if (money->placeholderText() == QStringLiteral("e.g. 250.00"))
                     money->setText(QStringLiteral("1.00"));
@@ -659,8 +667,11 @@ void testCategoriesPage(QStackedWidget *stack)
             QStringLiteral("Add product must suggest the first three name characters as the acronym."));
         check(preservedManualAcronym,
             QStringLiteral("Changing the name must not overwrite a manually changed acronym."));
+        check(barcodePreviewReady,
+            QStringLiteral("Add product must show the generated barcode and enable its download."));
         // Edit product form: shows the category stored for the product.
         QString editSaw;
+        bool editPreviewReady = false;
         QTableWidget *productTable = nullptr;
         for (QTableWidget *t : manager->findChildren<QTableWidget *>())
             if (t->isVisible())
@@ -669,9 +680,13 @@ void testCategoriesPage(QStackedWidget *stack)
         if (productTable && editProduct)
         {
             productTable->selectRow(0);   // P0001 Apple juice, category 10
-            popupHandler = [&editSaw](QWidget *popup) {
+            popupHandler = [&editSaw, &editPreviewReady](QWidget *popup) {
                 if (!button(popup, QStringLiteral("Save changes")))
                     return false;
+                QLabel *preview = popup->findChild<QLabel *>(QStringLiteral("barcodePreview"));
+                QPushButton *download = button(popup, QStringLiteral("Download barcode"));
+                editPreviewReady = preview && preview->text().isEmpty()
+                    && download && download->isEnabled();
                 for (QLabel *label : popup->findChildren<QLabel *>())
                     if (label->isVisible())
                         editSaw += label->text() + QStringLiteral(" | ");
@@ -686,6 +701,8 @@ void testCategoriesPage(QStackedWidget *stack)
         }
         check(editSaw.contains(QStringLiteral("10 \u00B7 Beverages (BEV)")),
             QStringLiteral("Edit product form must show the stored category, saw: %1").arg(editSaw));
+        check(editPreviewReady,
+            QStringLiteral("Edit product must use the Add product layout with its barcode preview."));
 
         QVector<Pos::Product> products;
         QString error;
@@ -729,7 +746,7 @@ void testCategoriesPage(QStackedWidget *stack)
             QStringLiteral("Add product: units must be offered as 'count' and 'weight (kg)', got: %1")
                 .arg(unitChoices.join(QStringLiteral(", "))));
         check(fileText(QStringLiteral("Data/Product.txt")).contains(
-                  expectedId + QStringLiteral(" 100098 SGR Sugar weight 1.00 1.00 1.00 2 Data/barcodes/100098.png 10#")),
+                  expectedId + QStringLiteral(" 100098 SGR Sugar weight 1.00 1.00 1.00 2 Data/barcodes/sugar_100098.png 10#")),
             QStringLiteral("A product added as 'weight (kg)' must be saved with unit 'weight' and the next id %1 in Product.txt.")
                 .arg(expectedId));
         QString afterId;
