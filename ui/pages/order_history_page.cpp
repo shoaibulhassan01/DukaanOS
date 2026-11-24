@@ -3,25 +3,31 @@
 #include "bill_page.h"
 #include "saved_bill.h"
 
+#include "../../POS/common/data_paths.h"
+#include "../../POS/order/order_service.h"
 #include "../../POS/order/order_repository.h"
+#include "../../POS/user/auth_service.h"
 
 #include <QColor>
 #include <QComboBox>
 #include <QCoreApplication>
 #include <QDate>
 #include <QDateTime>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
 #include <QFrame>
+#include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPen>
 #include <QPushButton>
-#include <QMessageBox>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -125,8 +131,10 @@ protected:
 class OrderHistoryPage : public QWidget
 {
 public:
-    OrderHistoryPage(std::function<void()> onNewOrder, QWidget *parent)
-        : QWidget(parent), onNewOrder_(std::move(onNewOrder))
+    OrderHistoryPage(std::function<void()> onNewOrder,
+        std::function<void(const OrderPreview &, bool)> onEditOrder, QWidget *parent)
+        : QWidget(parent), onNewOrder_(std::move(onNewOrder)),
+          onEditOrder_(std::move(onEditOrder))
     {
         auto *root = new QVBoxLayout(this);
         root->setContentsMargins(0, 0, 0, 20);
@@ -160,6 +168,20 @@ public:
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
         heading->addWidget(countLabel_);
         heading->addSpacing(10);
+        editOrderButton_ = new QPushButton(QStringLiteral("Edit order"), card);
+        editOrderButton_->setCursor(Qt::PointingHandCursor);
+        editOrderButton_->setFixedHeight(34);
+        editOrderButton_->setEnabled(false);
+        editOrderButton_->setToolTip(QStringLiteral(
+            "Edit on-hold orders directly; paid orders require manager approval within 7 days."));
+        editOrderButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 8px; padding: 0 12px; font-size: 10px; font-weight: 700; }"
+            "QPushButton:hover { background: #E8E9FF; }"
+            "QPushButton:disabled { background: #F6F6FA; color: #A9ABBD; border-color: %2; }")
+            .arg(kNavy, kLine));
+        heading->addWidget(editOrderButton_);
+        heading->addSpacing(8);
         viewBillButton_ = new QPushButton(QStringLiteral("View bill"), card);
         viewBillButton_->setCursor(Qt::PointingHandCursor);
         viewBillButton_->setFixedHeight(34);
@@ -269,8 +291,9 @@ public:
         });
         connect(search_, &QLineEdit::textChanged, this, [this]() { applyFilters(); });
         connect(table_, &QTableWidget::itemSelectionChanged, this, [this]() {
-            viewBillButton_->setEnabled(!table_->selectedItems().isEmpty());
+            updateActionButtons();
         });
+        connect(editOrderButton_, &QPushButton::clicked, this, [this]() { editSelectedOrder(); });
         connect(table_, &QTableWidget::cellDoubleClicked, this, [this](int row, int) { showBill(row); });
         connect(viewBillButton_, &QPushButton::clicked, this, [this]() {
             const QList<QTableWidgetItem *> selected = table_->selectedItems();
@@ -285,6 +308,124 @@ public:
     }
 
 private:
+    int selectedOrderIndex() const
+    {
+        const QList<QTableWidgetItem *> selected = table_->selectedItems();
+        return selected.isEmpty() ? -1 : selected.first()->row();
+    }
+
+    void updateActionButtons()
+    {
+        const int row = selectedOrderIndex();
+        viewBillButton_->setEnabled(row >= 0 && row < orders_.size());
+        editOrderButton_->setEnabled(row >= 0 && row < orders_.size()
+            && (orders_.at(row).status == QStringLiteral("on-hold")
+                || orders_.at(row).status == QStringLiteral("paid")));
+    }
+
+    bool requestManagerApproval()
+    {
+        QDialog dialog(this);
+        dialog.setObjectName(QStringLiteral("managerApprovalDialog"));
+        dialog.setWindowTitle(QStringLiteral("Manager approval"));
+        dialog.setMinimumWidth(390);
+        auto *layout = new QVBoxLayout(&dialog);
+        auto *message = new QLabel(QStringLiteral(
+            "A manager must approve editing this paid order."), &dialog);
+        message->setWordWrap(true);
+        layout->addWidget(message);
+
+        auto *form = new QFormLayout;
+        auto *username = new QLineEdit(&dialog);
+        username->setObjectName(QStringLiteral("managerApprovalUsername"));
+        username->setPlaceholderText(QStringLiteral("Manager username"));
+        auto *password = new QLineEdit(&dialog);
+        password->setObjectName(QStringLiteral("managerApprovalPassword"));
+        password->setPlaceholderText(QStringLiteral("Manager password"));
+        password->setEchoMode(QLineEdit::Password);
+        form->addRow(QStringLiteral("Username"), username);
+        form->addRow(QStringLiteral("Password"), password);
+        layout->addLayout(form);
+
+        auto *errorLabel = new QLabel(&dialog);
+        errorLabel->setWordWrap(true);
+        errorLabel->setStyleSheet(QStringLiteral("color: #B42318;"));
+        layout->addWidget(errorLabel);
+
+        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
+        QPushButton *approve = buttons->addButton(QStringLiteral("Approve"),
+            QDialogButtonBox::AcceptRole);
+        layout->addWidget(buttons);
+        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        connect(approve, &QPushButton::clicked, &dialog, [&]() {
+            Pos::User user;
+            QString error;
+            if (!Pos::login(Pos::DataPaths::users(), username->text(),
+                    password->text(), user, error))
+            {
+                errorLabel->setText(error);
+                return;
+            }
+            if (user.role != QStringLiteral("manager"))
+            {
+                errorLabel->setText(QStringLiteral("Only a manager account can approve this edit."));
+                return;
+            }
+            dialog.accept();
+        });
+        return dialog.exec() == QDialog::Accepted;
+    }
+
+    void editSelectedOrder()
+    {
+        const int index = selectedOrderIndex();
+        if (index < 0 || index >= orders_.size())
+            return;
+
+        const Pos::Order &order = orders_.at(index);
+        Pos::OrderSession session;
+        QString error;
+        bool managerApproved = false;
+        bool approvalRequired = false;
+        if (!Pos::openOrderForEditing(order.id, false, session, error, &approvalRequired))
+        {
+            if (!approvalRequired)
+            {
+                QMessageBox::warning(this, QStringLiteral("Could not edit order"), error);
+                return;
+            }
+            if (!requestManagerApproval())
+                return;
+            managerApproved = true;
+            if (!Pos::openOrderForEditing(order.id, true, session, error))
+            {
+                QMessageBox::warning(this, QStringLiteral("Could not edit order"), error);
+                return;
+            }
+        }
+
+        OrderPreview preview;
+        preview.id = order.id;
+        preview.orderId = order.id;
+        preview.status = order.status;
+        preview.customerName = session.customerName;
+        preview.customerName.replace(QLatin1Char('_'), QLatin1Char(' '));
+        preview.phone = session.customerContact;
+        preview.paymentMethod = order.paymentMode;
+        preview.createdAt = QStringLiteral("%1  %2").arg(order.date, order.time);
+        for (const Pos::CartItem &item : session.items)
+        {
+            preview.lines.append(OrderPreviewLine{item.product, item.quantity});
+            preview.itemCount += item.quantity;
+            preview.subtotal += item.product.unitPrice * item.quantity;
+            preview.tax += item.product.tax * item.quantity;
+            preview.discount += item.product.discountPerUnit * item.quantity;
+        }
+        preview.total = preview.subtotal + preview.tax - preview.discount;
+        if (onEditOrder_)
+            onEditOrder_(preview, managerApproved);
+    }
+
     void loadOrders()
     {
         QString error;
@@ -441,8 +582,10 @@ private:
     }
 
     std::function<void()> onNewOrder_;
+    std::function<void(const OrderPreview &, bool)> onEditOrder_;
     bool loadFailed_ = false;
     QPushButton *viewBillButton_ = nullptr;
+    QPushButton *editOrderButton_ = nullptr;
     QVector<Pos::Order> orders_;
     QVector<QStringList> rows_;
     QVector<QDate> rowDates_;
@@ -461,7 +604,9 @@ private:
 }
 
 QWidget *UiPages::createOrderHistoryPage(QWidget *parent,
-    std::function<void()> onNewOrder)
+    std::function<void()> onNewOrder,
+    std::function<void(const OrderPreview &, bool)> onEditOrder)
 {
-    return new OrderHistoryPage(std::move(onNewOrder), parent);
+    return new OrderHistoryPage(std::move(onNewOrder),
+        std::move(onEditOrder), parent);
 }
