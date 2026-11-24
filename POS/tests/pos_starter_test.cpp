@@ -6,6 +6,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
 #include <QImage>
 #include <QTemporaryDir>
@@ -267,8 +268,18 @@ int main(int argc, char *argv[])
     spare.barcode = QStringLiteral("100010");
     if (!Pos::addProduct(productFile, spare, error, &assignedId) || assignedId != QStringLiteral("P0005"))
         return fail(QStringLiteral("The next product must get P0005: ") + error);
+    const QString spareImage = dataDir.filePath(QStringLiteral("barcodes/") +
+        QFileInfo(Pos::barcodeImageFileName(spare.barcode, spare.name)).fileName());
+    const QString otherImage = dataDir.filePath(QStringLiteral("barcodes/") +
+        Pos::barcodeImageFileName(QStringLiteral("100002"), milk.name));
+    if (!QFile::exists(spareImage))
+        return fail(QStringLiteral("addProduct must create the barcode picture %1.").arg(spareImage));
     if (!Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0005"), error))
         return fail(QStringLiteral("An unsold product must be deletable: ") + error);
+    if (QFile::exists(spareImage))
+        return fail(QStringLiteral("Deleting a product must delete its barcode picture."));
+    if (!QFile::exists(otherImage))
+        return fail(QStringLiteral("Deleting a product must not delete another product's barcode picture."));
     if (Pos::deleteProduct(productFile, detailFile, QStringLiteral("P0001"), error))
         return fail(QStringLiteral("A product that is in an order must not be deleted."));
     if (Pos::deleteProduct(productFile, detailFile, QStringLiteral("P9999"), error))

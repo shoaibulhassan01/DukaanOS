@@ -59,7 +59,9 @@ QVector<Product> searchProducts(QVector<Product> products, QString text);
 // Owner: Umar Khan - remove a product from Product.txt (Manager).
 // A product that already appears in OrderDetail.txt cannot be deleted,
 // because old orders refer to it by id and barcode; set its stock to 0
-// instead. A missing orderDetailFile means no orders yet.
+// instead. A missing orderDetailFile means no orders yet. Its barcode
+// picture (barcodes/<name>_<barcode>.png next to productFile) is deleted
+// too, unless another product still points to the same file.
 bool deleteProduct(QString productFile, QString orderDetailFile, QString productId,
     QString &error);
 
