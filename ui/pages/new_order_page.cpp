@@ -18,6 +18,7 @@
 #include <QSignalBlocker>
 #include <QDir>
 #include <QFileInfo>
+#include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
 #include <QGuiApplication>
@@ -177,6 +178,26 @@ public:
     }
 
 private:
+    void uploadBarcodeImage()
+    {
+        const QString fileName = QFileDialog::getOpenFileName(this,
+            QStringLiteral("Choose barcode image"), QString(),
+            QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp);;All files (*)"));
+        if (fileName.isEmpty())
+            return;
+
+        QString barcode;
+        QString error;
+        if (!CameraBarcodeScanner::decodeImageFile(fileName, barcode, error))
+        {
+            setStatus(error, true);
+            return;
+        }
+
+        barcodeEdit_->setText(barcode);
+        submitBarcode(barcode);
+    }
+
     QWidget *createCustomerCard()
     {
         auto *card = createCard(this);
@@ -228,6 +249,15 @@ private:
         auto *title = createSectionTitle(QStringLiteral("Add products"), card);
         heading->addWidget(title);
         heading->addStretch(1);
+        auto *uploadImage = new QPushButton(QStringLiteral("Upload image"), card);
+        uploadImage->setCursor(Qt::PointingHandCursor);
+        uploadImage->setFixedHeight(34);
+        uploadImage->setToolTip(QStringLiteral("Find a barcode in an image"));
+        uploadImage->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 8px; padding: 0 12px; font-size: 11px; font-weight: 600; }"
+            "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
+        heading->addWidget(uploadImage);
         holdButton_ = new QPushButton(QStringLiteral("Hold order"), card);
         holdButton_->setCursor(Qt::PointingHandCursor);
         holdButton_->setFixedHeight(34);
@@ -240,6 +270,8 @@ private:
             "QPushButton:disabled { color: #A7A9B8; border-color: #E5E5EC; }")
             .arg(kNavy, kLine));
         heading->addWidget(holdButton_);
+        connect(uploadImage, &QPushButton::clicked, this,
+            [this]() { uploadBarcodeImage(); });
         connect(holdButton_, &QPushButton::clicked, this, [this]() { holdOrder(); });
 
         layout->addLayout(heading);

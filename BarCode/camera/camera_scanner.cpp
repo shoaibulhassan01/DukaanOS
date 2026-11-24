@@ -15,6 +15,7 @@
 #include <QMediaDevices>
 #include <QMetaObject>
 #include <QPointer>
+#include <QImageReader>
 #include <QThreadPool>
 #include <QTimer>
 #include <QVideoFrame>
@@ -584,6 +585,36 @@ QList<QCameraDevice> CameraBarcodeScanner::availableCameras()
 bool CameraBarcodeScanner::decodeImage(const QImage& image, QString& digits)
 {
     return decodeThorough(image, digits, false);
+}
+
+bool CameraBarcodeScanner::decodeImageFile(const QString& fileName,
+    QString& digits, QString& error)
+{
+    digits.clear();
+    error.clear();
+    if (fileName.trimmed().isEmpty())
+    {
+        error = QStringLiteral("Select an image file first.");
+        return false;
+    }
+
+    QImageReader reader(fileName);
+    reader.setAutoTransform(true);
+    const QImage image = reader.read();
+    if (image.isNull())
+    {
+        error = QStringLiteral("Could not read the selected image: %1")
+            .arg(reader.errorString());
+        return false;
+    }
+
+    if (!decodeImage(image, digits))
+    {
+        error = QStringLiteral("No supported barcode was found in the selected image.");
+        return false;
+    }
+
+    return true;
 }
 
 bool CameraBarcodeScanner::decodeImageFast(const QImage& image, QString& digits)
