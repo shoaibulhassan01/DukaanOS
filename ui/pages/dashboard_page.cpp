@@ -9,6 +9,7 @@
 #include "order_history_page.h"
 #include "products_page.h"
 #include "scan_product_page.h"
+#include "seasons_page.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/order/order_repository.h"
 #include "../../POS/order/order_service.h"
@@ -397,6 +398,8 @@ private:
                     QStringLiteral("Manage inventory"), QStringLiteral("#F59E0B"), QStringLiteral("#FEF3DC")},
                 {QStringLiteral("Categories"), QStringLiteral("tag"),
                     QStringLiteral("Set up product categories"), QStringLiteral("#16845B"), QStringLiteral("#E1F7EE")},
+                {QStringLiteral("Season Management"), QStringLiteral("trend"),
+                    QStringLiteral("Manage seasonal discounts"), QStringLiteral("#7C4DFF"), QStringLiteral("#F0EAFF")},
                 history,
                 {QStringLiteral("Reports"), QStringLiteral("trend"),
                     QStringLiteral("Sales and stock reports"), QStringLiteral("#4F46E5"), QStringLiteral("#EEF0FF")},
@@ -535,10 +538,12 @@ private:
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
             contentLayout_->addWidget(UiPages::createProductsPage(contentHost_));
-        else if (currentPage_ == QStringLiteral("Reports"))
-            contentLayout_->addWidget(UiPages::createReportsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Categories"))
             contentLayout_->addWidget(UiPages::createCategoriesPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Season Management"))
+            contentLayout_->addWidget(UiPages::createSeasonsPage(contentHost_));
+        else if (currentPage_ == QStringLiteral("Reports"))
+            contentLayout_->addWidget(UiPages::createReportsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Cashier Accounts"))
             contentLayout_->addWidget(UiPages::createCashierAccountsPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Bill") && hasBillPreview_)
@@ -927,4 +932,4 @@ private:
 QWidget *UiPages::createDashboardPage(QWidget *parent, const QString &initialRole)
 {
     return new DashboardWindow(parent, initialRole);
-}
+}

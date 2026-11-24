@@ -9,6 +9,7 @@
 #include "../payment/payment_method.h"
 #include "../product/product_repository.h"
 #include "../product/product_service.h"
+#include "../season/season_service.h"
 
 #include <cmath>
 #include <memory>
@@ -63,16 +64,18 @@ void setErrorIfEmpty(QString &error, const QString &fallback)
 
 // Totals of the whole cart, computed with the same bill-line rules.
 bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
-    QString &error)
+    QString &error, double seasonalDiscountPercentage = 0)
 {
     Bill bill;
-    if (!buildBill(QString(), Order(), items, bill, error))
+    if (!buildBill(QString(), Order(), items, bill, error,
+            seasonalDiscountPercentage))
         return false;
 
     CartTotals sum;
     sum.withoutTax = bill.totalWithoutTax;
     sum.tax = bill.totalTax;
     sum.discount = bill.totalDiscount;
+    sum.seasonalDiscount = bill.seasonalDiscount;
     sum.payable = bill.totalPayable;
     if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
         || !std::isfinite(sum.discount) || !std::isfinite(sum.payable)) {
@@ -83,9 +86,11 @@ bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
     sum.withoutTax = std::round(sum.withoutTax * 100.0) / 100.0;
     sum.tax = std::round(sum.tax * 100.0) / 100.0;
     sum.discount = std::round(sum.discount * 100.0) / 100.0;
+    sum.seasonalDiscount = std::round(sum.seasonalDiscount * 100.0) / 100.0;
     sum.payable = std::round(sum.payable * 100.0) / 100.0;
     if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
-        || !std::isfinite(sum.discount) || !std::isfinite(sum.payable)) {
+        || !std::isfinite(sum.discount) || !std::isfinite(sum.seasonalDiscount)
+        || !std::isfinite(sum.payable)) {
         error = QStringLiteral("Cart totals are outside the supported range.");
         return false;
     }
@@ -107,8 +112,16 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
         return false;
     }
 
+    const QDateTime now = QDateTime::currentDateTime();
+    double seasonalDiscountPercentage = 0;
+    Season activeSeason;
+    QString seasonError;
+    if (findActiveSeason(now.date(), activeSeason, seasonError))
+        seasonalDiscountPercentage = activeSeason.percentage;
+
     CartTotals totals;
-    if (!computeTotals(request.items, totals, error)) {
+    if (!computeTotals(request.items, totals, error,
+            seasonalDiscountPercentage)) {
         setErrorIfEmpty(error, QStringLiteral("Could not calculate the cart totals."));
         return false;
     }
@@ -125,7 +138,6 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     }
 
     // Reuse a held order when checking it out; otherwise create a new order.
-    const QDateTime now = QDateTime::currentDateTime();
     Order order;
     const bool resuming = !request.existingOrderId.trimmed().isEmpty();
     if (resuming)
@@ -197,7 +209,8 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
 
     // Step 3: build the one-line bill header and its product details.
     Bill bill;
-    if (!buildBill(billId, order, request.items, bill, error)) {
+    if (!buildBill(billId, order, request.items, bill, error,
+            seasonalDiscountPercentage)) {
         setErrorIfEmpty(error, QStringLiteral("Could not build the bill."));
         return false;
     }

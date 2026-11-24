@@ -948,6 +948,7 @@ private:
         order.subtotal = result.totals.withoutTax;
         order.tax = result.totals.tax;
         order.discount = result.totals.discount;
+        order.seasonalDiscount = result.totals.seasonalDiscount;
         order.total = result.totals.payable;
         if (onGenerateBill_)
             onGenerateBill_(order);

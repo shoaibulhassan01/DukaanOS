@@ -20,11 +20,13 @@ QString dataDir()
         QDir::cleanPath(applicationDir.filePath(QStringLiteral("../Data"))),
         QDir::cleanPath(applicationDir.filePath(QStringLiteral("../../Data")))
     };
+
     for (const QString &candidate : candidates)
     {
         if (QFileInfo(candidate).isDir())
             return candidate;
     }
+
     return QStringLiteral("Data");
 }
 
@@ -41,5 +43,7 @@ QString bills()         { return inData(QStringLiteral("Bill.txt")); }
 QString billDetails()   { return inData(QStringLiteral("BillDetail.txt")); }
 QString categories()    { return inData(QStringLiteral("PCategory.txt")); }
 QString barcodeFolder() { return inData(QStringLiteral("barcodes")); }
+QString seasons()       { return inData(QStringLiteral("Seasons.txt")); }
+
 }
 }

@@ -69,6 +69,7 @@ const QHash<QString, QString> &surfaceMap()
         { "#FEF3F2", "#2E1A1E" }, { "#FFF4F2", "#2E1A1E" }, { "#FEE4E2", "#3A1E23" },
         { "#FECDCA", "#6B2C33" }, { "#F2D5D2", "#6B2C33" },
         { "#F0FBF6", "#12291E" }, { "#E8F8F0", "#12291E" }, { "#E1F7EE", "#12291E" },
+        { "#F0FDF4", "#12291E" },
         { "#D6F1E3", "#1E4A33" },
         { "#FEF3DC", "#33270F" }, { "#FFEDE0", "#33270F" }, { "#E0F4FE", "#0F2B3D" },
     };

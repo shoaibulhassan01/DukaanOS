@@ -345,8 +345,8 @@ void testRoles(QStackedWidget *stack)
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
     check(sidebarPages(manager) == QStringList({QStringLiteral("Dashboard"), QStringLiteral("Scan Product"),
                                                 QStringLiteral("Products"), QStringLiteral("Categories"),
-                                                QStringLiteral("Order History"), QStringLiteral("Reports"),
-                                                QStringLiteral("Cashier Accounts")}),
+                                                QStringLiteral("Season Management"), QStringLiteral("Order History"),
+                                                QStringLiteral("Reports"), QStringLiteral("Cashier Accounts")}),
         QStringLiteral("Manager sees the wrong pages: %1").arg(sidebarPages(manager).join(", ")));
     for (QComboBox *box : manager->findChildren<QComboBox *>())
         if (box->findText(QStringLiteral("Manager")) >= 0 && box->findText(QStringLiteral("Cashier")) >= 0)
@@ -380,6 +380,8 @@ void testRoles(QStackedWidget *stack)
         QStringLiteral("A cashier must not be able to open Categories."));
     check(!sidebarPages(cashier).contains(QStringLiteral("Reports")),
         QStringLiteral("A cashier must not be able to open Reports."));
+    check(!sidebarPages(cashier).contains(QStringLiteral("Season Management")),
+        QStringLiteral("A cashier must not be able to open Season Management."));
     visitAllPages(cashier, QStringLiteral("Cashier"));
 
     QWidget *unknown = openDashboard(stack, QStringLiteral("admin"));

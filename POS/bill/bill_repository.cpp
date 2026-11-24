@@ -134,7 +134,8 @@ bool parseBillLine(const QString &line, Bill &bill)
         || !validMoney(parsed.balanceReturned)
         || !validMoney(parsed.seasonalDiscount)
         || !validMoney(parsed.specialDiscount)
-        || round2(parsed.totalWithoutTax + parsed.totalTax - parsed.totalDiscount)
+        || round2(parsed.totalWithoutTax + parsed.totalTax - parsed.totalDiscount
+            - parsed.seasonalDiscount - parsed.specialDiscount)
             != parsed.totalPayable
         || parsed.balanceReturned > parsed.amountReceived
         || (parsed.paymentStatus == QStringLiteral("paid")
@@ -288,7 +289,8 @@ bool validateBill(const Bill &bill, QString &error)
         || !validMoney(bill.balanceReturned)
         || !validMoney(bill.seasonalDiscount)
         || !validMoney(bill.specialDiscount)
-        || round2(bill.totalWithoutTax + bill.totalTax - bill.totalDiscount)
+        || round2(bill.totalWithoutTax + bill.totalTax - bill.totalDiscount
+            - bill.seasonalDiscount - bill.specialDiscount)
             != bill.totalPayable
         || bill.balanceReturned > bill.amountReceived
         || (bill.paymentStatus == QStringLiteral("paid")
