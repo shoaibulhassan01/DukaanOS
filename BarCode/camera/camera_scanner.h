@@ -29,6 +29,9 @@ public:
     // Full (thorough) decode of a still image. Safe to call from any thread.
     static bool decodeImage(const QImage& image, QString& digits);
 
+    static bool decodeImageFile(const QString& fileName, QString& digits,
+        QString& error);
+
     // Quick decode used for live camera frames. Safe to call from any thread.
     static bool decodeImageFast(const QImage& image, QString& digits);
 

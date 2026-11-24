@@ -1,4 +1,5 @@
 #include "../common/common.h"
+#include "../camera/camera_scanner.h"
 #include "../decoder/decoder.h"
 #include "../encoder/encoder.h"
 #include "../generator/generator.h"
@@ -7,6 +8,7 @@
 #include <iostream>
 #include <QColor>
 #include <QImage>
+#include <QTemporaryDir>
 
 int main()
 {
@@ -42,6 +44,24 @@ int main()
         decoded != digits)
     {
         std::cerr << "Barcode round-trip failed: " << error << "\n";
+        return 1;
+    }
+
+    QTemporaryDir temporaryDirectory;
+    const QString imagePath = temporaryDirectory.filePath(QStringLiteral("barcode.png"));
+    if (!temporaryDirectory.isValid() || !image.save(imagePath))
+    {
+        std::cerr << "Could not save barcode image for still-image scan test.\n";
+        return 1;
+    }
+
+    QString decodedImageDigits;
+    QString imageError;
+    if (!CameraBarcodeScanner::decodeImageFile(imagePath, decodedImageDigits, imageError)
+        || decodedImageDigits.toStdString() != digits)
+    {
+        std::cerr << "Still-image barcode scan failed: "
+                  << imageError.toStdString() << "\n";
         return 1;
     }
 

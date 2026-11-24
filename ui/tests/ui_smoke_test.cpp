@@ -219,6 +219,9 @@ void visitAllPages(QWidget *dashboard, const QString &who)
         settle();
         check(hasLabel(dashboard, page),
             QStringLiteral("%1: the %2 page did not open.").arg(who, page));
+        if (page == QStringLiteral("New Order") || page == QStringLiteral("Scan Product"))
+            check(button(dashboard, QStringLiteral("Upload image")),
+                QStringLiteral("%1 %2 page must offer barcode image upload.").arg(who, page));
         if (UiTheme::isDark())
             checkNoLightBackgrounds(dashboard, QStringLiteral("%1 %2").arg(who, page));
     }

@@ -6,6 +6,7 @@
 #include "../../POS/product/product_repository.h"
 #include "../../POS/product/product_service.h"
 
+#include <QFileDialog>
 #include <QFrame>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -48,6 +49,15 @@ public:
             "color: %1; font-size: 15px; font-weight: 700; background: transparent;").arg(kInk));
         heading->addWidget(title);
         heading->addStretch(1);
+        auto *uploadImage = new QPushButton(QStringLiteral("Upload image"), card);
+        uploadImage->setCursor(Qt::PointingHandCursor);
+        uploadImage->setFixedHeight(34);
+        uploadImage->setToolTip(QStringLiteral("Find a barcode in an image"));
+        uploadImage->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 8px; padding: 0 12px; font-size: 11px; font-weight: 700; }"
+            "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
+        heading->addWidget(uploadImage);
         layout->addLayout(heading);
 
         auto *hint = new QLabel(QStringLiteral(
@@ -112,6 +122,8 @@ public:
 
         connect(lookup, &QPushButton::clicked, this, [this]() { lookUp(barcodeEdit_->text()); });
         connect(barcodeEdit_, &QLineEdit::returnPressed, this, [this]() { lookUp(barcodeEdit_->text()); });
+        connect(uploadImage, &QPushButton::clicked, this,
+            [this]() { uploadBarcodeImage(); });
         startCamera();
     }
 
@@ -122,6 +134,26 @@ public:
     }
 
 private:
+    void uploadBarcodeImage()
+    {
+        const QString fileName = QFileDialog::getOpenFileName(this,
+            QStringLiteral("Choose barcode image"), QString(),
+            QStringLiteral("Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp);;All files (*)"));
+        if (fileName.isEmpty())
+            return;
+
+        QString barcode;
+        QString error;
+        if (!CameraBarcodeScanner::decodeImageFile(fileName, barcode, error))
+        {
+            setStatus(error, true);
+            return;
+        }
+
+        barcodeEdit_->setText(barcode);
+        lookUp(barcode);
+    }
+
     void startCamera()
     {
         if (QGuiApplication::platformName() == QStringLiteral("offscreen"))
