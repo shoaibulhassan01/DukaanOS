@@ -1,11 +1,13 @@
 #include "../bill/bill_service.h"
 #include "../common/record_codec.h"
+#include "../product/barcode_image.h"
 #include "../product/product_repository.h"
 #include "../product/product_service.h"
 
-#include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QGuiApplication>
+#include <QImage>
 #include <QTemporaryDir>
 #include <QTextStream>
 
@@ -20,7 +22,8 @@ int fail(const QString &message)
 
 int main(int argc, char *argv[])
 {
-    QCoreApplication app(argc, argv);
+    qputenv("QT_QPA_PLATFORM", "offscreen");
+    QGuiApplication app(argc, argv);
     QString error;
     QStringList fields;
 
@@ -216,9 +219,13 @@ int main(int argc, char *argv[])
     if (!Pos::readProducts(productFile, loaded, error) || loaded.size() != 3 ||
         loaded.at(2).id != QStringLiteral("P0004") || assignedId != QStringLiteral("P0004"))
         return fail(QStringLiteral("addProduct must add the product with the next id P0004, got %1.").arg(assignedId));
-    if (loaded.at(2).barcodeImage != QStringLiteral("Data/barcodes/100002.png") ||
-        !QFile::exists(dataDir.filePath(QStringLiteral("barcodes/100002.png"))))
+    if (loaded.at(2).barcodeImage != QStringLiteral("Data/barcodes/dairy_milk_100002.png") ||
+        !QFile::exists(dataDir.filePath(QStringLiteral("barcodes/dairy_milk_100002.png"))))
         return fail(QStringLiteral("addProduct must create the barcode image and store its path."));
+    const QImage savedBarcode(dataDir.filePath(
+        QStringLiteral("barcodes/dairy_milk_100002.png")));
+    if (savedBarcode.isNull() || savedBarcode.height() <= 200)
+        return fail(QStringLiteral("The saved barcode must include the product name and readable barcode."));
     Pos::Product sameBarcode = milk;
     if (Pos::addProduct(productFile, sameBarcode, error))
         return fail(QStringLiteral("addProduct accepted a duplicate barcode."));
