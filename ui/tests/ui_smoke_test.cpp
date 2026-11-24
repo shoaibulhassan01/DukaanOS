@@ -28,6 +28,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QCompleter>
 #include <QDate>
 #include <QDir>
 #include <QDirIterator>
@@ -602,8 +603,9 @@ void testCategoriesPage(QStackedWidget *stack)
         bool suggestedAcronym = false;
         bool preservedManualAcronym = false;
         bool barcodePreviewReady = false;
+        QString searchResults;
         popupHandler = [&seen, &shownId, &suggestedAcronym, &preservedManualAcronym,
-                           &barcodePreviewReady](QWidget *popup) {
+                           &barcodePreviewReady, &searchResults](QWidget *popup) {
             QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
             QLineEdit *barcode = field(popup, QStringLiteral("Choose a category first"));
             if (!category || !barcode)
@@ -618,6 +620,19 @@ void testCategoriesPage(QStackedWidget *stack)
             seen << QStringLiteral("%1/%2").arg(barcode->isEnabled() ? QStringLiteral("enabled")
                                                                      : QStringLiteral("disabled"),
                         barcode->text());
+            // Search in the picker: by Id, by part of a name, or nothing found.
+            QStringList searched;
+            auto search = [category, &searched](const QString &text) {
+                category->lineEdit()->setText(text);
+                emit category->lineEdit()->editingFinished();
+                searched << category->currentData().toString();
+            };
+            category->completer()->setCompletionPrefix(QStringLiteral("4"));
+            searched << QString::number(category->completer()->completionCount());
+            search(QStringLiteral("20"));        // Id typed in full
+            search(QStringLiteral("dai"));       // only Dairy contains it
+            search(QStringLiteral("zzz"));       // no match: Dairy stays
+            searchResults = searched.join(QLatin1Char(','));
             category->setCurrentIndex(category->findData(QStringLiteral("10")));
             seen << barcode->text();
             barcode->setCursorPosition(2);
@@ -662,8 +677,12 @@ void testCategoriesPage(QStackedWidget *stack)
         check(seen.size() == 6, QStringLiteral("Add product form did not open (or has no category picker)."));
         if (seen.size() == 6)
         {
-            check(seen.at(0).startsWith(QStringLiteral("Select a category | 10 \u00B7 Beverages (BEV) | 20 \u00B7 Bakery (BKY)")),
+            check(seen.at(0).startsWith(QStringLiteral("10 \u00B7 Beverages (BEV) | 20 \u00B7 Bakery (BKY)")),
                 QStringLiteral("The category picker must list every category by Id, saw: %1").arg(seen.at(0)));
+            // "4" is in 34, 40 and 45; "20" picks Bakery; "dai" picks Dairy;
+            // "zzz" finds nothing and keeps Dairy.
+            check(searchResults == QStringLiteral("3,20,56,56"),
+                QStringLiteral("Category search by Id or name gave: %1 (expected 3,20,56,56)").arg(searchResults));
             check(seen.at(1) == QStringLiteral("disabled/"),
                 QStringLiteral("The barcode must stay empty and locked until a category is chosen, saw: %1").arg(seen.at(1)));
             check(seen.at(2) == QStringLiteral("10"),

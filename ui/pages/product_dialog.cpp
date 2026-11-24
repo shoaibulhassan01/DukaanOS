@@ -6,7 +6,9 @@
 #include "../../POS/product/product_service.h"
 #include "../../POS/product/barcode_image.h"
 
+#include <QAbstractItemView>
 #include <QComboBox>
+#include <QCompleter>
 #include <algorithm>
 #include <QDialog>
 #include <QDir>
@@ -49,7 +51,9 @@ const QString kInputStyle = QStringLiteral(
     // The arrow sits inside the field: no separate box or divider around it.
     "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
     " width: 28px; border: none; background: transparent; }"
-    "QComboBox::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }")
+    "QComboBox::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }"
+    // The search box inside the category picker: no second border.
+    "QComboBox QLineEdit { border: none; background: transparent; padding: 0; min-height: 0; }")
     .arg(kInk, kLine, kNavy, kMuted);
 
 enum class Mode { Add, Edit };
@@ -309,6 +313,23 @@ public:
                 if (position < fixed && !barcode_->hasSelectedText())
                     barcode_->setCursorPosition(fixed);
             });
+            // Type to search: matches the Id, name or acronym anywhere in
+            // an item, e.g. "10", "bev" or "dry".
+            category_->setEditable(true);
+            category_->setInsertPolicy(QComboBox::NoInsert);
+            auto *finder = new QCompleter(category_->model(), category_);
+            finder->setFilterMode(Qt::MatchContains);
+            finder->setCaseSensitivity(Qt::CaseInsensitive);
+            finder->setCompletionMode(QCompleter::PopupCompletion);
+            category_->setCompleter(finder);
+            finder->popup()->setStyleSheet(QStringLiteral(
+                "QListView { background: white; color: %1; border: 1px solid %2; border-radius: 8px;"
+                " font-size: 12px; outline: none; }"
+                "QListView::item { padding: 7px 8px; border-radius: 6px; }"
+                "QListView::item:selected, QListView::item:hover { background: #EEF0FF; color: %1; }")
+                .arg(kInk, kLine));
+            connect(category_->lineEdit(), &QLineEdit::editingFinished, this,
+                [this]() { settleCategoryText(); });
             connect(category_, &QComboBox::currentIndexChanged, this,
                 [this]() { useCategory(category_->currentData().toString()); });
             connect(createCategory_, &QPushButton::clicked, this, [this]() {
@@ -433,13 +454,37 @@ private:
             [](const Pos::Category &a, const Pos::Category &b) { return a.id < b.id; });
         const QSignalBlocker block(category_);
         category_->clear();
-        category_->addItem(categories.isEmpty()
-                ? QStringLiteral("No categories yet: add one below")
-                : QStringLiteral("Select a category"), QString());
         for (const Pos::Category &category : categories)
             category_->addItem(categoryText(category), category.id);
-        category_->setCurrentIndex(qMax(0, category_->findData(selectId)));
+        category_->lineEdit()->setPlaceholderText(categories.isEmpty()
+            ? QStringLiteral("No categories yet: add one below")
+            : QStringLiteral("Select or search by Id or name"));
+        category_->setCurrentIndex(category_->findData(selectId));
+        if (category_->currentIndex() < 0)
+            category_->setEditText(QString());
         useCategory(category_->currentData().toString());
+    }
+
+    // After typing in the picker: pick the matching category (its full
+    // text, its Id such as "10", or the only item containing the text);
+    // otherwise put back the category that was chosen before.
+    void settleCategoryText()
+    {
+        const QString typed = category_->currentText().trimmed();
+        int index = category_->findText(typed);
+        if (index < 0 && !typed.isEmpty())
+            index = category_->findData(typed);
+        if (index < 0 && !typed.isEmpty())
+        {
+            const QModelIndexList matches = category_->model()->match(
+                category_->model()->index(0, 0), Qt::DisplayRole, typed, 2, Qt::MatchContains);
+            if (matches.size() == 1)
+                index = matches.first().row();
+        }
+        if (index < 0)
+            index = category_->currentIndex();
+        category_->setCurrentIndex(index);
+        category_->setEditText(index < 0 ? QString() : category_->itemText(index));
     }
 
     // The chosen category's Id becomes the fixed first two barcode digits;
