@@ -167,6 +167,7 @@ public:
             }
         }
         updatePaymentFields();
+        QTimer::singleShot(0, barcodeEdit_, [this]() { barcodeEdit_->setFocus(); });
         startCamera();
     }
 
@@ -227,11 +228,24 @@ private:
         auto *title = createSectionTitle(QStringLiteral("Add products"), card);
         heading->addWidget(title);
         heading->addStretch(1);
+        holdButton_ = new QPushButton(QStringLiteral("Hold order"), card);
+        holdButton_->setCursor(Qt::PointingHandCursor);
+        holdButton_->setFixedHeight(34);
+        holdButton_->setEnabled(false);
+        holdButton_->setToolTip(QStringLiteral("Save this order to resume later"));
+        holdButton_->setStyleSheet(QStringLiteral(
+            "QPushButton { background: white; color: %1; border: 1px solid %2;"
+            " border-radius: 8px; padding: 0 12px; font-size: 11px; font-weight: 600; }"
+            "QPushButton:hover:enabled { background: #F8F8FC; }"
+            "QPushButton:disabled { color: #A7A9B8; border-color: #E5E5EC; }")
+            .arg(kNavy, kLine));
+        heading->addWidget(holdButton_);
+        connect(holdButton_, &QPushButton::clicked, this, [this]() { holdOrder(); });
 
         layout->addLayout(heading);
 
         auto *hint = new QLabel(
-            QStringLiteral("Scan a barcode to add it immediately, or enter it below and press Enter."),
+            QStringLiteral("Scan or enter a barcode; a matched product is added automatically."),
             card);
         hint->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
@@ -257,7 +271,7 @@ private:
         barcodeLookupTimer_->setSingleShot(true);
         barcodeLookupTimer_->setInterval(250);
         connect(barcodeLookupTimer_, &QTimer::timeout, this, [this]() {
-            lookupBarcode(barcodeEdit_->text());
+            submitBarcode(barcodeEdit_->text());
         });
 
         // Quantity stepper:  [ - ]  qty  [ + ]  (type a number or click).
@@ -463,17 +477,6 @@ private:
         connect(cashReceived_, &QDoubleSpinBox::valueChanged, this, [this]() { updatePaymentFields(); });
         connect(cashReceived_, &QAbstractSpinBox::editingFinished, this, [this]() { cashEdited_ = true; });
 
-        auto *hold = new QPushButton(QStringLiteral("Hold order"), card);
-        holdButton_ = hold;
-        hold->setCursor(Qt::PointingHandCursor);
-        hold->setFixedHeight(42);
-        hold->setStyleSheet(QStringLiteral(
-            "QPushButton { background: white; color: %1; border: 1px solid %2;"
-            " border-radius: 9px; font-size: 11px; font-weight: 600; }"
-            "QPushButton:hover { background: #F8F8FC; }").arg(kNavy, kLine));
-        layout->addWidget(hold);
-        layout->addSpacing(9);
-
         auto *checkout = new QPushButton(QStringLiteral("Generate bill"), card);
         checkoutButton_ = checkout;
         checkout->setCursor(Qt::PointingHandCursor);
@@ -492,7 +495,6 @@ private:
         checkoutMessage_->hide();
         layout->addWidget(checkoutMessage_);
         layout->addStretch(1);
-        connect(holdButton_, &QPushButton::clicked, this, [this]() { holdOrder(); });
         connect(checkoutButton_, &QPushButton::clicked, this, [this]() {
             if (editExistingOrder_)
                 saveEdits();
@@ -795,6 +797,8 @@ private:
         }
 
         itemsValue_->setText(QString::number(itemCount));
+        if (holdButton_)
+            holdButton_->setEnabled(!cartLines_.isEmpty());
         subtotalValue_->setText(QStringLiteral("PKR %1").arg(subtotal, 0, 'f', 2));
         taxValue_->setText(QStringLiteral("PKR %1").arg(tax, 0, 'f', 2));
         discountValue_->setText(QStringLiteral("PKR %1").arg(discount, 0, 'f', 2));

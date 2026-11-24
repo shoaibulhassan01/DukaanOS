@@ -4,7 +4,7 @@ P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 10 Data/barcodes/100003.pn
 P0004 100004 CFE Instant_coffee count 650.00 32.50 20.00 18 Data/barcodes/100004.png 10#
 P0005 200001 BRD White_bread count 150.00 0.00 0.00 25 Data/barcodes/200001.png 20#
 P0006 200002 RSK Rusk count 220.00 11.00 10.00 8 Data/barcodes/200002.png 20#
-P0007 300001 BAN Bananas weight 180.00 0.00 0.00 40 Data/barcodes/300001.png 30#
+P0007 300001 BAN Bananas weight 180.00 0.00 0.00 37 Data/barcodes/300001.png 30#
 P0008 300002 TOM Tomatoes weight 120.00 0.00 5.00 6 Data/barcodes/300002.png 30#
 P0009 340001 CHP Potato_chips count 100.00 5.00 0.00 60 Data/barcodes/340001.png 34#
 P0010 400001 DTG Detergent count 550.00 27.50 25.00 15 Data/barcodes/400001.png 40#
