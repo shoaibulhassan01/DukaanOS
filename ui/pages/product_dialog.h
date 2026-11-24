@@ -12,9 +12,6 @@ namespace UiPages
 // The form only collects input; the rules and saving are in
 // Pos::addProduct and Pos::updateProduct (product_service).
 
-// Opens the manager's category configuration dialog. Returns true when saved.
-bool showProductCategoryDialog(QWidget *parent, const QString &productFile);
-
 // Shows an empty form. Returns true if a product was added to productFile.
 bool showAddProductDialog(QWidget *parent, const QString &productFile);
 
