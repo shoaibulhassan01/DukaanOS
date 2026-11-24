@@ -17,7 +17,26 @@ struct OrderSession
     QVector<CartItem> items;
 };
 
+struct OrderReport
+{
+    QVector<Order> orders;
+    double totalAmount = 0;
+};
+
 bool readHeldOrders(QVector<Order> &orders, QString &error);
+bool readIncompleteOrdersReport(OrderReport &report, QString &error);
+bool readCompletedOrdersReport(OrderReport &report, QString &error);
+
+// A cashier may open an on-hold order directly. Paid orders require manager
+// approval and must have been paid within the last 7 days. The caller must only
+// pass true after the manager has approved the edit.
+bool openOrderForEditing(QString orderId, bool managerApproved,
+    OrderSession &session, QString &error);
+
+// Saves edits to an on-hold or eligible paid order. Paid-order inventory is
+// adjusted by the difference between the saved and edited quantities.
+bool saveOrderEdits(OrderSession &session, bool managerApproved,
+    QString &error);
 
 bool addProductToOrder(OrderSession &session, QString barcode, int quantity,
     QString &error);
