@@ -133,8 +133,8 @@ public:
         form->addRow(label(QStringLiteral("Product id")), id_);
         form->addRow(label(QStringLiteral("Barcode")), barcode_);
         form->addRow(label(QStringLiteral("Category")), categoryRow);
-        form->addRow(label(QStringLiteral("Acronym")), acronym_);
         form->addRow(label(QStringLiteral("Name")), name_);
+        form->addRow(label(QStringLiteral("Acronym")), acronym_);
         form->addRow(label(QStringLiteral("Unit")), unit_);
         form->addRow(label(QStringLiteral("Unit price (PKR)")), price_);
         form->addRow(label(QStringLiteral("Tax per unit (PKR)")), tax_);
@@ -200,6 +200,18 @@ public:
             else
                 id_->setPlaceholderText(idError);
             id_->setEnabled(false);
+            connect(acronym_, &QLineEdit::textChanged, this, [this](const QString &text) {
+                if (text != suggestedAcronym_)
+                    acronymManuallyEdited_ = true;
+            });
+            connect(name_, &QLineEdit::textChanged, this, [this](const QString &text) {
+                if (acronymManuallyEdited_)
+                    return;
+                QString suggestion = text.simplified();
+                suggestion.remove(QLatin1Char(' '));
+                suggestedAcronym_ = suggestion.left(3).toUpper();
+                acronym_->setText(suggestedAcronym_);
+            });
             connect(barcode_, &QLineEdit::textChanged, this, [this](const QString &text) {
                 if (!imageEdited_)
                     image_->setText(text.trimmed().isEmpty()
@@ -420,6 +432,8 @@ private:
     QLabel *categoryInfo_ = nullptr;
     QPushButton *createCategory_ = nullptr;
     bool imageEdited_ = false;
+    bool acronymManuallyEdited_ = false;
+    QString suggestedAcronym_;
     QLineEdit *id_ = nullptr;
     QLineEdit *barcode_ = nullptr;
     QLineEdit *acronym_ = nullptr;
