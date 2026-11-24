@@ -17,6 +17,7 @@
 #include "../pages/saved_bill.h"
 
 #include "../../POS/tests/data_format_checker.h"
+#include "../../POS/checkout/checkout_service.h"
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
@@ -1082,6 +1083,19 @@ void testSale(QStackedWidget *stack)
     if (!pdfs.isValid())
         return;
 
+    QFile seasons(Pos::DataPaths::seasons());
+    check(seasons.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate),
+        QStringLiteral("Could not prepare an active season for the sale test."));
+    if (seasons.isOpen())
+    {
+        QTextStream seasonStream(&seasons);
+        seasonStream << QDate::currentDate().addDays(-30).toString(Qt::ISODate)
+                     << QLatin1Char(' ')
+                     << QDate::currentDate().addDays(30).toString(Qt::ISODate)
+                     << QStringLiteral(" 10 true#\n");
+        seasons.close();
+    }
+
     QVector<Pos::Order> before;
     QString error;
     Pos::readOrders(QStringLiteral("Data/Order.txt"), before, error);
@@ -1233,6 +1247,22 @@ void testSale(QStackedWidget *stack)
         QStringLiteral("Resume must go back to New Order."));
     check(showsText(cashier, QStringLiteral("100001")),
         QStringLiteral("The resumed order did not restore its product and quantity."));
+    QVector<Pos::Product> products;
+    Pos::Product milk;
+    Pos::CartTotals expectedTotals;
+    check(Pos::readProducts(Pos::DataPaths::products(), products, error)
+            && Pos::findProductByBarcode(products, QStringLiteral("100001"), milk)
+            && Pos::calculateCartTotals({Pos::CartItem{milk, 1}}, expectedTotals, error)
+            && expectedTotals.seasonalDiscount > 0,
+        QStringLiteral("The active season should be included in the order total (%1).").arg(error));
+    check(showsText(cashier, QStringLiteral("Seasonal discount")),
+        QStringLiteral("New Order should show the seasonal discount in its summary."));
+    QDoubleSpinBox *cashAmount = nullptr;
+    for (QDoubleSpinBox *candidate : cashier->findChildren<QDoubleSpinBox *>())
+        if (candidate->isVisible())
+            cashAmount = candidate;
+    check(cashAmount && qAbs(cashAmount->value() - expectedTotals.payable) < 0.005,
+        QStringLiteral("Cash received should default to the seasonally discounted total."));
 
     // Pay in cash. The bill pop-up is closed automatically.
     for (QComboBox *box : cashier->findChildren<QComboBox *>())
@@ -1262,6 +1292,9 @@ void testSale(QStackedWidget *stack)
             && UiPages::writeBillPdf(cashierBill, pdfs.filePath(QStringLiteral("cashier.pdf")))
             && isPdfFile(pdfs.filePath(QStringLiteral("cashier.pdf"))),
         QStringLiteral("Cashier bill could not be exported as a valid PDF (%1).").arg(error));
+    check(cashierBill.seasonalDiscount > 0
+            && qAbs(cashierBill.total - expectedTotals.payable) < 0.005,
+        QStringLiteral("The saved bill should include the active season discount in its final total."));
     QString checkoutError;
     for (QLabel *label : cashier->findChildren<QLabel *>())
         if (label->isVisible() && (label->text().startsWith(QStringLiteral("Bill not saved:"))
