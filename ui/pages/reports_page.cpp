@@ -2,6 +2,7 @@
 
 #include "../../POS/category/category_repository.h"
 #include "../../POS/common/data_paths.h"
+#include "../../POS/order/order_service.h"
 #include "../../POS/product/product_service.h"
 #include "../../POS/report/report_service.h"
 
@@ -38,6 +39,7 @@ struct ReportDefinition
 {
     QString title;
     QString description;
+    bool usesUnitFilter = false;
     // unit: "" for all items, "count" or "weight" for the unit filter.
     std::function<bool(ReportTable &table, QString &error, const QString &unit)> build;
 };
@@ -63,6 +65,32 @@ QString categoryText(const QHash<QString, QString> &names, const QString &id)
     return names.value(id, QStringLiteral("Not found"));
 }
 
+QString amountText(double amount)
+{
+    return QStringLiteral("PKR %1").arg(amount, 0, 'f', 2);
+}
+
+void addOrderReportRows(ReportTable &table, const Pos::OrderReport &report)
+{
+    table.columns = {QStringLiteral("ORDER ID"), QStringLiteral("CUSTOMER"),
+                     QStringLiteral("DATE & TIME"), QStringLiteral("STATUS"),
+                     QStringLiteral("PAYMENT"), QStringLiteral("TOTAL")};
+    table.rightAligned = {5};
+    for (const Pos::Order &order : report.orders)
+    {
+        table.rows.append({
+            order.id,
+            display(order.customerName),
+            QStringLiteral("%1  %2").arg(order.date, order.time),
+            display(order.status),
+            display(order.paymentMode),
+            amountText(order.paymentAmount)});
+    }
+    table.footer = QStringLiteral("%1 order(s)  \u00B7  Total: %2")
+        .arg(report.orders.size()).arg(amountText(report.totalAmount));
+    table.emptyText = QStringLiteral("There are no orders in this report.");
+}
+
 // ---------------------------------------------------------------------------
 // The reports. To add one (e.g. cash sales), put its calculation in
 // POS/report/ and add one entry to this list; the page does the rest.
@@ -73,6 +101,7 @@ QVector<ReportDefinition> reports()
         {QStringLiteral("Top 10 most sold items"),
          QStringLiteral("Items sold in paid orders, most sold first, with the stock that is left. "
                         "Held and archived orders are not counted."),
+         true,
          [](ReportTable &table, QString &error, const QString &unit) {
              // Owner: Umar Khan
              QVector<Pos::SoldItem> items;
@@ -107,6 +136,7 @@ QVector<ReportDefinition> reports()
          }},
         {QStringLiteral("Top 10 items by remaining stock"),
          QStringLiteral("Items with the most stock left, highest first, so that purchase of these is not initiated."),
+         true,
          [](ReportTable &table, QString &error, const QString &unit) {
              // Owner: Umar Khan
              QVector<Pos::Product> products;
@@ -128,6 +158,28 @@ QVector<ReportDefinition> reports()
              table.footer = products.isEmpty() ? QString()
                  : QStringLiteral("%1 item(s) shown").arg(products.size());
              table.emptyText = QStringLiteral("There are no products in Product.txt.");
+             return true;
+         }},
+        {QStringLiteral("Incomplete orders"),
+         QStringLiteral("Orders that are not paid or archived: on-hold and in-progress orders, with their total amount."),
+         false,
+         [](ReportTable &table, QString &error, const QString &) {
+             Pos::OrderReport report;
+             if (!Pos::readIncompleteOrdersReport(report, error))
+                 return false;
+             addOrderReportRows(table, report);
+             table.emptyText = QStringLiteral("There are no incomplete orders.");
+             return true;
+         }},
+        {QStringLiteral("Completed orders"),
+         QStringLiteral("Paid and archived orders, with their total amount."),
+         false,
+         [](ReportTable &table, QString &error, const QString &) {
+             Pos::OrderReport report;
+             if (!Pos::readCompletedOrdersReport(report, error))
+                 return false;
+             addOrderReportRows(table, report);
+             table.emptyText = QStringLiteral("There are no completed orders.");
              return true;
          }},
     };
@@ -229,6 +281,7 @@ private:
             return;
         const ReportDefinition &report = reports_.at(index);
         description_->setText(report.description);
+        unitFilter_->setVisible(report.usesUnitFilter);
 
         ReportTable result;
         QString error;

@@ -480,7 +480,10 @@ private:
             showDashboard(items);
         else if (currentPage_ == QStringLiteral("New Order"))
         {
-            const OrderPreview *initialOrder = hasResumeOrder_ ? &resumeOrder_ : nullptr;
+            const bool editExistingOrder = hasEditOrder_;
+            const bool managerApproved = managerApproved_;
+            const OrderPreview *initialOrder = hasResumeOrder_ || editExistingOrder
+                ? &resumeOrder_ : nullptr;
             contentLayout_->addWidget(UiPages::createNewOrderPage(contentHost_, initialOrder,
                 [this](const OrderPreview &order) {
                     // The bill is already saved; show it in a pop-up, then
@@ -503,14 +506,31 @@ private:
                     }
                     hasResumeOrder_ = false;
                     navigateTo(QStringLiteral("Held Orders"));
-                }));
+                },
+                [this](const OrderPreview &order) {
+                    QMessageBox::information(this, QStringLiteral("Order updated"),
+                        QStringLiteral("Changes to order %1 were saved.")
+                            .arg(order.orderId));
+                    hasEditOrder_ = false;
+                    managerApproved_ = false;
+                    navigateTo(QStringLiteral("Order History"));
+                },
+                editExistingOrder, managerApproved));
             hasResumeOrder_ = false;
+            hasEditOrder_ = false;
+            managerApproved_ = false;
         }
         else if (currentPage_ == QStringLiteral("Held Orders"))
             showHeldOrders();
         else if (currentPage_ == QStringLiteral("Order History"))
             contentLayout_->addWidget(UiPages::createOrderHistoryPage(contentHost_,
-                [this]() { navigateTo(QStringLiteral("New Order")); }));
+                [this]() { navigateTo(QStringLiteral("New Order")); },
+                [this](const OrderPreview &order, bool managerApproved) {
+                    resumeOrder_ = order;
+                    hasEditOrder_ = true;
+                    managerApproved_ = managerApproved;
+                    navigateTo(QStringLiteral("New Order"));
+                }));
         else if (currentPage_ == QStringLiteral("Scan Product"))
             contentLayout_->addWidget(UiPages::createScanProductPage(contentHost_));
         else if (currentPage_ == QStringLiteral("Products"))
@@ -898,6 +918,8 @@ private:
     OrderPreview resumeOrder_;
     OrderPreview billPreview_;
     bool hasResumeOrder_ = false;
+    bool hasEditOrder_ = false;
+    bool managerApproved_ = false;
     bool hasBillPreview_ = false;
 };
 }

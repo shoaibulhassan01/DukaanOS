@@ -31,7 +31,8 @@ bool readCompletedOrdersReport(OrderReport &report, QString &error);
 // approval and must have been paid within the last 7 days. The caller must only
 // pass true after the manager has approved the edit.
 bool openOrderForEditing(QString orderId, bool managerApproved,
-    OrderSession &session, QString &error);
+    OrderSession &session, QString &error,
+    bool *managerApprovalRequired = nullptr);
 
 // Saves edits to an on-hold or eligible paid order. Paid-order inventory is
 // adjusted by the difference between the saved and edited quantities.

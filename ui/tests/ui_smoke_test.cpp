@@ -255,6 +255,24 @@ void closePopupsAutomatically()
     timer->start(50);
 }
 
+void approveManagerEdit()
+{
+    popupHandler = [](QWidget *popup) {
+        if (popup->objectName() != QStringLiteral("managerApprovalDialog"))
+            return false;
+        auto *username = popup->findChild<QLineEdit *>(QStringLiteral("managerApprovalUsername"));
+        auto *password = popup->findChild<QLineEdit *>(QStringLiteral("managerApprovalPassword"));
+        QPushButton *approve = button(popup, QStringLiteral("Approve"));
+        if (!username || !password || !approve)
+            return false;
+        username->setText(QStringLiteral("manager"));
+        password->setText(QStringLiteral("manager123"));
+        approve->click();
+        popupHandler = nullptr;
+        return true;
+    };
+}
+
 bool isPdfFile(const QString &path)
 {
     QFile file(path);
@@ -949,6 +967,52 @@ void testSale(QStackedWidget *stack)
     check(hasLabel(cashier, QStringLiteral("Held Orders")) && showsText(cashier, heldOrderId),
         QStringLiteral("Holding an order must open Held Orders and list the saved order ID."));
 
+    // Order History opens an on-hold order directly in edit mode, without a
+    // manager approval prompt, and saving leaves it on hold.
+    QPushButton *orderHistory = button(cashier, QStringLiteral("Order History"));
+    check(orderHistory, QStringLiteral("Cashier has no Order History button."));
+    if (!orderHistory)
+        return;
+    orderHistory->click();
+    settle();
+    QTableWidget *heldHistory = nullptr;
+    for (QTableWidget *table : cashier->findChildren<QTableWidget *>())
+        if (table->isVisible())
+            heldHistory = table;
+    int heldRow = -1;
+    for (int row = 0; heldHistory && row < heldHistory->rowCount(); ++row)
+        if (heldHistory->item(row, 0) && heldHistory->item(row, 0)->text() == heldOrderId)
+            heldRow = row;
+    check(heldHistory && heldRow >= 0,
+        QStringLiteral("Order History does not show held order %1.").arg(heldOrderId));
+    if (heldHistory && heldRow >= 0)
+    {
+        heldHistory->selectRow(heldRow);
+        QPushButton *edit = button(cashier, QStringLiteral("Edit order"));
+        check(edit && edit->isEnabled(), QStringLiteral("On-hold order should be editable."));
+        if (edit)
+        {
+            edit->click();
+            settle();
+            check(hasLabel(cashier, QStringLiteral("New Order"))
+                    && button(cashier, QStringLiteral("Save changes")),
+                QStringLiteral("Editing an on-hold order should open the edit form directly."));
+            if (QLineEdit *editedCustomer = field(cashier, QStringLiteral("Enter customer name")))
+                editedCustomer->setText(QStringLiteral("CI Edited"));
+            if (QPushButton *save = button(cashier, QStringLiteral("Save changes")))
+                save->click();
+            settle();
+            QVector<Pos::Order> afterHeldEdit;
+            check(Pos::readOrders(Pos::DataPaths::orders(), afterHeldEdit, error)
+                    && afterHeldEdit.last().status == QStringLiteral("on-hold")
+                    && afterHeldEdit.last().customerName == QStringLiteral("CI_Edited"),
+                QStringLiteral("Saving an on-hold edit should preserve its status and customer details (%1).")
+                    .arg(error));
+            check(stockOf(QStringLiteral("P0001")) == stockBefore,
+                QStringLiteral("Editing an on-hold order must not change stock."));
+        }
+    }
+
     // A newly created dashboard after sign-out must reload the held order from disk.
     cashier = openDashboard(stack, QStringLiteral("Cashier"));
     QPushButton *heldOrders = button(cashier, QStringLiteral("Held Orders"));
@@ -1018,7 +1082,7 @@ void testSale(QStackedWidget *stack)
         if (label->isVisible() && (label->text().startsWith(QStringLiteral("Bill not saved:"))
                 || label->text().startsWith(QStringLiteral("Add at least one product"))))
             checkoutError = label->text();
-    check(sale.customerName == QStringLiteral("CI_Test") && sale.status == QStringLiteral("paid") &&
+    check(sale.customerName == QStringLiteral("CI_Edited") && sale.status == QStringLiteral("paid") &&
             sale.paymentMode.compare(QStringLiteral("cash"), Qt::CaseInsensitive) == 0,
         QStringLiteral("The saved sale has the wrong customer, status or payment mode "
             "(customer=%1, status=%2, mode=%3; %4).")
@@ -1052,14 +1116,72 @@ void testSale(QStackedWidget *stack)
             QStringLiteral("Dashboard sales did not reflect today's paid orders."));
     }
 
-    QPushButton *history = button(cashier, QStringLiteral("Order History"));
-    check(history, QStringLiteral("Cashier: no Order History button."));
-    if (!history)
+    orderHistory = button(cashier, QStringLiteral("Order History"));
+    check(orderHistory, QStringLiteral("Cashier: no Order History button."));
+    if (!orderHistory)
         return;
-    history->click();
+    orderHistory->click();
     settle();
     check(showsText(cashier, sale.id),
         QStringLiteral("Order History does not show the new order %1.").arg(sale.id));
+    QTableWidget *saleHistory = nullptr;
+    int saleRow = -1;
+    for (QTableWidget *table : cashier->findChildren<QTableWidget *>())
+    {
+        if (!table->isVisible())
+            continue;
+        for (int row = 0; row < table->rowCount(); ++row)
+            if (table->item(row, 0) && table->item(row, 0)->text() == sale.id)
+            {
+                saleHistory = table;
+                saleRow = row;
+                break;
+            }
+    }
+    check(saleHistory && saleRow >= 0,
+        QStringLiteral("Could not select the new paid order for editing."));
+    if (saleHistory && saleRow >= 0)
+    {
+        saleHistory->selectRow(saleRow);
+        QPushButton *edit = button(cashier, QStringLiteral("Edit order"));
+        check(edit && edit->isEnabled(), QStringLiteral("Paid order should offer an edit action."));
+        if (edit)
+        {
+            approveManagerEdit();
+            edit->click();
+            settle();
+            popupHandler = nullptr;
+            check(hasLabel(cashier, QStringLiteral("New Order"))
+                    && button(cashier, QStringLiteral("Save changes"))
+                    && !button(cashier, QStringLiteral("Generate bill")),
+                QStringLiteral("Manager-approved paid edit should open an edit-only form."));
+            QTableWidget *cart = nullptr;
+            for (QTableWidget *table : cashier->findChildren<QTableWidget *>())
+                if (table->isVisible() && table->columnCount() == 5)
+                    cart = table;
+            QWidget *quantityControl = cart ? cart->cellWidget(0, 3) : nullptr;
+            QPushButton *increase = quantityControl
+                ? button(quantityControl, QStringLiteral("+")) : nullptr;
+            check(increase && increase->isEnabled(),
+                QStringLiteral("Paid edit should allow increasing an item using reserved stock."));
+            if (increase)
+                increase->click();
+            if (QPushButton *save = button(cashier, QStringLiteral("Save changes")))
+                save->click();
+            settle();
+            QVector<Pos::Order> afterPaidEdit;
+            QVector<Pos::OrderDetail> editedDetails;
+            check(Pos::readOrders(Pos::DataPaths::orders(), afterPaidEdit, error)
+                    && afterPaidEdit.last().id == sale.id
+                    && afterPaidEdit.last().status == QStringLiteral("paid")
+                    && Pos::readOrderDetails(Pos::DataPaths::orderDetail(), sale.id, editedDetails, error)
+                    && editedDetails.size() == 1 && editedDetails.first().quantity == 2,
+                QStringLiteral("Paid edit should save the same paid order with updated details (%1).")
+                    .arg(error));
+            check(stockOf(QStringLiteral("P0001")) == stockBefore - 2,
+                QStringLiteral("Paid edit must apply only the stock difference."));
+        }
+    }
 
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
     QPushButton *managerHistory = button(manager, QStringLiteral("Order History"));
@@ -1069,7 +1191,7 @@ void testSale(QStackedWidget *stack)
     managerHistory->click();
     settle();
     QTableWidget *historyTable = nullptr;
-    int saleRow = -1;
+    int managerSaleRow = -1;
     for (QTableWidget *table : manager->findChildren<QTableWidget *>())
     {
         if (!table->isVisible())
@@ -1078,15 +1200,15 @@ void testSale(QStackedWidget *stack)
             if (table->item(row, 0) && table->item(row, 0)->text() == sale.id)
             {
                 historyTable = table;
-                saleRow = row;
+                managerSaleRow = row;
                 break;
             }
     }
-    check(historyTable && saleRow >= 0,
+    check(historyTable && managerSaleRow >= 0,
         QStringLiteral("Manager Order History does not list the paid order."));
-    if (!historyTable || saleRow < 0)
+    if (!historyTable || managerSaleRow < 0)
         return;
-    historyTable->item(saleRow, 0)->setSelected(true);
+    historyTable->item(managerSaleRow, 0)->setSelected(true);
     QPushButton *viewBill = button(manager, QStringLiteral("View bill"));
     check(viewBill && viewBill->isEnabled(),
         QStringLiteral("Manager cannot open the saved bill."));
