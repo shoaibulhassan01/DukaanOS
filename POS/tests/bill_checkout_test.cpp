@@ -236,18 +236,35 @@ static void testCheckout(const QString &dir)
     CHECK(readLines("Data/Order.txt").size() == 1);
     CHECK(readLines("Data/Bill.txt").size() == 1);
 
+    const QDate today = QDate::currentDate();
+    const QString seasonStart = today.addDays(-30).toString(Qt::ISODate);
+    const QString seasonEnd = today.addDays(30).toString(Qt::ISODate);
+    CHECK(writeFile("Data/Seasons.txt",
+        (QStringLiteral("%1 %2 10 false#\n")
+            .arg(seasonStart, seasonEnd)).toUtf8()));
+    CheckoutRequest seasonalRequest = request;
+    seasonalRequest.amountPaid = 1077.00;
+    CartTotals inactiveTotals;
+    CHECK(calculateCartTotals(seasonalRequest.items, inactiveTotals, error));
+    CHECK(inactiveTotals.seasonalDiscount == 0
+        && inactiveTotals.payable == 1077.00);
+
     CHECK(writeFile("Data/Seasons.txt",
         (QStringLiteral("%1 %2 10 true#\n")
-            .arg(QDate::currentDate().addDays(-30).toString(Qt::ISODate),
-                 QDate::currentDate().addDays(30).toString(Qt::ISODate))).toUtf8()));
-    CheckoutRequest seasonalRequest = request;
+            .arg(seasonStart, seasonEnd)).toUtf8()));
     seasonalRequest.amountPaid = 969.30;
+    CartTotals activeTotals;
+    CHECK(calculateCartTotals(seasonalRequest.items, activeTotals, error));
+    CHECK(activeTotals.seasonalDiscount == 107.70
+        && activeTotals.payable == 969.30);
     CheckoutResult seasonalResult;
     CHECK(generateBill(seasonalRequest, seasonalResult, error));
     CHECK(seasonalResult.bill.seasonalDiscount == 107.70
         && seasonalResult.bill.totalPayable == 969.30);
     CHECK(seasonalResult.totals.seasonalDiscount == 107.70
         && seasonalResult.totals.payable == 969.30);
+    CHECK(seasonalResult.bill.amountReceived == 969.30
+        && seasonalResult.bill.balanceReturned == 0);
 }
 
 static void testHeldOrderResume(const QString &dir)

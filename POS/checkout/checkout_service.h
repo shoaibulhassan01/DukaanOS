@@ -27,6 +27,9 @@ struct CheckoutResult
     CartTotals totals;
 };
 
+bool calculateCartTotals(const QVector<CartItem> &items,
+    CartTotals &totals, QString &error);
+
 // Runs the whole checkout: validate payment, order ID, bill ID, build bill,
 // save order, save bill, reduce stock. If a step fails the error is returned
 // and nothing after it runs. Steps 1-3 only compute; files are written from

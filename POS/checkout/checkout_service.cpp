@@ -14,6 +14,7 @@
 #include <cmath>
 #include <memory>
 #include <QDateTime>
+#include <QDate>
 
 namespace Pos
 {
@@ -98,6 +99,26 @@ bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
     totals = sum;
     return true;
 }
+
+bool computeTotalsForDate(const QVector<CartItem> &items, QDate billDate,
+    double &seasonalDiscountPercentage, CartTotals &totals, QString &error)
+{
+    seasonalDiscountPercentage = 0;
+    if (!getActiveSeasonDiscountPercentage(billDate,
+            seasonalDiscountPercentage, error))
+        return false;
+    return computeTotals(items, totals, error, seasonalDiscountPercentage);
+}
+}
+
+bool calculateCartTotals(const QVector<CartItem> &items,
+    CartTotals &totals, QString &error)
+{
+    error.clear();
+    totals = CartTotals{};
+    double seasonalDiscountPercentage = 0;
+    return computeTotalsForDate(items, QDate::currentDate(),
+        seasonalDiscountPercentage, totals, error);
 }
 
 bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
@@ -114,14 +135,9 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
 
     const QDateTime now = QDateTime::currentDateTime();
     double seasonalDiscountPercentage = 0;
-    Season activeSeason;
-    QString seasonError;
-    if (findActiveSeason(now.date(), activeSeason, seasonError))
-        seasonalDiscountPercentage = activeSeason.percentage;
-
     CartTotals totals;
-    if (!computeTotals(request.items, totals, error,
-            seasonalDiscountPercentage)) {
+    if (!computeTotalsForDate(request.items, now.date(),
+            seasonalDiscountPercentage, totals, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not calculate the cart totals."));
         return false;
     }

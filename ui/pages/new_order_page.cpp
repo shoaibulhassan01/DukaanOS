@@ -415,6 +415,8 @@ private:
         taxValue_ = addSummaryRow(layout, card, QStringLiteral("Tax"), QStringLiteral("PKR 0"));
         discountValue_ = addSummaryRow(
             layout, card, QStringLiteral("Discount"), QStringLiteral("PKR 0"));
+        seasonalDiscountValue_ = addSummaryRow(
+            layout, card, QStringLiteral("Seasonal discount"), QStringLiteral("PKR 0"));
 
         auto *divider = new QFrame(card);
         divider->setFrameShape(QFrame::HLine);
@@ -796,16 +798,60 @@ private:
             cartTable_->setRowHeight(row, 42);
         }
 
+        Pos::CartTotals totals;
+        QString totalsError;
+        bool totalsValid = true;
+        if (editExistingOrder_)
+        {
+            totals.withoutTax = subtotal;
+            totals.tax = tax;
+            totals.discount = discount;
+            totals.payable = subtotal + tax - discount;
+        }
+        else if (!cartLines_.isEmpty())
+        {
+            QVector<Pos::CartItem> items;
+            items.reserve(cartLines_.size());
+            for (const CartLine &line : cartLines_)
+                items.append(Pos::CartItem{line.product, line.quantity});
+            totalsValid = Pos::calculateCartTotals(items, totals, totalsError);
+        }
+
         itemsValue_->setText(QString::number(itemCount));
         if (holdButton_)
             holdButton_->setEnabled(!cartLines_.isEmpty());
-        subtotalValue_->setText(QStringLiteral("PKR %1").arg(subtotal, 0, 'f', 2));
-        taxValue_->setText(QStringLiteral("PKR %1").arg(tax, 0, 'f', 2));
-        discountValue_->setText(QStringLiteral("PKR %1").arg(discount, 0, 'f', 2));
-        totalValue_->setText(QStringLiteral("PKR %1").arg(subtotal + tax - discount, 0, 'f', 2));
-        currentTotal_ = subtotal + tax - discount;
+        if (totalsValid)
+        {
+            subtotalValue_->setText(QStringLiteral("PKR %1").arg(totals.withoutTax, 0, 'f', 2));
+            taxValue_->setText(QStringLiteral("PKR %1").arg(totals.tax, 0, 'f', 2));
+            discountValue_->setText(QStringLiteral("PKR %1").arg(totals.discount, 0, 'f', 2));
+            seasonalDiscountValue_->setText(
+                QStringLiteral("PKR %1").arg(totals.seasonalDiscount, 0, 'f', 2));
+            totalValue_->setText(QStringLiteral("PKR %1").arg(totals.payable, 0, 'f', 2));
+            currentTotal_ = totals.payable;
+            if (!editExistingOrder_)
+            {
+                checkoutButton_->setEnabled(true);
+                if (checkoutMessage_->text().startsWith(
+                        QStringLiteral("Order total unavailable:")))
+                    checkoutMessage_->hide();
+            }
+        }
+        else
+        {
+            subtotalValue_->setText(QStringLiteral("Unavailable"));
+            taxValue_->setText(QStringLiteral("Unavailable"));
+            discountValue_->setText(QStringLiteral("Unavailable"));
+            seasonalDiscountValue_->setText(QStringLiteral("Unavailable"));
+            totalValue_->setText(QStringLiteral("Unavailable"));
+            currentTotal_ = 0;
+            checkoutButton_->setEnabled(false);
+            checkoutMessage_->setText(
+                QStringLiteral("Order total unavailable: %1").arg(totalsError));
+            checkoutMessage_->show();
+        }
         // Until the cashier types an amount, cash received equals the total.
-        if (cashReceived_ && !cashEdited_)
+        if (totalsValid && cashReceived_ && !cashEdited_)
         {
             const QSignalBlocker block(cashReceived_);
             cashReceived_->setValue(currentTotal_);
@@ -909,7 +955,7 @@ private:
         request.paymentMode = paymentMethod_->currentText();
         const bool cash = request.paymentMode == QStringLiteral("Cash");
         request.merchant = cash ? QString() : merchantEdit_->text().trimmed();
-        request.amountPaid = cash ? cashReceived_->value() : order.total;
+        request.amountPaid = cash ? cashReceived_->value() : currentTotal_;
         for (const CartLine &line : cartLines_)
             request.items.append(Pos::CartItem{line.product, line.quantity});
 
@@ -1000,6 +1046,7 @@ private:
     QLabel *subtotalValue_ = nullptr;
     QLabel *taxValue_ = nullptr;
     QLabel *discountValue_ = nullptr;
+    QLabel *seasonalDiscountValue_ = nullptr;
     QLabel *totalValue_ = nullptr;
     Pos::Product currentProduct_;
     QString orderId_;

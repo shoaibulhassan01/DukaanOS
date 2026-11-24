@@ -4,6 +4,7 @@
 #include "season_repository.h"
 #include "../common/data_paths.h"
 
+#include <QFileInfo>
 #include <QVector>
 #include <cmath>
 
@@ -59,6 +60,42 @@ bool hasDateOverlap(const Season &season,
     }
 
     return false;
+}
+
+bool findActiveSeasonForDate(QDate date, Season &season, bool &found,
+    QString &error)
+{
+    found = false;
+    if (!date.isValid())
+    {
+        error = QStringLiteral("Invalid date.");
+        return false;
+    }
+
+    QVector<Season> seasons;
+    const QString seasonFile = DataPaths::seasons();
+    if (!QFileInfo::exists(seasonFile))
+    {
+        error.clear();
+        return true;
+    }
+    if (!readSeasons(seasonFile, seasons, error))
+        return false;
+
+    for (const Season &current : seasons)
+    {
+        if (current.isActive
+            && date >= current.startDate
+            && date <= current.endDate)
+        {
+            season = current;
+            found = true;
+            break;
+        }
+    }
+
+    error.clear();
+    return true;
 }
 }
 
@@ -135,32 +172,34 @@ bool setSeasonActive(int index, bool isActive,
 bool findActiveSeason(QDate date, Season &season,
     QString &error)
 {
+    bool found = false;
+    Season active;
+    if (!findActiveSeasonForDate(date, active, found, error))
+        return false;
+
+    if (!found)
+    {
+        error = QStringLiteral("No active season found.");
+        return false;
+    }
+
+    season = active;
+    return true;
+}
+
+bool getActiveSeasonDiscountPercentage(QDate date, double &percentage,
+    QString &error)
+{
+    percentage = 0;
+    bool found = false;
+    Season active;
+    if (!findActiveSeasonForDate(date, active, found, error))
+        return false;
+
+    if (found)
+        percentage = active.percentage;
     error.clear();
-
-    if (!date.isValid())
-    {
-        error = QStringLiteral("Invalid date.");
-        return false;
-    }
-
-    QVector<Season> seasons;
-
-    if (!readSeasons(DataPaths::seasons(), seasons, error))
-        return false;
-
-    for (const Season &current : seasons)
-    {
-        if (current.isActive
-            && date >= current.startDate
-            && date <= current.endDate)
-        {
-            season = current;
-            return true;
-        }
-    }
-
-    error = QStringLiteral("No active season found.");
-    return false;
+    return true;
 }
 
 bool getAllSeasons(QVector<Season> &seasons,

@@ -20,6 +20,9 @@ bool setSeasonActive(int index, bool isActive,
 bool findActiveSeason(QDate date, Season &season,
     QString &error);
 
+bool getActiveSeasonDiscountPercentage(QDate date, double &percentage,
+    QString &error);
+
 bool getAllSeasons(QVector<Season> &seasons,
     QString &error);
 
