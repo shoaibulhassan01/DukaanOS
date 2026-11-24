@@ -93,11 +93,6 @@ target_link_libraries(DukaanOS PRIVATE
     Qt6::Multimedia
 )
 
-if(MINGW AND TARGET Qt6::EntryPointImplementation)
-    set_property(TARGET Qt6::EntryPointImplementation APPEND
-        PROPERTY INTERFACE_LINK_LIBRARIES ssp)
-endif()
-
 set_target_properties(DukaanOS PROPERTIES
     WIN32_EXECUTABLE ON
 )
