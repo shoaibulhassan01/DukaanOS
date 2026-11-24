@@ -9,6 +9,7 @@
 // manager access to the saved bill and PDF export.
 
 #include "../ui.h"
+#include "../pages/product_dialog.h"
 #include "../theme.h"
 #include "../pages/bill_page.h"
 #include "../pages/dashboard_page.h"
@@ -178,7 +179,9 @@ void checkNoLightBackgrounds(QWidget *root, const QString &where)
     static const QRegularExpression background(
         QStringLiteral("background(?:-color)?\\s*:\\s*(#[0-9A-Fa-f]{6}|white)\\b"));
     QStringList light;
-    for (QWidget *widget : root->findChildren<QWidget *>())
+    QList<QWidget *> widgets = root->findChildren<QWidget *>();
+    widgets.prepend(root);   // a pop-up form's own background counts too
+    for (QWidget *widget : widgets)
     {
         if (!widget->isVisible())
             continue;
@@ -601,20 +604,31 @@ void testCategoriesPage(QStackedWidget *stack)
         bool barcodePreviewReady = false;
         popupHandler = [&seen, &shownId, &suggestedAcronym, &preservedManualAcronym,
                            &barcodePreviewReady](QWidget *popup) {
-            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
-            if (!barcode)
+            QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
+            QLineEdit *barcode = field(popup, QStringLiteral("Choose a category first"));
+            if (!category || !barcode)
                 return false;
-            auto labels = [popup]() {
-                QStringList texts;
-                for (QLabel *label : popup->findChildren<QLabel *>())
-                    if (label->isVisible())
-                        texts << label->text();
-                return texts.join(QStringLiteral(" | "));
-            };
-            barcode->setText(QStringLiteral("100009"));
-            seen << labels();
-            barcode->setText(QStringLiteral("990001"));
-            seen << labels();
+            // seen: 0 picker items, 1 barcode before a choice, 2 after
+            // choosing 10, 3 after trying to delete/type over "10",
+            // 4 after typing the rest, 5 after switching to 20.
+            QStringList items;
+            for (int i = 0; i < category->count(); ++i)
+                items << category->itemText(i);
+            seen << items.join(QStringLiteral(" | "));
+            seen << QStringLiteral("%1/%2").arg(barcode->isEnabled() ? QStringLiteral("enabled")
+                                                                     : QStringLiteral("disabled"),
+                        barcode->text());
+            category->setCurrentIndex(category->findData(QStringLiteral("10")));
+            seen << barcode->text();
+            barcode->setCursorPosition(2);
+            barcode->backspace();             // would delete the "0" of "10"
+            barcode->setCursorPosition(0);    // cursor is kept after "10"
+            barcode->insert(QStringLiteral("9"));
+            seen << barcode->text();
+            barcode->insert(QStringLiteral("009"));
+            seen << barcode->text();
+            category->setCurrentIndex(category->findData(QStringLiteral("20")));
+            seen << barcode->text();
             for (QLineEdit *edit : popup->findChildren<QLineEdit *>())
                 if (edit->toolTip().startsWith(QStringLiteral("Assigned automatically")))
                     shownId = edit->isEnabled() ? QStringLiteral("editable") : edit->text();
@@ -636,9 +650,6 @@ void testCategoriesPage(QStackedWidget *stack)
             for (QLineEdit *quantity : popup->findChildren<QLineEdit *>())
                 if (quantity->placeholderText() == QStringLiteral("e.g. 10"))
                     quantity->setText(QStringLiteral("5"));
-            if (QPushButton *save = button(popup, QStringLiteral("Add product")))
-                save->click();
-            seen << labels();
             if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
                 cancel->click();
             popupHandler = nullptr;
@@ -648,15 +659,21 @@ void testCategoriesPage(QStackedWidget *stack)
             addProduct->click();
         settle();
         popupHandler = nullptr;
-        check(seen.size() == 3, QStringLiteral("Add product form did not open."));
-        if (seen.size() == 3)
+        check(seen.size() == 6, QStringLiteral("Add product form did not open (or has no category picker)."));
+        if (seen.size() == 6)
         {
-            check(seen.at(0).contains(QStringLiteral("10 \u00B7 Beverages (BEV)")),
-                QStringLiteral("Typing barcode 100009 must show category 10 Beverages, saw: %1").arg(seen.at(0)));
-            check(seen.at(1).contains(QStringLiteral("Category 99 not found")),
-                QStringLiteral("Typing barcode 990001 must show 'Category 99 not found', saw: %1").arg(seen.at(1)));
-            check(seen.at(2).contains(QStringLiteral("No category with Id 99")),
-                QStringLiteral("Saving a product without a category must be refused, saw: %1").arg(seen.at(2)));
+            check(seen.at(0).startsWith(QStringLiteral("Select a category | 10 \u00B7 Beverages (BEV) | 20 \u00B7 Bakery (BKY)")),
+                QStringLiteral("The category picker must list every category by Id, saw: %1").arg(seen.at(0)));
+            check(seen.at(1) == QStringLiteral("disabled/"),
+                QStringLiteral("The barcode must stay empty and locked until a category is chosen, saw: %1").arg(seen.at(1)));
+            check(seen.at(2) == QStringLiteral("10"),
+                QStringLiteral("Choosing category 10 must start the barcode with 10, saw: %1").arg(seen.at(2)));
+            check(seen.at(3) == QStringLiteral("109"),
+                QStringLiteral("The category digits must not be deletable or typed over, saw: %1").arg(seen.at(3)));
+            check(seen.at(4) == QStringLiteral("109009"),
+                QStringLiteral("Only 4 digits can follow the category Id, saw: %1").arg(seen.at(4)));
+            check(seen.at(5) == QStringLiteral("209009"),
+                QStringLiteral("Changing the category must change the first two digits and keep the rest, saw: %1").arg(seen.at(5)));
         }
         // The product id is not typed: the form shows the next one, locked.
         check(shownId == expectedId,
@@ -686,9 +703,9 @@ void testCategoriesPage(QStackedWidget *stack)
                 QPushButton *download = button(popup, QStringLiteral("Download barcode"));
                 editPreviewReady = preview && preview->text().isEmpty()
                     && download && download->isEnabled();
-                for (QLabel *label : popup->findChildren<QLabel *>())
-                    if (label->isVisible())
-                        editSaw += label->text() + QStringLiteral(" | ");
+                if (QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory")))
+                    editSaw = category->currentText()
+                        + (category->isEnabled() ? QStringLiteral(" (editable)") : QString());
                 if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
                     cancel->click();
                 popupHandler = nullptr;
@@ -698,8 +715,8 @@ void testCategoriesPage(QStackedWidget *stack)
             settle();
             popupHandler = nullptr;
         }
-        check(editSaw.contains(QStringLiteral("10 \u00B7 Beverages (BEV)")),
-            QStringLiteral("Edit product form must show the stored category, saw: %1").arg(editSaw));
+        check(editSaw == QStringLiteral("10 \u00B7 Beverages (BEV)"),
+            QStringLiteral("Edit product form must show the stored category, locked; saw: %1").arg(editSaw));
         check(editPreviewReady,
             QStringLiteral("Edit product must use the Add product layout with its barcode preview."));
 
@@ -708,16 +725,18 @@ void testCategoriesPage(QStackedWidget *stack)
         Pos::readProducts(QStringLiteral("Data/Product.txt"), products, error);
         bool added = false;
         for (const Pos::Product &product : products)
-            added = added || product.barcode == QStringLiteral("990001");
-        check(!added, QStringLiteral("A product without a category must not be saved to Product.txt."));
+            added = added || product.barcode == QStringLiteral("209009");
+        check(!added, QStringLiteral("A cancelled Add product form must not save anything."));
 
         // A product added as "weight (kg)" is saved as "weight" in Product.txt.
         QStringList unitChoices;
         popupHandler = [&unitChoices](QWidget *popup) {
-            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
-            if (!barcode)
+            QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
+            QLineEdit *barcode = field(popup, QStringLiteral("Choose a category first"));
+            if (!category || !barcode)
                 return false;
-            barcode->setText(QStringLiteral("100098"));
+            category->setCurrentIndex(category->findData(QStringLiteral("10")));
+            barcode->insert(QStringLiteral("0098"));
             field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Sugar"));
             field(popup, QStringLiteral("Up to 8 characters"))->setText(QStringLiteral("SGR"));
             if (QComboBox *unit = popup->findChild<QComboBox *>(QStringLiteral("productUnit")))
@@ -753,45 +772,42 @@ void testCategoriesPage(QStackedWidget *stack)
         check(afterId == QStringLiteral("P%1").arg(expectedId.mid(1).toInt() + 1, 4, 10, QLatin1Char('0')),
             QStringLiteral("After adding %1 the next product id must go up by one, got %2.").arg(expectedId, afterId));
 
-        // Shortcut: a missing category can be created from the Add product
-        // form. It opens the Add category form with the Id (91, from barcode
-        // 910001) locked; once saved, the form shows the category in green.
+        // "+ Add new category" in the Add product form opens the Categories
+        // page's form; once saved, the new category is selected and its Id
+        // starts the barcode.
         const QString categoriesBefore = fileText(categoryFile);
-        QString linkBefore;
-        QString lockedId;
-        QString categoryAfter;
-        bool linkHiddenAfter = false;
+        QString linkText;
+        QString selectedAfter;
+        QString barcodeAfter;
         popupHandler = [&](QWidget *popup) {
-            QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004"));
-            if (!barcode)
+            QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
+            if (!category)
                 return false;
-            barcode->setText(QStringLiteral("910001"));
             QPushButton *create = nullptr;
             for (QPushButton *b : popup->findChildren<QPushButton *>())
-                if (b->text().startsWith(QStringLiteral("+ Create category")))
+                if (b->text().startsWith(QStringLiteral("+ Add new category")))
                     create = b;
-            linkBefore = create && create->isVisible() ? create->text() : QStringLiteral("(no visible link)");
+            linkText = create && create->isVisible() ? create->text() : QStringLiteral("(no visible link)");
             if (create)
             {
                 // The category form opens inside the product form: answer it
                 // from a separate timer.
-                QTimer::singleShot(200, [&lockedId]() {
+                QTimer::singleShot(200, []() {
                     QWidget *form = QApplication::activeModalWidget();
                     QLineEdit *id = form ? field(form, QStringLiteral("e.g. 10")) : nullptr;
                     if (!id)
                         return;
-                    lockedId = id->isEnabled() ? QStringLiteral("editable") : id->text();
+                    id->setText(QStringLiteral("91"));
                     field(form, QStringLiteral("e.g. Beverages"))->setText(QStringLiteral("Imported goods"));
                     field(form, QStringLiteral("e.g. BEV"))->setText(QStringLiteral("IMP"));
                     if (QPushButton *add = button(form, QStringLiteral("Add category")))
                         add->click();
                 });
                 create->click();
-                linkHiddenAfter = !create->isVisible();
             }
-            for (QLabel *label : popup->findChildren<QLabel *>())
-                if (label->isVisible() && label->text().startsWith(QStringLiteral("91 ")))
-                    categoryAfter = label->text();
+            selectedAfter = category->currentText();
+            if (QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004")))
+                barcodeAfter = barcode->text();
             if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
                 cancel->click();
             popupHandler = nullptr;   // last: this clears the lambda itself
@@ -801,14 +817,13 @@ void testCategoriesPage(QStackedWidget *stack)
             addProduct->click();
         settle();
         popupHandler = nullptr;
-        check(linkBefore == QStringLiteral("+ Create category 91\u2026"),
-            QStringLiteral("Add product: a missing category must offer '+ Create category 91...', got: %1").arg(linkBefore));
-        check(lockedId == QStringLiteral("91"),
-            QStringLiteral("The category form opened from the product form must have Id 91 locked, got: %1").arg(lockedId));
+        check(linkText == QStringLiteral("+ Add new category\u2026"),
+            QStringLiteral("Add product must offer '+ Add new category...', got: %1").arg(linkText));
         check(fileText(categoryFile) == categoriesBefore + QStringLiteral("91 Imported_goods IMP#\n"),
-            QStringLiteral("Creating category 91 from the product form must append it to PCategory.txt."));
-        check(categoryAfter.contains(QStringLiteral("91 \u00B7 Imported goods (IMP)")) && linkHiddenAfter,
-            QStringLiteral("After creating it, the product form must show category 91 and hide the link, saw: %1").arg(categoryAfter));
+            QStringLiteral("A category added from the product form must be appended to PCategory.txt."));
+        check(selectedAfter == QStringLiteral("91 \u00B7 Imported goods (IMP)") && barcodeAfter == QStringLiteral("91"),
+            QStringLiteral("The new category must be selected and start the barcode, saw: %1 / %2")
+                .arg(selectedAfter, barcodeAfter));
         Pos::deleteCategory(categoryFile, QStringLiteral("Data/Product.txt"), QStringLiteral("91"), error);
     }
 
@@ -816,6 +831,77 @@ void testCategoriesPage(QStackedWidget *stack)
 
 // Reports page (Increment 3, req 11): both of Umar's reports show what the
 // report logic (tested in ReportTest) calculates from the sample data.
+// Pop-up forms in dark mode: the Add / Edit product forms (with the barcode
+// preview filled in) and the Add category form opened from them. Their
+// colours are not covered by visiting the pages.
+void testFormsInDarkMode()
+{
+    UiTheme::setDark(true);
+    settle();
+    QStringList opened;
+    popupHandler = [&opened](QWidget *popup) {
+        QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
+        if (!category || !button(popup, QStringLiteral("Add product")))
+            return false;
+        opened << QStringLiteral("Add product");
+        checkNoLightBackgrounds(popup, QStringLiteral("Add product form (empty)"));
+        category->setCurrentIndex(category->findData(QStringLiteral("10")));
+        if (QLineEdit *barcode = field(popup, QStringLiteral("e.g. 100004")))
+            barcode->insert(QStringLiteral("0777"));
+        field(popup, QStringLiteral("e.g. Green tea"))->setText(QStringLiteral("Dark tea"));
+        settle();
+        checkNoLightBackgrounds(popup, QStringLiteral("Add product form (with barcode preview)"));
+        for (QPushButton *b : popup->findChildren<QPushButton *>())
+            if (b->text().startsWith(QStringLiteral("+ Add new category")))
+            {
+                // The category form opens inside the product form: check it
+                // from a separate timer, then cancel it.
+                QTimer::singleShot(200, [&opened]() {
+                    QWidget *form = QApplication::activeModalWidget();
+                    if (!form || !field(form, QStringLiteral("e.g. 10")))
+                        return;
+                    opened << QStringLiteral("Add category");
+                    checkNoLightBackgrounds(form, QStringLiteral("Add category form"));
+                    if (QPushButton *cancel = button(form, QStringLiteral("Cancel")))
+                        cancel->click();
+                });
+                b->click();
+            }
+        if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+            cancel->click();
+        popupHandler = nullptr;   // last: this clears the lambda itself
+        return true;
+    };
+    UiPages::showAddProductDialog(nullptr, QStringLiteral("Data/Product.txt"));
+    settle();
+
+    QVector<Pos::Product> products;
+    QString error;
+    Pos::readProducts(QStringLiteral("Data/Product.txt"), products, error);
+    if (!products.isEmpty())
+    {
+        popupHandler = [&opened](QWidget *popup) {
+            if (!button(popup, QStringLiteral("Save changes")))
+                return false;
+            opened << QStringLiteral("Edit product");
+            checkNoLightBackgrounds(popup, QStringLiteral("Edit product form"));
+            if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+                cancel->click();
+            popupHandler = nullptr;
+            return true;
+        };
+        UiPages::showEditProductDialog(nullptr, QStringLiteral("Data/Product.txt"), products.first());
+        settle();
+    }
+    popupHandler = nullptr;
+    check(opened == QStringList({ QStringLiteral("Add product"), QStringLiteral("Add category"),
+                                  QStringLiteral("Edit product") }),
+        QStringLiteral("Dark-mode form check: expected Add product, Add category and Edit product to open, got: %1")
+            .arg(opened.join(QStringLiteral(", "))));
+    UiTheme::setDark(false);
+    settle();
+}
+
 void testReportsPage(QStackedWidget *stack)
 {
     QWidget *manager = openDashboard(stack, QStringLiteral("Manager"));
@@ -1309,6 +1395,7 @@ int main(int argc, char *argv[])
     testLogin(window);
     testRoles(stack);
     testCategoriesPage(stack);
+    testFormsInDarkMode();
     testReportsPage(stack);
     testCashierAccountCreation(stack);
     testSale(stack);
