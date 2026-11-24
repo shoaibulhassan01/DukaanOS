@@ -185,7 +185,7 @@ public:
         barcodeCard_->setMinimumWidth(290);
         barcodeCard_->setMaximumWidth(360);
         barcodeCard_->setStyleSheet(QStringLiteral(
-            "QFrame#barcodeCard { background: #F8F9FF; border: 1px solid %1; border-radius: 14px; }")
+            "QFrame#barcodeCard { background: #F8F8FC; border: 1px solid %1; border-radius: 14px; }")
             .arg(kLine));
         auto *barcodeLayout = new QVBoxLayout(barcodeCard_);
         barcodeLayout->setContentsMargins(18, 18, 18, 18);
