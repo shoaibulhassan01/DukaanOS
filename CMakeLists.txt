@@ -57,12 +57,17 @@ set(DUKAANOS_UI_SOURCES
     ui/pages/product_details_view.cpp
     ui/pages/saved_bill.cpp
     ui/pages/seasons_page.cpp
-    ${POS_LOGIC_SOURCES}
     POS/scanner/pos_barcode_scanner.cpp
     BarCode/scanner/scanner.cpp
     BarCode/decoder/decoder.cpp
     BarCode/camera/camera_scanner.cpp
 )
+
+add_library(PosLogic STATIC ${POS_LOGIC_SOURCES})
+target_include_directories(PosLogic PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/BarCode"
+)
+target_link_libraries(PosLogic PUBLIC Qt6::Gui)
 
 set(DUKAANOS_ASSETS
     ui/assets/app_icon.png
@@ -89,6 +94,7 @@ target_include_directories(DukaanOS PRIVATE
 )
 
 target_link_libraries(DukaanOS PRIVATE
+    PosLogic
     Qt6::Widgets
     Qt6::Multimedia
 )
@@ -115,7 +121,6 @@ if(BUILD_TESTING)
 
         qt_add_executable(${test_name}
             ${test_source}
-            ${POS_LOGIC_SOURCES}
         )
 
         target_include_directories(${test_name} PRIVATE
@@ -123,6 +128,7 @@ if(BUILD_TESTING)
         )
 
         target_link_libraries(${test_name} PRIVATE
+            PosLogic
             Qt6::Gui
         )
 
@@ -136,21 +142,17 @@ if(BUILD_TESTING)
 
     qt_add_executable(ZainRequirementsTest
         POS/tests/zain_requirements_test.cpp
-        ${POS_LOGIC_SOURCES}
         BarCode/decoder/decoder.cpp
         BarCode/scanner/scanner.cpp
     )
     target_include_directories(ZainRequirementsTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
-    target_link_libraries(ZainRequirementsTest PRIVATE Qt6::Gui)
+    target_link_libraries(ZainRequirementsTest PRIVATE PosLogic Qt6::Gui)
     set_target_properties(ZainRequirementsTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME ZainRequirementsTest COMMAND ZainRequirementsTest)
 
     # Camera Scanner Test
     qt_add_executable(CameraScannerTest
         BarCode/tests/barcode_roundtrip_test.cpp
-        POS/product/barcode_image.cpp
-        BarCode/encoder/encoder.cpp
-        BarCode/generator/generator.cpp
         BarCode/decoder/decoder.cpp
         BarCode/scanner/scanner.cpp
         BarCode/camera/camera_scanner.cpp
@@ -161,6 +163,7 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(CameraScannerTest PRIVATE
+        PosLogic
         Qt6::Gui
         Qt6::Multimedia
     )
@@ -170,7 +173,6 @@ if(BUILD_TESTING)
     # Order Repository Test
     qt_add_executable(OrderRepositoryTest
         POS/tests/order_repository_test.cpp
-        ${POS_LOGIC_SOURCES}
     )
 
     target_include_directories(OrderRepositoryTest PRIVATE
@@ -178,6 +180,7 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(OrderRepositoryTest PRIVATE
+        PosLogic
         Qt6::Gui
     )
 
@@ -188,25 +191,25 @@ if(BUILD_TESTING)
     add_test(NAME OrderRepositoryTest COMMAND OrderRepositoryTest)
 
     # Product categories: PCategory.txt, add/edit/delete rules (Increment 3, req 1).
-    qt_add_executable(CategoryTest POS/tests/category_test.cpp POS/tests/data_format_checker.cpp ${POS_LOGIC_SOURCES})
+    qt_add_executable(CategoryTest POS/tests/category_test.cpp POS/tests/data_format_checker.cpp)
     target_include_directories(CategoryTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
-    target_link_libraries(CategoryTest PRIVATE Qt6::Gui)
+    target_link_libraries(CategoryTest PRIVATE PosLogic Qt6::Gui)
     set_target_properties(CategoryTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME CategoryTest COMMAND CategoryTest)
 
     # Manager reports: top 10 most sold, top 10 by remaining stock (Increment 3, req 11).
-    qt_add_executable(ReportTest POS/tests/report_test.cpp ${POS_LOGIC_SOURCES})
+    qt_add_executable(ReportTest POS/tests/report_test.cpp)
     target_include_directories(ReportTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
     target_compile_definitions(ReportTest PRIVATE DUKAANOS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries(ReportTest PRIVATE Qt6::Gui)
+    target_link_libraries(ReportTest PRIVATE PosLogic Qt6::Gui)
     set_target_properties(ReportTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME ReportTest COMMAND ReportTest)
 
     # Reads the sample data in Data/ and checks it is valid and consistent.
-    qt_add_executable(DataFilesTest POS/tests/data_files_test.cpp ${POS_LOGIC_SOURCES})
+    qt_add_executable(DataFilesTest POS/tests/data_files_test.cpp)
     target_include_directories(DataFilesTest PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/BarCode")
     target_compile_definitions(DataFilesTest PRIVATE DUKAANOS_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    target_link_libraries(DataFilesTest PRIVATE Qt6::Gui)
+    target_link_libraries(DataFilesTest PRIVATE PosLogic Qt6::Gui)
     set_target_properties(DataFilesTest PROPERTIES WIN32_EXECUTABLE OFF)
     add_test(NAME DataFilesTest COMMAND DataFilesTest)
 
@@ -273,6 +276,7 @@ if(BUILD_TESTING)
     )
 
     target_link_libraries(UiSmokeTest PRIVATE
+        PosLogic
         Qt6::Widgets
         Qt6::Multimedia
     )
@@ -291,13 +295,10 @@ if(BUILD_TESTING)
 
     qt_add_executable(SeasonServiceTest
         POS/tests/season_service_test.cpp
-        POS/common/data_paths.cpp
-        POS/common/record_codec.cpp
-        POS/season/season_repository.cpp
-        POS/season/season_service.cpp
     )
 
     target_link_libraries(SeasonServiceTest PRIVATE
+        PosLogic
         Qt6::Core
     )
 
