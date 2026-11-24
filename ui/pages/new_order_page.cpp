@@ -20,6 +20,7 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QGridLayout>
+#include <QGuiApplication>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QImage>
@@ -111,7 +112,6 @@ public:
                 }
             },
             [this](const QString &barcode) {
-                stopCamera();
                 barcodeEdit_->setText(barcode);
                 submitBarcode(barcode);
             },
@@ -167,6 +167,7 @@ public:
             }
         }
         updatePaymentFields();
+        startCamera();
     }
 
     ~NewOrderPage() override
@@ -227,14 +228,6 @@ private:
         heading->addWidget(title);
         heading->addStretch(1);
 
-        cameraButton_ = new QPushButton(QStringLiteral("  Scan with camera"), card);
-        cameraButton_->setCursor(Qt::PointingHandCursor);
-        cameraButton_->setFixedHeight(36);
-        cameraButton_->setStyleSheet(QStringLiteral(
-            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
-            " border-radius: 8px; padding: 0 10px; font-size: 10px; font-weight: 600; }"
-            "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
-        heading->addWidget(cameraButton_);
         layout->addLayout(heading);
 
         auto *hint = new QLabel(
@@ -250,7 +243,7 @@ private:
         previewLabel_->setStyleSheet(QStringLiteral(
             "background: #15182A; color: white; border-radius: 10px;"));
         previewLabel_->setText(QStringLiteral("Camera preview"));
-        previewLabel_->hide();
+        previewLabel_->show();
         layout->addWidget(previewLabel_);
 
         auto *entry = new QHBoxLayout;
@@ -373,7 +366,6 @@ private:
             .arg(kInk, kMuted, kLine));
         layout->addWidget(table, 1);
 
-        connect(cameraButton_, &QPushButton::clicked, this, [this]() { toggleCamera(); });
         connect(barcodeEdit_, &QLineEdit::returnPressed, this,
             [this]() { submitBarcode(barcodeEdit_->text()); });
         connect(barcodeEdit_, &QLineEdit::textChanged, this, [this](const QString &text) {
@@ -533,14 +525,10 @@ private:
         return Pos::DataPaths::products();
     }
 
-    void toggleCamera()
+    void startCamera()
     {
-        if (scanner_->isRunning())
-        {
-            stopCamera();
-            setStatus(QStringLiteral("Camera scanning stopped."));
+        if (QGuiApplication::platformName() == QStringLiteral("offscreen"))
             return;
-        }
 
         const QCameraDevice camera = QMediaDevices::defaultVideoInput();
         if (camera.isNull())
@@ -551,8 +539,6 @@ private:
 
         previewLabel_->clear();
         previewLabel_->setText(QStringLiteral("Starting camera..."));
-        previewLabel_->show();
-        cameraButton_->setText(QStringLiteral("  Stop camera"));
 
         QString error;
         if (!scanner_->start(camera, error))
@@ -569,8 +555,6 @@ private:
         scanner_->stop();
         previewLabel_->clear();
         previewLabel_->setText(QStringLiteral("Camera preview"));
-        previewLabel_->hide();
-        cameraButton_->setText(QStringLiteral("  Scan with camera"));
     }
 
     void setStatus(const QString &message, bool isError = false)
@@ -984,7 +968,6 @@ private:
     }
 
     CameraBarcodeScanner *scanner_ = nullptr;
-    QPushButton *cameraButton_ = nullptr;
     QPushButton *descriptionButton_ = nullptr;
     QLabel *merchantLabel_ = nullptr;
     QLineEdit *merchantEdit_ = nullptr;

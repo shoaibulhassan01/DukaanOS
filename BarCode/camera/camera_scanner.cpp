@@ -25,6 +25,10 @@ namespace
 {
     constexpr int kThresholdCount = 5;
     constexpr int kPreviewIntervalMs = 50;
+    // Keep a detected barcode locked until it leaves the frame, avoiding
+    // duplicate additions while allowing the next product to be scanned.
+    constexpr int kResultRetryIntervalMs = 350;
+    constexpr int kResultMissesToRearm = 3;
     // Largest side used for decoding. The camera is asked for ~720p, so live
     // frames are scanned at full resolution: shrinking them made small
     // barcodes (and the short side of portrait frames) too thin to read.
@@ -608,7 +612,9 @@ bool CameraBarcodeScanner::start(const QCameraDevice& device, QString& error)
     resultFound = false;
     receivedFrame = false;
     failedScans = 0;
+    resultMisses = 0;
     previewTimer.invalidate();
+    resultRetryTimer.invalidate();
     camera->setCameraDevice(device);
 
     const QCameraFormat format = pickFormat(device);
@@ -665,7 +671,8 @@ void CameraBarcodeScanner::processFrame(const QVideoFrame& frame)
 
     const bool updatePreview = previewHandler &&
         (!previewTimer.isValid() || previewTimer.elapsed() >= kPreviewIntervalMs);
-    if (!updatePreview && (resultFound || decoding))
+    if (decoding || (!updatePreview && resultFound && resultRetryTimer.isValid() &&
+        resultRetryTimer.elapsed() < kResultRetryIntervalMs))
         return;
 
     const QImage image = frame.toImage();
@@ -688,7 +695,10 @@ void CameraBarcodeScanner::processFrame(const QVideoFrame& frame)
     // Decode on a worker thread. While a decode is still running, new frames
     // are simply dropped (we always scan the freshest frame that arrives
     // after the worker is free), so there is no queue and no lag.
-    if (resultFound || decoding)
+    if (decoding)
+        return;
+    if (resultFound && resultRetryTimer.isValid() &&
+        resultRetryTimer.elapsed() < kResultRetryIntervalMs)
         return;
     decoding = true;
 
@@ -712,11 +722,28 @@ void CameraBarcodeScanner::processFrame(const QVideoFrame& frame)
             if (!self)
                 return;
             self->decoding = false;
-            if (ok && self->running && !self->resultFound)
+            if (!self->running)
+                return;
+            if (ok)
             {
-                self->resultFound = true;
-                if (self->resultHandler)
-                    self->resultHandler(digits);
+                self->resultMisses = 0;
+                self->resultRetryTimer.restart();
+                if (!self->resultFound)
+                {
+                    self->resultFound = true;
+                    if (self->resultHandler)
+                        self->resultHandler(digits);
+                }
+            }
+            else if (self->resultFound)
+            {
+                self->resultRetryTimer.restart();
+                if (++self->resultMisses >= kResultMissesToRearm)
+                {
+                    self->resultFound = false;
+                    self->resultMisses = 0;
+                    self->failedScans = 0;
+                }
             }
         }, Qt::QueuedConnection);
     });
