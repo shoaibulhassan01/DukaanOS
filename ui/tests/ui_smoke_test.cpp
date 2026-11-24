@@ -10,6 +10,7 @@
 
 #include "../ui.h"
 #include "../pages/product_dialog.h"
+#include "../pages/seasons_page.h"
 #include "../theme.h"
 #include "../pages/bill_page.h"
 #include "../pages/dashboard_page.h"
@@ -29,6 +30,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QCompleter>
 #include <QDate>
 #include <QDir>
 #include <QDirIterator>
@@ -603,8 +605,9 @@ void testCategoriesPage(QStackedWidget *stack)
         bool suggestedAcronym = false;
         bool preservedManualAcronym = false;
         bool barcodePreviewReady = false;
+        QString searchResults;
         popupHandler = [&seen, &shownId, &suggestedAcronym, &preservedManualAcronym,
-                           &barcodePreviewReady](QWidget *popup) {
+                           &barcodePreviewReady, &searchResults](QWidget *popup) {
             QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory"));
             QLineEdit *barcode = field(popup, QStringLiteral("Choose a category first"));
             if (!category || !barcode)
@@ -619,6 +622,19 @@ void testCategoriesPage(QStackedWidget *stack)
             seen << QStringLiteral("%1/%2").arg(barcode->isEnabled() ? QStringLiteral("enabled")
                                                                      : QStringLiteral("disabled"),
                         barcode->text());
+            // Search in the picker: by Id, by part of a name, or nothing found.
+            QStringList searched;
+            auto search = [category, &searched](const QString &text) {
+                category->lineEdit()->setText(text);
+                emit category->lineEdit()->editingFinished();
+                searched << category->currentData().toString();
+            };
+            category->completer()->setCompletionPrefix(QStringLiteral("4"));
+            searched << QString::number(category->completer()->completionCount());
+            search(QStringLiteral("20"));        // Id typed in full
+            search(QStringLiteral("dai"));       // only Dairy contains it
+            search(QStringLiteral("zzz"));       // no match: Dairy stays
+            searchResults = searched.join(QLatin1Char(','));
             category->setCurrentIndex(category->findData(QStringLiteral("10")));
             seen << barcode->text();
             barcode->setCursorPosition(2);
@@ -663,8 +679,12 @@ void testCategoriesPage(QStackedWidget *stack)
         check(seen.size() == 6, QStringLiteral("Add product form did not open (or has no category picker)."));
         if (seen.size() == 6)
         {
-            check(seen.at(0).startsWith(QStringLiteral("Select a category | 10 \u00B7 Beverages (BEV) | 20 \u00B7 Bakery (BKY)")),
+            check(seen.at(0).startsWith(QStringLiteral("10 \u00B7 Beverages (BEV) | 20 \u00B7 Bakery (BKY)")),
                 QStringLiteral("The category picker must list every category by Id, saw: %1").arg(seen.at(0)));
+            // "4" is in 34, 40 and 45; "20" picks Bakery; "dai" picks Dairy;
+            // "zzz" finds nothing and keeps Dairy.
+            check(searchResults == QStringLiteral("3,20,56,56"),
+                QStringLiteral("Category search by Id or name gave: %1 (expected 3,20,56,56)").arg(searchResults));
             check(seen.at(1) == QStringLiteral("disabled/"),
                 QStringLiteral("The barcode must stay empty and locked until a category is chosen, saw: %1").arg(seen.at(1)));
             check(seen.at(2) == QStringLiteral("10"),
@@ -689,6 +709,7 @@ void testCategoriesPage(QStackedWidget *stack)
         // Edit product form: shows the category stored for the product.
         QString editSaw;
         bool editPreviewReady = false;
+        int editableMoney = 0;
         QTableWidget *productTable = nullptr;
         for (QTableWidget *t : manager->findChildren<QTableWidget *>())
             if (t->isVisible())
@@ -697,7 +718,7 @@ void testCategoriesPage(QStackedWidget *stack)
         if (productTable && editProduct)
         {
             productTable->selectRow(0);   // P0001 Apple juice, category 10
-            popupHandler = [&editSaw, &editPreviewReady](QWidget *popup) {
+            popupHandler = [&editSaw, &editPreviewReady, &editableMoney](QWidget *popup) {
                 if (!button(popup, QStringLiteral("Save changes")))
                     return false;
                 QLabel *preview = popup->findChild<QLabel *>(QStringLiteral("barcodePreview"));
@@ -707,6 +728,10 @@ void testCategoriesPage(QStackedWidget *stack)
                 if (QComboBox *category = popup->findChild<QComboBox *>(QStringLiteral("productCategory")))
                     editSaw = category->currentText()
                         + (category->isEnabled() ? QStringLiteral(" (editable)") : QString());
+                // Price, tax and discount can be edited (req 6).
+                for (QLineEdit *money : popup->findChildren<QLineEdit *>())
+                    if (money->placeholderText() == QStringLiteral("e.g. 250.00") && money->isEnabled())
+                        ++editableMoney;
                 if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
                     cancel->click();
                 popupHandler = nullptr;
@@ -720,6 +745,8 @@ void testCategoriesPage(QStackedWidget *stack)
             QStringLiteral("Edit product form must show the stored category, locked; saw: %1").arg(editSaw));
         check(editPreviewReady,
             QStringLiteral("Edit product must use the Add product layout with its barcode preview."));
+        check(editableMoney == 3,
+            QStringLiteral("Edit product: price, tax and discount must be editable, %1 of 3 are.").arg(editableMoney));
 
         QVector<Pos::Product> products;
         QString error;
@@ -833,7 +860,8 @@ void testCategoriesPage(QStackedWidget *stack)
 // Reports page (Increment 3, req 11): both of Umar's reports show what the
 // report logic (tested in ReportTest) calculates from the sample data.
 // Pop-up forms in dark mode: the Add / Edit product forms (with the barcode
-// preview filled in) and the Add category form opened from them. Their
+// preview filled in), the Add category form opened from them, and the Add
+// season form. Their
 // colours are not covered by visiting the pages.
 void testFormsInDarkMode()
 {
@@ -895,8 +923,29 @@ void testFormsInDarkMode()
         settle();
     }
     popupHandler = nullptr;
+
+    // Add season form (Seasons page), cancelled without saving.
+    QWidget *seasons = UiPages::createSeasonsPage();
+    seasons->show();
+    settle();
+    popupHandler = [&opened](QWidget *popup) {
+        if (!button(popup, QStringLiteral("Add season")))
+            return false;
+        opened << QStringLiteral("Add season");
+        checkNoLightBackgrounds(popup, QStringLiteral("Add season form"));
+        if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
+            cancel->click();
+        popupHandler = nullptr;
+        return true;
+    };
+    if (QPushButton *addSeason = button(seasons, QStringLiteral("+ Add Season")))
+        addSeason->click();
+    settle();
+    popupHandler = nullptr;
+    delete seasons;
+
     check(opened == QStringList({ QStringLiteral("Add product"), QStringLiteral("Add category"),
-                                  QStringLiteral("Edit product") }),
+                                  QStringLiteral("Edit product"), QStringLiteral("Add season") }),
         QStringLiteral("Dark-mode form check: expected Add product, Add category and Edit product to open, got: %1")
             .arg(opened.join(QStringLiteral(", "))));
     UiTheme::setDark(false);

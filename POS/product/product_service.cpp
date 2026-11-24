@@ -319,9 +319,9 @@ bool addProduct(QString productFile, Product product, QString &error, QString *a
     return true;
 }
 
-// Owner: Umar Khan - change only price, discount and quantity.
+// Owner: Umar Khan - change only price, tax, discount and quantity.
 bool updateProduct(QString productFile, QString productId, double unitPrice,
-    double discountPerUnit, int quantity, QString &error)
+    double tax, double discountPerUnit, int quantity, QString &error)
 {
     QVector<Product> products;
     if (!loadForEdit(productFile, products, error))
@@ -336,6 +336,7 @@ bool updateProduct(QString productFile, QString productId, double unitPrice,
 
     Product updated = products.at(index);
     updated.unitPrice = unitPrice;
+    updated.tax = tax;
     updated.discountPerUnit = discountPerUnit;
     updated.quantity = quantity;
     if (!validateProduct(updated, error))
@@ -400,8 +401,22 @@ bool deleteProduct(QString productFile, QString orderDetailFile, QString product
         return false;
     }
 
+    const QString image = products.at(index).barcodeImage;
     products.removeAt(index);
-    return saveProducts(productFile, products, error);
+    if (!saveProducts(productFile, products, error))
+        return false;
+
+    // The picture shows this product's name, so a new product that reuses
+    // the barcode must not inherit it. Only the file name is used, so
+    // nothing outside the barcodes folder can be removed.
+    bool shared = false;
+    for (const Product &product : products)
+        shared = shared || product.barcodeImage == image;
+    const QString fileName = QFileInfo(image).fileName();
+    if (!shared && !fileName.isEmpty())
+        QFile::remove(QFileInfo(productFile).absoluteDir()
+            .filePath(QStringLiteral("barcodes/") + fileName));
+    return true;
 }
 
 // Owner: Umar Khan - simple contains-search over the identifying fields.
