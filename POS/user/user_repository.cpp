@@ -6,6 +6,16 @@
 #include <QSaveFile>
 #include <QTextStream>
 
+#include <limits>
+
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <bcrypt.h>
+#endif
+
 namespace Pos
 {
 namespace
@@ -28,9 +38,59 @@ bool isValidCredential(const QString &value)
     return true;
 }
 
-QByteArray hmacSha256(const QByteArray &key, const QByteArray &message)
+QByteArray hmacSha256(QCryptographicHash &hash, const QByteArray &innerKey,
+    const QByteArray &outerKey, const QByteArray &message)
 {
-    QByteArray normalizedKey = key;
+    hash.reset();
+    hash.addData(innerKey);
+    hash.addData(message);
+    const QByteArray innerHash = hash.result();
+
+    hash.reset();
+    hash.addData(outerKey);
+    hash.addData(innerHash);
+    return hash.result();
+}
+
+bool pbkdf2Sha256(const QByteArray &password, const QByteArray &salt, int iterations,
+    QByteArray &result, QString &error)
+{
+#ifdef Q_OS_WIN
+    if (quint64(password.size()) > std::numeric_limits<ULONG>::max())
+    {
+        error = QStringLiteral("Password is too long to hash.");
+        return false;
+    }
+
+    BCRYPT_ALG_HANDLE algorithm = nullptr;
+    NTSTATUS status = BCryptOpenAlgorithmProvider(
+        &algorithm, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG);
+    if (status < 0)
+    {
+        error = QStringLiteral("The system password hashing service is unavailable (code %1).")
+            .arg(QString::number(quint32(status), 16));
+        return false;
+    }
+
+    QByteArray derived(32, Qt::Uninitialized);
+    status = BCryptDeriveKeyPBKDF2(algorithm,
+        reinterpret_cast<PUCHAR>(const_cast<char *>(password.constData())),
+        ULONG(password.size()),
+        reinterpret_cast<PUCHAR>(const_cast<char *>(salt.constData())),
+        ULONG(salt.size()), ULONGLONG(iterations),
+        reinterpret_cast<PUCHAR>(derived.data()), ULONG(derived.size()), 0);
+    BCryptCloseAlgorithmProvider(algorithm, 0);
+    if (status < 0)
+    {
+        error = QStringLiteral("Password hashing failed (code %1).")
+            .arg(QString::number(quint32(status), 16));
+        return false;
+    }
+    result = derived;
+    error.clear();
+    return true;
+#else
+    QByteArray normalizedKey = password;
     if (normalizedKey.size() > 64)
         normalizedKey = QCryptographicHash::hash(normalizedKey, QCryptographicHash::Sha256);
 
@@ -42,27 +102,25 @@ QByteArray hmacSha256(const QByteArray &key, const QByteArray &message)
         outerKey[i] = char(quint8(outerKey.at(i)) ^ quint8(normalizedKey.at(i)));
     }
 
-    const QByteArray innerHash = QCryptographicHash::hash(
-        innerKey + message, QCryptographicHash::Sha256);
-    return QCryptographicHash::hash(outerKey + innerHash, QCryptographicHash::Sha256);
-}
+    QCryptographicHash hash(QCryptographicHash::Sha256);
 
-QByteArray pbkdf2Sha256(const QByteArray &password, const QByteArray &salt, int iterations)
-{
     QByteArray blockInput = salt;
     blockInput.append("\0\0\0\1", 4);
-    QByteArray digest = hmacSha256(password, blockInput);
-    QByteArray result = digest;
+    QByteArray digest = hmacSha256(hash, innerKey, outerKey, blockInput);
+    QByteArray derived = digest;
     for (int i = 1; i < iterations; ++i)
     {
-        digest = hmacSha256(password, digest);
-        for (qsizetype byte = 0; byte < result.size(); ++byte)
-            result[byte] = char(quint8(result.at(byte)) ^ quint8(digest.at(byte)));
+        digest = hmacSha256(hash, innerKey, outerKey, digest);
+        for (qsizetype byte = 0; byte < derived.size(); ++byte)
+            derived[byte] = char(quint8(derived.at(byte)) ^ quint8(digest.at(byte)));
     }
-    return result;
+    result = derived;
+    error.clear();
+    return true;
+#endif
 }
 
-QString makePasswordHash(const QString &password)
+bool makePasswordHash(const QString &password, QString &hash, QString &error)
 {
     QByteArray salt;
     salt.reserve(16);
@@ -75,11 +133,15 @@ QString makePasswordHash(const QString &password)
         salt.append(char(value));
     }
 
-    return QString::fromLatin1(passwordHashPrefix)
+    QByteArray derived;
+    if (!pbkdf2Sha256(password.toUtf8(), salt, passwordHashIterations, derived, error))
+        return false;
+
+    hash = QString::fromLatin1(passwordHashPrefix)
         + QString::number(passwordHashIterations) + QLatin1Char('$')
         + QString::fromLatin1(salt.toHex()) + QLatin1Char('$')
-        + QString::fromLatin1(pbkdf2Sha256(password.toUtf8(), salt,
-              passwordHashIterations).toHex());
+        + QString::fromLatin1(derived.toHex());
+    return true;
 }
 
 bool constantTimeEquals(const QByteArray &left, const QByteArray &right)
@@ -185,8 +247,10 @@ bool findUser(QVector<User> users, QString username, User &user)
     return false;
 }
 
-bool verifyPassword(QString storedPassword, QString password)
+bool verifyPassword(QString storedPassword, QString password, QString *error)
 {
+    if (error)
+        error->clear();
     if (!isPasswordHash(storedPassword))
         return storedPassword == password;
 
@@ -204,7 +268,14 @@ bool verifyPassword(QString storedPassword, QString password)
         return false;
     }
 
-    const QByteArray actual = pbkdf2Sha256(password.toUtf8(), salt, iterations);
+    QByteArray actual;
+    QString deriveError;
+    if (!pbkdf2Sha256(password.toUtf8(), salt, iterations, actual, deriveError))
+    {
+        if (error)
+            *error = deriveError;
+        return false;
+    }
     return constantTimeEquals(actual, expected);
 }
 
@@ -220,7 +291,8 @@ bool updateUserPassword(QString filePath, QString username, QString password,
     {
         if (user.username == username)
         {
-            user.password = makePasswordHash(password);
+            if (!makePasswordHash(password, user.password, error))
+                return false;
             updated = true;
             break;
         }
@@ -260,9 +332,17 @@ bool createCashierAccount(QString filePath, QString username, QString password,
     for (User &user : users)
     {
         if (!isPasswordHash(user.password))
-            user.password = makePasswordHash(user.password);
+        {
+            QString hashedPassword;
+            if (!makePasswordHash(user.password, hashedPassword, error))
+                return false;
+            user.password = hashedPassword;
+        }
     }
-    users.append({username, makePasswordHash(password), QStringLiteral("cashier")});
+    QString hashedPassword;
+    if (!makePasswordHash(password, hashedPassword, error))
+        return false;
+    users.append({username, hashedPassword, QStringLiteral("cashier")});
     return saveUsers(filePath, users, error);
 }
 }

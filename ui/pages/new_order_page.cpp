@@ -31,6 +31,8 @@
 #include <QMediaDevices>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QTableWidgetItem>
 #include <QTableWidget>
 #include <QTimer>
@@ -44,6 +46,12 @@ const QString kNavy = QStringLiteral("#111184");
 const QString kInk = QStringLiteral("#20233B");
 const QString kMuted = QStringLiteral("#777B91");
 const QString kLine = QStringLiteral("#E7E9F3");
+
+bool isSixDigitBarcode(const QString &barcode)
+{
+    static const QRegularExpression pattern(QStringLiteral("^[0-9]{6}$"));
+    return pattern.match(barcode).hasMatch();
+}
 
 QFrame *createCard(QWidget *parent)
 {
@@ -277,7 +285,7 @@ private:
         layout->addLayout(heading);
 
         auto *hint = new QLabel(
-            QStringLiteral("Scan or enter a barcode; a matched product is added automatically."),
+            QStringLiteral("Camera scans automatically. Enter a 6-digit barcode and click Add item."),
             card);
         hint->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
@@ -296,15 +304,29 @@ private:
         entry->setSpacing(9);
         barcodeEdit_ = new QLineEdit(card);
         barcodeEdit_->setPlaceholderText(QStringLiteral("Enter product barcode"));
+        barcodeEdit_->setMaxLength(6);
+        barcodeEdit_->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("[0-9]{0,6}")), barcodeEdit_));
         barcodeEdit_->setFixedHeight(42);
         barcodeEdit_->setStyleSheet(fieldStyle());
         entry->addWidget(barcodeEdit_, 1);
+        auto *addBarcodeButton = new QPushButton(QStringLiteral("Add item"), card);
+        addBarcodeButton->setCursor(Qt::PointingHandCursor);
+        addBarcodeButton->setFixedSize(92, 42);
+        addBarcodeButton->setToolTip(QStringLiteral("Look up and add the entered 6-digit barcode."));
+        addBarcodeButton->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #111184; color: white; border: none;"
+            " border-radius: 9px; font-size: 11px; font-weight: 700; }"
+            "QPushButton:hover { background: #0D0D6B; }"));
+        entry->addWidget(addBarcodeButton);
         barcodeLookupTimer_ = new QTimer(this);
         barcodeLookupTimer_->setSingleShot(true);
         barcodeLookupTimer_->setInterval(250);
         connect(barcodeLookupTimer_, &QTimer::timeout, this, [this]() {
-            submitBarcode(barcodeEdit_->text());
+            lookupBarcode(barcodeEdit_->text());
         });
+        connect(addBarcodeButton, &QPushButton::clicked, this,
+            [this]() { submitBarcode(barcodeEdit_->text()); });
 
         // Quantity stepper:  [ - ]  qty  [ + ]  (type a number or click).
         auto *stepper = new QFrame(card);
@@ -656,6 +678,14 @@ private:
     void submitBarcode(QString barcode)
     {
         barcodeLookupTimer_->stop();
+        barcode = barcode.trimmed();
+        if (!isSixDigitBarcode(barcode))
+        {
+            hasMatchedProduct_ = false;
+            matchLabel_->hide();
+            setStatus(QStringLiteral("Barcode must contain exactly 6 digits."), true);
+            return;
+        }
         lookupBarcode(barcode);
         if (hasMatchedProduct_)
             addProductToCart();

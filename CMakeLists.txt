@@ -6,7 +6,7 @@ project(DukaanOS LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Multimedia Concurrent)
 get_filename_component(QT_INSTALL_PREFIX "${Qt6_DIR}/../../.." ABSOLUTE)
 
 qt_standard_project_setup()
@@ -68,6 +68,9 @@ target_include_directories(PosLogic PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/BarCode"
 )
 target_link_libraries(PosLogic PUBLIC Qt6::Gui)
+if(WIN32)
+    target_link_libraries(PosLogic PUBLIC bcrypt)
+endif()
 
 set(DUKAANOS_ASSETS
     ui/assets/app_icon.png
@@ -97,6 +100,7 @@ target_link_libraries(DukaanOS PRIVATE
     PosLogic
     Qt6::Widgets
     Qt6::Multimedia
+    Qt6::Concurrent
 )
 
 set_target_properties(DukaanOS PROPERTIES
@@ -279,6 +283,7 @@ if(BUILD_TESTING)
         PosLogic
         Qt6::Widgets
         Qt6::Multimedia
+        Qt6::Concurrent
     )
 
     set_target_properties(UiSmokeTest PROPERTIES

@@ -47,6 +47,7 @@
 #include <QTextStream>
 #include <QTableWidget>
 #include <QTimer>
+#include <QValidator>
 
 #include <functional>
 #include <memory>
@@ -117,6 +118,28 @@ QLineEdit *field(QWidget *root, const QString &placeholder)
         if (e->isVisible() && e->placeholderText().startsWith(placeholder))
             return e;
     return nullptr;
+}
+
+void checkBarcodeField(QWidget *root, const QString &page)
+{
+    QLineEdit *barcode = field(root, QStringLiteral("Enter product barcode"));
+    check(barcode, QStringLiteral("%1: barcode field is missing.").arg(page));
+    if (!barcode)
+        return;
+
+    check(barcode->maxLength() == 6 && barcode->validator(),
+        QStringLiteral("%1: barcode entry must be limited to six digits.").arg(page));
+    if (!barcode->validator())
+        return;
+
+    int position = 0;
+    QString sixDigits = QStringLiteral("123456");
+    check(barcode->validator()->validate(sixDigits, position) == QValidator::Acceptable,
+        QStringLiteral("%1: valid six-digit barcodes must be accepted.").arg(page));
+    QString nonDigits = QStringLiteral("12a456");
+    position = 0;
+    check(barcode->validator()->validate(nonDigits, position) == QValidator::Invalid,
+        QStringLiteral("%1: non-digit barcode input must be rejected.").arg(page));
 }
 
 QPushButton *themeButton(QWidget *root)
@@ -220,8 +243,15 @@ void visitAllPages(QWidget *dashboard, const QString &who)
         check(hasLabel(dashboard, page),
             QStringLiteral("%1: the %2 page did not open.").arg(who, page));
         if (page == QStringLiteral("New Order") || page == QStringLiteral("Scan Product"))
+        {
             check(button(dashboard, QStringLiteral("Upload image")),
                 QStringLiteral("%1 %2 page must offer barcode image upload.").arg(who, page));
+            checkBarcodeField(dashboard, page);
+            const QString action = page == QStringLiteral("New Order")
+                ? QStringLiteral("Add item") : QStringLiteral("Look up");
+            check(button(dashboard, action),
+                QStringLiteral("%1 %2 page must offer a manual barcode action.").arg(who, page));
+        }
         if (UiTheme::isDark())
             checkNoLightBackgrounds(dashboard, QStringLiteral("%1 %2").arg(who, page));
     }
@@ -1115,8 +1145,8 @@ void testSale(QStackedWidget *stack)
     QLineEdit *customer = field(cashier, QStringLiteral("Enter customer name"));
     QLineEdit *barcode = field(cashier, QStringLiteral("Enter product barcode"));
     check(customer && barcode, QStringLiteral("New Order: customer or barcode field missing."));
-    check(!button(cashier, QStringLiteral("Add item")),
-        QStringLiteral("New Order should add products without an Add item button."));
+    QPushButton *addItem = button(cashier, QStringLiteral("Add item"));
+    check(addItem, QStringLiteral("New Order: no Add item button beside the barcode field."));
     QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
     check(hold && !hold->isEnabled(),
         QStringLiteral("Hold order should be visible but disabled while the cart is empty."));
@@ -1125,8 +1155,13 @@ void testSale(QStackedWidget *stack)
     customer->setText(QStringLiteral("CI Test"));
     barcode->setText(QStringLiteral("100001"));
     waitFor(400);
+    check(hold && !hold->isEnabled(),
+        QStringLiteral("Typing a barcode must not add it until Add item is clicked."));
+    if (addItem)
+        addItem->click();
+    settle();
     check(showsText(cashier, QStringLiteral("100001")),
-        QStringLiteral("Entering a complete barcode must add the matched product automatically."));
+        QStringLiteral("Clicking Add item must add the matched product."));
     check(hold && hold->isEnabled(),
         QStringLiteral("Hold order should become available as soon as a product is added."));
 
@@ -1484,10 +1519,11 @@ int main(int argc, char *argv[])
 {
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))
         qputenv("QT_QPA_PLATFORM", "offscreen");
-    qputenv("DUKAANOS_THEME", "light");   // start the same on every machine
+    qunsetenv("DUKAANOS_THEME");
 
     QApplication app(argc, argv);
     UiTheme::install(app);
+    check(!UiTheme::isDark(), QStringLiteral("The app must start in light mode by default."));
 
     QTemporaryDir work;
     if (!work.isValid() ||

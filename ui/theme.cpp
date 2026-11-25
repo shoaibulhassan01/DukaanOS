@@ -17,7 +17,6 @@
 namespace
 {
 bool g_dark = false;
-bool g_userChose = false;   // true after the sun / moon button was used
 
 // Light colour -> dark colour, for text.
 const QHash<QString, QString> &textMap()
@@ -173,18 +172,14 @@ protected:
     }
 };
 
-bool systemIsDark()
+bool startingModeIsDark()
 {
     const QString forced = qEnvironmentVariable("DUKAANOS_THEME").toLower();
     if (forced == QLatin1String("dark"))
         return true;
     if (forced == QLatin1String("light"))
         return false;
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    return QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
-#else
     return false;
-#endif
 }
 
 QPalette makePalette(bool dark)
@@ -299,8 +294,7 @@ void applyMode(QApplication &app, bool dark)
     app.setPalette(makePalette(dark));
 #if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
     // Window title bar and native dialogs in the same mode as the app.
-    if (g_userChose)
-        QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
+    QGuiApplication::styleHints()->setColorScheme(dark ? Qt::ColorScheme::Dark : Qt::ColorScheme::Light);
 #endif
 
     // Re-theme everything that already exists.
@@ -324,20 +318,11 @@ void applyMode(QApplication &app, bool dark)
 void UiTheme::install(QApplication &app)
 {
     app.installEventFilter(new ThemeFilter(&app));
-    applyMode(app, systemIsDark());
-#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
-    // Follow Windows live, until the user picks a mode with the button.
-    QObject::connect(QGuiApplication::styleHints(), &QStyleHints::colorSchemeChanged, &app,
-        [&app]() {
-            if (!g_userChose)
-                applyMode(app, systemIsDark());
-        });
-#endif
+    applyMode(app, startingModeIsDark());
 }
 
 void UiTheme::setDark(bool dark)
 {
-    g_userChose = true;
     if (auto *app = qobject_cast<QApplication *>(QCoreApplication::instance()))
         applyMode(*app, dark);
 }

@@ -10,6 +10,7 @@
 #include <QDir>
 #include <QFileInfo>
 #include <QFontMetrics>
+#include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -26,6 +27,7 @@
 #include <QResizeEvent>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QtConcurrent/QtConcurrentRun>
 #include <utility>
 
 namespace
@@ -39,6 +41,13 @@ enum class Icon
     Login,
     Shield,
     Refresh
+};
+
+struct AuthenticationResult
+{
+    bool authenticated = false;
+    Pos::User user;
+    QString error;
 };
 
 void drawUserShape(QPainter &p)
@@ -448,16 +457,16 @@ private:
         captcha_ = new CaptchaWidget(formWidget);
         captchaRow->addWidget(captcha_, 1);
 
-        auto *refreshButton = new QPushButton(formWidget);
-        refreshButton->setIcon(QIcon(drawIcon(Icon::Refresh, iconColor, 24)));
-        refreshButton->setIconSize(QSize(24, 24));
-        refreshButton->setToolTip(QStringLiteral("New question"));
-        refreshButton->setCursor(Qt::PointingHandCursor);
-        refreshButton->setFixedSize(60, 60);
-        refreshButton->setStyleSheet(QStringLiteral(
+        refreshButton_ = new QPushButton(formWidget);
+        refreshButton_->setIcon(QIcon(drawIcon(Icon::Refresh, iconColor, 24)));
+        refreshButton_->setIconSize(QSize(24, 24));
+        refreshButton_->setToolTip(QStringLiteral("New question"));
+        refreshButton_->setCursor(Qt::PointingHandCursor);
+        refreshButton_->setFixedSize(60, 60);
+        refreshButton_->setStyleSheet(QStringLiteral(
             "QPushButton { background: #F5F7FB; border: 1px solid #CFD9F2; border-radius: 14px; }"
             "QPushButton:hover { background: #E8EEFF; }"));
-        captchaRow->addWidget(refreshButton);
+        captchaRow->addWidget(refreshButton_);
         form->addLayout(captchaRow);
         form->addSpacing(10);
 
@@ -477,23 +486,23 @@ private:
         form->addWidget(notice_);
         form->addSpacing(8);
 
-        auto *loginButton = new QPushButton(QStringLiteral("  Login"), formWidget);
-        loginButton->setIcon(QIcon(drawIcon(Icon::Login, Qt::white, 22)));
-        loginButton->setIconSize(QSize(22, 22));
-        loginButton->setCursor(Qt::PointingHandCursor);
-        loginButton->setFixedHeight(54);
-        loginButton->setStyleSheet(QStringLiteral(
+        loginButton_ = new QPushButton(QStringLiteral("  Login"), formWidget);
+        loginButton_->setIcon(QIcon(drawIcon(Icon::Login, Qt::white, 22)));
+        loginButton_->setIconSize(QSize(22, 22));
+        loginButton_->setCursor(Qt::PointingHandCursor);
+        loginButton_->setFixedHeight(54);
+        loginButton_->setStyleSheet(QStringLiteral(
             "QPushButton { background: #111184; color: white; border: none;"
             " border-radius: 14px; font-size: 15px; font-weight: 700; }"
             "QPushButton:hover { background: #0D0D6B; }"
             "QPushButton:pressed { background: #090957; }"));
-        form->addWidget(loginButton);
+        form->addWidget(loginButton_);
 
-        connect(refreshButton, &QPushButton::clicked, this, [this]() { newQuestion(); });
+        connect(refreshButton_, &QPushButton::clicked, this, [this]() { newQuestion(); });
         connect(usernameEdit_, &QLineEdit::returnPressed, this, [this]() { passwordEdit_->setFocus(); });
         connect(passwordEdit_, &QLineEdit::returnPressed, this, [this]() { answerEdit_->setFocus(); });
         connect(answerEdit_, &QLineEdit::returnPressed, this, [this]() { attemptLogin(); });
-        connect(loginButton, &QPushButton::clicked, this, [this]() { attemptLogin(); });
+        connect(loginButton_, &QPushButton::clicked, this, [this]() { attemptLogin(); });
 
         panelLayout->addWidget(formWidget, 8, Qt::AlignVCenter);
         panelLayout->addStretch(1);
@@ -531,6 +540,9 @@ private:
 
     void attemptLogin()
     {
+        if (loginInProgress_)
+            return;
+
         if (usernameEdit_->text().trimmed().isEmpty() || passwordEdit_->text().isEmpty())
         {
             showNotice(QStringLiteral("Enter your username and password."));
@@ -551,21 +563,49 @@ private:
             return;
         }
 
-        Pos::User loggedInUser;
-        QString error;
+        const QString username = usernameEdit_->text().trimmed();
+        const QString password = passwordEdit_->text();
         const QString filePath = usersFilePath();
-        if (!Pos::login(filePath, usernameEdit_->text().trimmed(),
-                passwordEdit_->text(), loggedInUser, error))
-        {
-            showNotice(error);
-            return;
-        }
+        loginInProgress_ = true;
+        usernameEdit_->setEnabled(false);
+        passwordEdit_->setEnabled(false);
+        answerEdit_->setEnabled(false);
+        captcha_->setEnabled(false);
+        refreshButton_->setEnabled(false);
+        loginButton_->setEnabled(false);
+        showNotice(QStringLiteral("Checking your credentials..."), false);
 
-        passwordEdit_->clear();
-        answerEdit_->clear();
-        showNotice(QStringLiteral("Welcome, %1.").arg(loggedInUser.username), false);
-        if (onAuthenticated_)
-            onAuthenticated_(loggedInUser.role);
+        auto *watcher = new QFutureWatcher<AuthenticationResult>(this);
+        connect(watcher, &QFutureWatcher<AuthenticationResult>::finished, this,
+            [this, watcher]() {
+                const AuthenticationResult result = watcher->result();
+                watcher->deleteLater();
+                loginInProgress_ = false;
+                usernameEdit_->setEnabled(true);
+                passwordEdit_->setEnabled(true);
+                answerEdit_->setEnabled(true);
+                captcha_->setEnabled(true);
+                refreshButton_->setEnabled(true);
+                loginButton_->setEnabled(true);
+
+                if (!result.authenticated)
+                {
+                    showNotice(result.error);
+                    return;
+                }
+
+                passwordEdit_->clear();
+                answerEdit_->clear();
+                showNotice(QStringLiteral("Welcome, %1.").arg(result.user.username), false);
+                if (onAuthenticated_)
+                    onAuthenticated_(result.user.role);
+            });
+        watcher->setFuture(QtConcurrent::run([filePath, username, password]() {
+            AuthenticationResult result;
+            result.authenticated = Pos::login(filePath, username, password,
+                result.user, result.error);
+            return result;
+        }));
     }
 
     QString usersFilePath() const
@@ -580,6 +620,8 @@ private:
 
     QPixmap background_;
     QPushButton *themeButton_ = nullptr;
+    QPushButton *refreshButton_ = nullptr;
+    QPushButton *loginButton_ = nullptr;
     QPixmap scaledBackground_;
     QPixmap logo_;
     QLabel *logoLabel_ = nullptr;
@@ -588,6 +630,7 @@ private:
     QLineEdit *answerEdit_ = nullptr;
     CaptchaWidget *captcha_ = nullptr;
     QLabel *notice_ = nullptr;
+    bool loginInProgress_ = false;
     std::function<void(const QString &)> onAuthenticated_;
 };
 }
