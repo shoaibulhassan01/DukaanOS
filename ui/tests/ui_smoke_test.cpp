@@ -1641,27 +1641,15 @@ void testSale(QStackedWidget *stack)
 
     // A newly created dashboard after sign-out must reload the held order from disk.
     cashier = openDashboard(stack, QStringLiteral("Cashier"));
-    QPushButton *resumeQuickAction = nullptr;
+    // Held orders are resumed from the Held Orders page only; the separate
+    // "Resume latest order" card was removed from the dashboard.
+    bool resumeQuickAction = false;
     for (QPushButton *candidate : cashier->findChildren<QPushButton *>())
         if (candidate->isVisible()
             && candidate->accessibleName() == QStringLiteral("Resume latest order"))
-            resumeQuickAction = candidate;
-    check(resumeQuickAction,
-        QStringLiteral("Dashboard should offer direct resume when an order is held."));
-    if (resumeQuickAction)
-    {
-        resumeQuickAction->click();
-        settle();
-        check(hasLabel(cashier, QStringLiteral("New Order")),
-            QStringLiteral("The dashboard Resume action should open New Order directly."));
-        QPushButton *dashboard = button(cashier, QStringLiteral("Dashboard"));
-        check(dashboard, QStringLiteral("Cashier: no Dashboard navigation button."));
-        if (dashboard)
-        {
-            dashboard->click();
-            settle();
-        }
-    }
+            resumeQuickAction = true;
+    check(!resumeQuickAction,
+        QStringLiteral("Dashboard should not show a Resume latest order card; Held Orders covers it."));
     QPushButton *heldOrders = button(cashier, QStringLiteral("Held Orders"));
     check(heldOrders, QStringLiteral("Cashier: no Held Orders button after signing in again."));
     if (!heldOrders)
