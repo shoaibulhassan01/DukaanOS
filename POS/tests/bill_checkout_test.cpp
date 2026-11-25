@@ -102,6 +102,21 @@ static void testBillCalculations()
     }, seasonalBill, error, 10));
     CHECK(seasonalBill.seasonalDiscount == 107.70
         && seasonalBill.totalPayable == 969.30);
+
+    Bill specialBill;
+    CHECK(buildBill("000000003", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2},
+        {makeProduct("P002", "100002", "SUGR1KG", 160, 8, 5, 40), 3}
+    }, specialBill, error, 10, 8));
+    CHECK(specialBill.seasonalDiscount == 107.70
+        && specialBill.specialDiscount == 77.54
+        && specialBill.totalPayable == 891.76);
+    CHECK(!buildBill("000000004", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2}
+    }, specialBill, error, 0, 0.5));
+    CHECK(!buildBill("000000005", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2}
+    }, specialBill, error, 0, 9));
 }
 
 static void testBillRepository(const QString &dir)
@@ -182,6 +197,12 @@ static void testCheckout(const QString &dir)
     CheckoutRequest noMerchant = request;
     noMerchant.merchant.clear();
     CHECK(!generateBill(noMerchant, result, error) && !error.isEmpty());
+    CheckoutRequest excessiveDiscount = request;
+    excessiveDiscount.specialDiscountPercentage = 9;
+    CHECK(!generateBill(excessiveDiscount, result, error) && !error.isEmpty());
+    CheckoutRequest fractionalDiscount = request;
+    fractionalDiscount.specialDiscountPercentage = 0.5;
+    CHECK(!generateBill(fractionalDiscount, result, error) && !error.isEmpty());
     CHECK(readLines("Data/Order.txt").isEmpty());
     CHECK(readLines("Data/Bill.txt").isEmpty());
 
@@ -193,6 +214,15 @@ static void testCheckout(const QString &dir)
         .match(result.bill.id).hasMatch());
     CHECK(result.bill.amountReceived == 1077
         && result.bill.balanceReturned == 0);
+
+    CartTotals onePercentTotals;
+    CHECK(calculateCartTotals(request.items, onePercentTotals, error, 1));
+    CHECK(onePercentTotals.specialDiscount == 10.77
+        && onePercentTotals.payable == 1066.23);
+    CartTotals eightPercentTotals;
+    CHECK(calculateCartTotals(request.items, eightPercentTotals, error, 8));
+    CHECK(eightPercentTotals.specialDiscount == 86.16
+        && eightPercentTotals.payable == 990.84);
 
     const QStringList orderLines = readLines("Data/Order.txt");
     const QStringList detailLines = readLines("Data/OrderDetail.txt");
@@ -257,14 +287,23 @@ static void testCheckout(const QString &dir)
     CHECK(calculateCartTotals(seasonalRequest.items, activeTotals, error));
     CHECK(activeTotals.seasonalDiscount == 107.70
         && activeTotals.payable == 969.30);
+    seasonalRequest.specialDiscountPercentage = 8;
+    seasonalRequest.amountPaid = 891.76;
     CheckoutResult seasonalResult;
     CHECK(generateBill(seasonalRequest, seasonalResult, error));
     CHECK(seasonalResult.bill.seasonalDiscount == 107.70
-        && seasonalResult.bill.totalPayable == 969.30);
+        && seasonalResult.bill.specialDiscount == 77.54
+        && seasonalResult.bill.totalPayable == 891.76);
     CHECK(seasonalResult.totals.seasonalDiscount == 107.70
-        && seasonalResult.totals.payable == 969.30);
-    CHECK(seasonalResult.bill.amountReceived == 969.30
+        && seasonalResult.totals.specialDiscount == 77.54
+        && seasonalResult.totals.payable == 891.76);
+    CHECK(seasonalResult.bill.amountReceived == 891.76
         && seasonalResult.bill.balanceReturned == 0);
+    Bill savedSpecialBill;
+    CHECK(readBill("Data/Bill.txt", "Data/BillDetail.txt",
+        seasonalResult.bill.id, savedSpecialBill, error));
+    CHECK(savedSpecialBill.specialDiscount == 77.54
+        && savedSpecialBill.totalPayable == 891.76);
 }
 
 static void testHeldOrderResume(const QString &dir)

@@ -135,6 +135,8 @@ bool parseBillLine(const QString &line, Bill &bill)
         || !validMoney(parsed.balanceReturned)
         || !validMoney(parsed.seasonalDiscount)
         || !validMoney(parsed.specialDiscount)
+        || parsed.specialDiscount
+            > (parsed.totalWithoutTax + parsed.totalTax) * 0.08 + 0.005
         || round2(parsed.totalWithoutTax + parsed.totalTax - parsed.totalDiscount
             - parsed.seasonalDiscount - parsed.specialDiscount)
             != parsed.totalPayable
@@ -290,6 +292,8 @@ bool validateBill(const Bill &bill, QString &error)
         || !validMoney(bill.balanceReturned)
         || !validMoney(bill.seasonalDiscount)
         || !validMoney(bill.specialDiscount)
+        || bill.specialDiscount
+            > (bill.totalWithoutTax + bill.totalTax) * 0.08 + 0.005
         || round2(bill.totalWithoutTax + bill.totalTax - bill.totalDiscount
             - bill.seasonalDiscount - bill.specialDiscount)
             != bill.totalPayable

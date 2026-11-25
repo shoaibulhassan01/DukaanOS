@@ -87,10 +87,11 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 | Product.txt | id, barcode (category id + 4-digit sequence), acronym (max 8), name, unit, unit price, tax (PKR), discount per unit, available quantity, barcode image path, category id |
 | Order.txt | order id (8 digits), date, time, customer name, contact, status, payment amount, payment mode, merchant |
 | OrderDetail.txt | order id, product id, barcode, quantity |
-| Bill.txt | bill id (9 digits), customer name, order id, acronym, unit price, discount per unit, quantity, total without tax, total tax, total discount, total payable, status |
+| Bill.txt | bill id (9 digits), customer name, order id, total without tax, total tax, total discount, total payable, amount received, balance returned, status, seasonal discount amount, special discount amount, date, time |
 | Users.txt | username, password, role |
 
 Order status: `in-progress`, `on-hold`, `paid`, `archived`. Payment mode: `cash`, `card`, `wallet`.
+At checkout, cashiers can optionally apply a 1%-8% special discount; the bill stores the discount amount after product and seasonal discounts.
 
 ### Order reports and editing (POS service API)
 
