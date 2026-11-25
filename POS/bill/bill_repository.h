@@ -18,4 +18,10 @@ bool readBillForOrder(QString billFile, QString detailFile, QString orderId,
 // Appends one header to Bill.txt and one row per item to BillDetail.txt.
 bool saveBill(QString billFile, QString detailFile, const Bill &bill,
     QString &error);
+
+// Replaces a saved bill (same Bill Id) after its order was edited: its line
+// in Bill.txt is rewritten in place and its BillDetail.txt rows are replaced
+// by the bill's new details. Every other bill is left exactly as it was.
+bool updateBill(QString billFile, QString detailFile, const Bill &bill,
+    QString &error);
 }

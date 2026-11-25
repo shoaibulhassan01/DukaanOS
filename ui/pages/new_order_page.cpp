@@ -162,10 +162,11 @@ public:
             checkoutButton_->setText(QStringLiteral("Save changes"));
             if (existingOrderStatus_ == QStringLiteral("paid"))
             {
-                summarySubtitle_->setText(QStringLiteral("Editing paid order %1 · amount stays unchanged")
+                summarySubtitle_->setText(QStringLiteral("Editing paid order %1")
                     .arg(orderId_));
                 notice_->setText(QStringLiteral(
-                    "Manager-approved edits update order items and stock; the original paid amount and bill stay unchanged."));
+                    "Saving updates the order items, stock and its bill (same bill number and date). "
+                    "If the new total is lower, return the difference; if higher, collect it."));
             }
             else
             {

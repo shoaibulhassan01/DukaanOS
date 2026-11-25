@@ -2,6 +2,8 @@
 
 #include "../checkout/checkout_service.h"
 #include "../bill/bill_repository.h"
+#include "../bill/bill_service.h"
+#include "../season/season_service.h"
 #include "../common/data_paths.h"
 #include "../common/date_format.h"
 #include "../common/id_generator.h"
@@ -456,6 +458,44 @@ bool saveOrderEdits(OrderSession &session, bool managerApproved,
             updatedItems.append(CartItem{products.at(index), item.quantity});
     }
 
+    // A paid order's bill must match its edited items. Work it out before
+    // any file is written, so a refused edit changes nothing.
+    Bill previousBill;
+    Bill updatedBill;
+    bool hasBill = false;
+    if (order.status == QStringLiteral("paid"))
+    {
+        QString billError;
+        hasBill = readBillForOrder(DataPaths::bills(), DataPaths::billDetails(),
+            order.id, previousBill, billError);
+        if (hasBill)
+        {
+            // Same season rule as when the bill was made (its own date).
+            double seasonalPercentage = 0;
+            if (!getActiveSeasonDiscountPercentage(
+                    QDate::fromString(previousBill.date, Qt::ISODate),
+                    seasonalPercentage, error))
+                return false;
+            Order billOrder = order;
+            billOrder.customerName = session.customerName.trimmed().isEmpty()
+                ? order.customerName : session.customerName.trimmed();
+            if (!buildBill(previousBill.id, billOrder, updatedItems, updatedBill,
+                    error, seasonalPercentage))
+                return false;
+            updatedBill.specialDiscount = previousBill.specialDiscount;
+            updatedBill.totalPayable = std::round((updatedBill.totalPayable
+                - updatedBill.specialDiscount) * 100.0) / 100.0;
+            // Lower total: the difference is returned. Higher total: the
+            // difference is collected, so the amount received is the total.
+            updatedBill.amountReceived = qMax(previousBill.amountReceived,
+                updatedBill.totalPayable);
+            updatedBill.balanceReturned = std::round((updatedBill.amountReceived
+                - updatedBill.totalPayable) * 100.0) / 100.0;
+            updatedBill.date = previousBill.date;
+            updatedBill.time = previousBill.time;
+        }
+    }
+
     QVector<Product> updatedProducts = products;
     if (order.status == QStringLiteral("paid"))
     {
@@ -469,9 +509,12 @@ bool saveOrderEdits(OrderSession &session, bool managerApproved,
             return false;
     }
 
+    const Order previousOrder = order;
     order.customerName = session.customerName.trimmed().isEmpty()
         ? order.customerName : session.customerName.trimmed();
     order.customerContact = session.customerContact.trimmed();
+    if (hasBill)
+        order.paymentAmount = updatedBill.totalPayable;
     const QVector<OrderDetail> details = orderDetails(order.id, updatedItems);
     if (!updateOrder(DataPaths::orders(), DataPaths::orderDetail(), order,
             details, error))
@@ -482,6 +525,19 @@ bool saveOrderEdits(OrderSession &session, bool managerApproved,
             if (!saveProducts(DataPaths::products(), products, rollbackError))
                 error += QStringLiteral(" Inventory rollback also failed: %1").arg(rollbackError);
         }
+        return false;
+    }
+
+    if (hasBill && !updateBill(DataPaths::bills(), DataPaths::billDetails(),
+            updatedBill, error))
+    {
+        // Put the order and stock back so the three files still agree.
+        QString rollbackError;
+        if (!updateOrder(DataPaths::orders(), DataPaths::orderDetail(), previousOrder,
+                previousDetails, rollbackError))
+            error += QStringLiteral(" Order rollback also failed: %1").arg(rollbackError);
+        if (!saveProducts(DataPaths::products(), products, rollbackError))
+            error += QStringLiteral(" Inventory rollback also failed: %1").arg(rollbackError);
         return false;
     }
 
