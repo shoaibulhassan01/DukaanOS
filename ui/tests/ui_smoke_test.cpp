@@ -1326,8 +1326,11 @@ void testSale(QStackedWidget *stack)
     if (!pdfs.isValid())
         return;
 
+    // Add a season around today (the sample seasons are kept, so the sample
+    // bills that used them still have their season and stay valid whatever
+    // the date the test runs on).
     QFile seasons(Pos::DataPaths::seasons());
-    check(seasons.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate),
+    check(seasons.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append),
         QStringLiteral("Could not prepare an active season for the sale test."));
     if (seasons.isOpen())
     {
