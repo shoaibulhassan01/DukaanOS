@@ -208,6 +208,30 @@ void testReportsAndOrderEditing(const QString &root)
 			QStringLiteral("Restoring the paid order did not save: %1").arg(error));
 	}
 
+	// An edit keeps the original dates: Order.txt keeps when the order was
+	// made, Bill.txt keeps when it was paid (req 8 / req 15), so the 7-day
+	// edit window (req 3) is not restarted by editing. No "last edited"
+	// field is added: the lines keep exactly 9 (Order.txt) and 14
+	// (Bill.txt) fields.
+	const QString orderLine = lineOf(QStringLiteral("Data/Order.txt"), QStringLiteral("00000001"));
+	check(orderLine.startsWith(QStringLiteral("00000001 %1 10:00:00 ")
+			.arg(today.toString(Qt::ISODate))),
+		QStringLiteral("Editing must keep the order's original date and time, got: %1").arg(orderLine));
+	check(lineOf(QStringLiteral("Data/Bill.txt"), billId)
+			.endsWith(QStringLiteral(" %1 10:00:00#").arg(paidDate)),
+		QStringLiteral("Editing must keep the bill's original date and time."));
+	auto fieldCount = [](QString line) {
+		line.chop(1);   // the closing #
+		return line.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
+	};
+	check(fieldCount(orderLine) == 9,
+		QStringLiteral("An edited Order.txt line must keep 9 fields, has %1.").arg(fieldCount(orderLine)));
+	check(fieldCount(lineOf(QStringLiteral("Data/Bill.txt"), billId)) == 14,
+		QStringLiteral("An edited Bill.txt line must keep 14 fields."));
+	Pos::OrderSession reopened;
+	check(Pos::openOrderForEditing(QStringLiteral("00000001"), true, reopened, error),
+		QStringLiteral("A 3-day-old paid order must still open after being edited: %1").arg(error));
+
 	check(writeFile(QStringLiteral("Data/Bill.txt"),
 		QStringLiteral("%1 Paid_customer 00000001 40.00 2.00 4.00 38.00 "
 					   "38.00 0.00 paid 0.00 0.00 %2 10:00:00#\n")
@@ -238,6 +262,10 @@ void testReportsAndOrderEditing(const QString &root)
 			QStringLiteral("00000002"), details, error)
 			&& details.size() == 1 && details.first().quantity == 4,
 		QStringLiteral("On-hold edit did not save OrderDetail.txt: %1").arg(error));
+	const QString heldLine = lineOf(QStringLiteral("Data/Order.txt"), QStringLiteral("00000002"));
+	check(heldLine.startsWith(QStringLiteral("00000002 %1 10:30:00 ").arg(today.toString(Qt::ISODate)))
+			&& fieldCount(heldLine) == 9,
+		QStringLiteral("Editing an on-hold order must keep its date, time and 9 fields, got: %1").arg(heldLine));
 }
 }
 
