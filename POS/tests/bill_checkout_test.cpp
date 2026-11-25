@@ -111,12 +111,21 @@ static void testBillCalculations()
     CHECK(specialBill.seasonalDiscount == 107.70
         && specialBill.specialDiscount == 77.54
         && specialBill.totalPayable == 891.76);
-    CHECK(!buildBill("000000004", order, {
+    // Special discount: any typed amount up to 8 percent with 2 decimals
+    // (req 8), e.g. 0.5 of 588.00 = 2.94.
+    CHECK(buildBill("000000004", order, {
         {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2}
     }, specialBill, error, 0, 0.5));
+    CHECK(specialBill.specialDiscount == 2.94 && specialBill.totalPayable == 585.06);
     CHECK(!buildBill("000000005", order, {
         {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2}
     }, specialBill, error, 0, 9));
+    CHECK(!buildBill("000000006", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2}
+    }, specialBill, error, 0, 8.01));
+    CHECK(!buildBill("000000007", order, {
+        {makeProduct("P001", "100001", "MLK1L", 280, 14, 0, 50), 2}
+    }, specialBill, error, 0, 2.555));
 }
 
 static void testBillRepository(const QString &dir)
@@ -200,9 +209,9 @@ static void testCheckout(const QString &dir)
     CheckoutRequest excessiveDiscount = request;
     excessiveDiscount.specialDiscountPercentage = 9;
     CHECK(!generateBill(excessiveDiscount, result, error) && !error.isEmpty());
-    CheckoutRequest fractionalDiscount = request;
-    fractionalDiscount.specialDiscountPercentage = 0.5;
-    CHECK(!generateBill(fractionalDiscount, result, error) && !error.isEmpty());
+    CheckoutRequest threeDecimals = request;
+    threeDecimals.specialDiscountPercentage = 2.555;   // at most 2 decimals
+    CHECK(!generateBill(threeDecimals, result, error) && !error.isEmpty());
     CHECK(readLines("Data/Order.txt").isEmpty());
     CHECK(readLines("Data/Bill.txt").isEmpty());
 

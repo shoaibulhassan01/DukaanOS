@@ -1360,27 +1360,35 @@ void testSale(QStackedWidget *stack)
 
     // Payment method is Cash by default, and scrolling the mouse wheel over
     // it (or the special discount) does not change it.
-    for (QComboBox *combo : cashier->findChildren<QComboBox *>())
-    {
-        const bool payment = combo->findText(QStringLiteral("Wallet")) >= 0;
-        const bool special = combo->findText(QStringLiteral("8%")) >= 0;
-        if (!payment && !special)
-            continue;
-        if (payment)
-            check(combo->currentText() == QStringLiteral("Cash"),
-                QStringLiteral("New Order: payment method must be Cash by default, is %1.").arg(combo->currentText()));
-        const QString before = combo->currentText();
-        const QPointF centre(combo->width() / 2.0, combo->height() / 2.0);
+    auto scroll = [](QWidget *target) {
+        const QPointF centre(target->width() / 2.0, target->height() / 2.0);
         for (int notch : {-120, 120, -120})
         {
-            QWheelEvent wheel(centre, combo->mapToGlobal(centre), QPoint(), QPoint(0, notch),
+            QWheelEvent wheel(centre, target->mapToGlobal(centre), QPoint(), QPoint(0, notch),
                 Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
-            QCoreApplication::sendEvent(combo, &wheel);
+            QCoreApplication::sendEvent(target, &wheel);
         }
-        check(combo->currentText() == before,
-            QStringLiteral("New Order: scrolling over %1 changed it from %2 to %3.")
-                .arg(payment ? QStringLiteral("the payment method") : QStringLiteral("the special discount"),
-                    before, combo->currentText()));
+    };
+    for (QComboBox *combo : cashier->findChildren<QComboBox *>())
+    {
+        if (combo->findText(QStringLiteral("Wallet")) < 0)
+            continue;
+        check(combo->currentText() == QStringLiteral("Cash"),
+            QStringLiteral("New Order: payment method must be Cash by default, is %1.").arg(combo->currentText()));
+        scroll(combo);
+        check(combo->currentText() == QStringLiteral("Cash"),
+            QStringLiteral("New Order: scrolling over the payment method changed it to %1.").arg(combo->currentText()));
+    }
+    // Special discount: typed percentage, 2 decimals, at most 8.
+    QDoubleSpinBox *specialRate = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+    check(specialRate && specialRate->decimals() == 2 && specialRate->maximum() == 8
+            && specialRate->minimum() == 0 && specialRate->value() == 0,
+        QStringLiteral("New Order: the special discount must be a typed 0.00-8.00 percentage starting at 0."));
+    if (specialRate)
+    {
+        scroll(specialRate);
+        check(specialRate->value() == 0,
+            QStringLiteral("New Order: scrolling over the special discount changed it to %1.").arg(specialRate->value()));
     }
     QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
     check(hold && !hold->isEnabled(),
@@ -1454,6 +1462,115 @@ void testSale(QStackedWidget *stack)
         check(matchShown,
             QStringLiteral("The scanned product must stay shown under the barcode field."));
         delete scanPage;
+    }
+
+    // Removing items: the remove button deletes the whole line in one click
+    // (whatever its quantity); removing the last one shows the empty message.
+    // A typed decimal special discount is used in the total.
+    {
+        QWidget *removePage = UiPages::createNewOrderPage();
+        removePage->resize(1200, 800);
+        removePage->show();
+        settle();
+        QLineEdit *code = field(removePage, QStringLiteral("Enter product barcode"));
+        QPushButton *add = button(removePage, QStringLiteral("Add item"));
+        QTableWidget *cart = nullptr;
+        for (QTableWidget *table : removePage->findChildren<QTableWidget *>())
+            if (table->isVisible() && table->columnCount() == 5)
+                cart = table;
+        check(code && add && cart, QStringLiteral("New Order: barcode field, Add item or cart missing."));
+        if (code && add && cart)
+        {
+            // A second product that is in stock (some sample items sell out).
+            QVector<Pos::Product> inStock;
+            Pos::readProducts(Pos::DataPaths::products(), inStock, error);
+            QString secondBarcode;
+            for (const Pos::Product &candidate : inStock)
+                if (secondBarcode.isEmpty() && candidate.barcode != QStringLiteral("100001")
+                    && candidate.quantity >= 2)
+                    secondBarcode = candidate.barcode;
+            for (const QString &barcodeText : {QStringLiteral("100001"), QStringLiteral("100001"),
+                     QStringLiteral("100001"), secondBarcode})
+            {
+                code->setText(barcodeText);
+                add->click();
+                settle();
+            }
+            QDoubleSpinBox *rate = removePage->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+            if (rate)
+                rate->setValue(2.5);
+            settle();
+            QVector<Pos::Product> catalogue;
+            Pos::readProducts(Pos::DataPaths::products(), catalogue, error);
+            Pos::Product first;
+            Pos::Product second;
+            Pos::findProductByBarcode(catalogue, QStringLiteral("100001"), first);
+            Pos::findProductByBarcode(catalogue, secondBarcode, second);
+            Pos::CartTotals twoItems;
+            Pos::calculateCartTotals({Pos::CartItem{first, 3}, Pos::CartItem{second, 1}}, twoItems, error, 2.5);
+            check(cart->rowCount() == 2 && twoItems.specialDiscount > 0
+                    && showsText(removePage, QStringLiteral("PKR %1").arg(twoItems.specialDiscount, 0, 'f', 2)),
+                QStringLiteral("A 2.50% special discount must be used in the total (PKR %1 expected).")
+                    .arg(twoItems.specialDiscount, 0, 'f', 2));
+            QList<QPushButton *> removeButtons = cart->findChildren<QPushButton *>(QStringLiteral("removeCartItem"));
+            check(removeButtons.size() == 2,
+                QStringLiteral("Each cart line needs a remove button, found %1.").arg(removeButtons.size()));
+            // Remove the first line (quantity 3) with one click.
+            if (QWidget *firstCell = cart->cellWidget(0, 3))
+                if (QPushButton *remove = firstCell->findChild<QPushButton *>(QStringLiteral("removeCartItem")))
+                    remove->click();
+            settle();
+            check(cart->rowCount() == 1 && cart->item(0, 1) && cart->item(0, 1)->text() == secondBarcode,
+                QStringLiteral("One click must remove the whole line (quantity 3), leaving only %1.").arg(secondBarcode));
+            if (QWidget *lastCell = cart->cellWidget(0, 3))
+                if (QPushButton *remove = lastCell->findChild<QPushButton *>(QStringLiteral("removeCartItem")))
+                    remove->click();
+            settle();
+            check(showsText(removePage, QStringLiteral("Your order is empty")),
+                QStringLiteral("Removing the last item must show the empty-order message again."));
+        }
+        delete removePage;
+    }
+
+    // "-" behaves the same when an order is being edited: it stops at 1
+    // and never removes the line (the remove button does that).
+    {
+        QVector<Pos::Product> catalogue;
+        Pos::readProducts(Pos::DataPaths::products(), catalogue, error);
+        Pos::Product item;
+        Pos::findProductByBarcode(catalogue, QStringLiteral("100001"), item);
+        OrderPreview held;
+        held.orderId = QStringLiteral("99999999");
+        held.status = QStringLiteral("on-hold");
+        held.customerName = QStringLiteral("Edit Test");
+        held.phone = QStringLiteral("03001234567");
+        held.lines.append(OrderPreviewLine{item, 2});
+        QWidget *editPage = UiPages::createNewOrderPage(nullptr, &held, {}, {}, {}, true, true);
+        editPage->resize(1200, 800);
+        editPage->show();
+        settle();
+        QTableWidget *cart = nullptr;
+        for (QTableWidget *table : editPage->findChildren<QTableWidget *>())
+            if (table->isVisible() && table->columnCount() == 5)
+                cart = table;
+        auto decreaseButton = [&cart]() -> QPushButton * {
+            QWidget *cell = cart && cart->rowCount() > 0 ? cart->cellWidget(0, 3) : nullptr;
+            return cell ? cell->findChild<QPushButton *>(QStringLiteral("decreaseCartItem")) : nullptr;
+        };
+        check(cart && cart->rowCount() == 1 && decreaseButton() && decreaseButton()->isEnabled(),
+            QStringLiteral("Edit order: a line with quantity 2 needs an enabled \u2212 button."));
+        if (QPushButton *minus = decreaseButton())
+            minus->click();
+        settle();
+        QPushButton *minusAtOne = decreaseButton();
+        check(cart && cart->rowCount() == 1 && minusAtOne && !minusAtOne->isEnabled(),
+            QStringLiteral("Edit order: \u2212 must stop at 1 (disabled), as in a new order, not remove the line."));
+        if (minusAtOne)
+            minusAtOne->click();
+        settle();
+        check(cart && cart->rowCount() == 1,
+            QStringLiteral("Edit order: \u2212 at quantity 1 must not remove the line."));
+        delete editPage;
     }
     check(hold && hold->isEnabled(),
         QStringLiteral("Hold order should become available as soon as a product is added."));
@@ -1581,15 +1698,16 @@ void testSale(QStackedWidget *stack)
     QVector<Pos::Product> products;
     Pos::Product milk;
     Pos::CartTotals expectedTotals;
-    QComboBox *specialDiscount = nullptr;
-    for (QComboBox *candidate : cashier->findChildren<QComboBox *>())
-        if (candidate->isVisible()
-            && candidate->findText(QStringLiteral("8%")) >= 0)
-            specialDiscount = candidate;
-    check(specialDiscount,
+    QDoubleSpinBox *specialDiscount = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+    check(specialDiscount && specialDiscount->isVisible(),
         QStringLiteral("New Order should offer a special discount up to 8%."));
     if (specialDiscount)
-        specialDiscount->setCurrentText(QStringLiteral("8%"));
+    {
+        specialDiscount->setValue(8.5);   // more than 8 is not allowed
+        check(specialDiscount->value() == 8,
+            QStringLiteral("Special discount above 8 percent must be refused, got %1.").arg(specialDiscount->value()));
+        specialDiscount->setValue(8);
+    }
     check(Pos::readProducts(Pos::DataPaths::products(), products, error)
             && Pos::findProductByBarcode(products, QStringLiteral("100001"), milk)
             && Pos::calculateCartTotals({Pos::CartItem{milk, 1}}, expectedTotals, error, 8)
