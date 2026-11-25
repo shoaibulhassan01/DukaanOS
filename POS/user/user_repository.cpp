@@ -345,4 +345,64 @@ bool createCashierAccount(QString filePath, QString username, QString password,
     users.append({username, hashedPassword, QStringLiteral("cashier")});
     return saveUsers(filePath, users, error);
 }
+
+bool updateCashierAccount(QString filePath, QString currentUsername,
+    QString newUsername, QString newPassword, QString &error)
+{
+    currentUsername = currentUsername.trimmed();
+    newUsername = newUsername.trimmed();
+    if (!isValidCredential(newUsername)
+        || (!newPassword.isEmpty() && !isValidCredential(newPassword)))
+    {
+        error = QStringLiteral(
+            "Username and password must be non-empty and cannot contain spaces or #.");
+        return false;
+    }
+
+    QVector<User> users;
+    if (!readUsers(filePath, users, error))
+        return false;
+
+    int cashierIndex = -1;
+    for (int i = 0; i < users.size(); ++i)
+    {
+        if (users.at(i).username == newUsername
+            && users.at(i).username != currentUsername)
+        {
+            error = QStringLiteral("That username already exists.");
+            return false;
+        }
+        if (users.at(i).username == currentUsername)
+            cashierIndex = i;
+    }
+
+    if (cashierIndex < 0 || users.at(cashierIndex).role != QStringLiteral("cashier"))
+    {
+        error = QStringLiteral("Cashier account '%1' was not found.")
+            .arg(currentUsername);
+        return false;
+    }
+    if (currentUsername == newUsername && newPassword.isEmpty())
+    {
+        error = QStringLiteral("Enter a new username or password to save changes.");
+        return false;
+    }
+
+    QString hashedPassword = users.at(cashierIndex).password;
+    if (!newPassword.isEmpty())
+    {
+        if (!makePasswordHash(newPassword, hashedPassword, error))
+            return false;
+    }
+    else if (!isPasswordHash(hashedPassword))
+    {
+        const QString plainPassword = hashedPassword;
+        if (!makePasswordHash(plainPassword, hashedPassword, error))
+            return false;
+    }
+
+    users[cashierIndex].username = newUsername;
+    users[cashierIndex].password = hashedPassword;
+    return saveUsers(filePath, users, error);
+}
 }

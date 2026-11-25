@@ -97,7 +97,32 @@ int main(int argc, char *argv[])
     {
         return fail(QStringLiteral("New account did not log in as a cashier."));
     }
-    if (Pos::createCashierAccount(usersPath, QStringLiteral("newcashier"),
+    if (!Pos::updateCashierAccount(usersPath, QStringLiteral("newcashier"),
+            QStringLiteral("renamedcashier"), QString(), error))
+        return fail(error);
+    if (Pos::login(usersPath, QStringLiteral("newcashier"),
+            QStringLiteral("newpass123"), authenticatedUser, error)
+        || !Pos::login(usersPath, QStringLiteral("renamedcashier"),
+            QStringLiteral("newpass123"), authenticatedUser, error))
+    {
+        return fail(QStringLiteral("Changing a cashier username must preserve its password."));
+    }
+    if (!Pos::updateCashierAccount(usersPath, QStringLiteral("renamedcashier"),
+            QStringLiteral("renamedcashier"), QStringLiteral("changedpass123"), error))
+        return fail(error);
+    if (Pos::login(usersPath, QStringLiteral("renamedcashier"),
+            QStringLiteral("newpass123"), authenticatedUser, error)
+        || !Pos::login(usersPath, QStringLiteral("renamedcashier"),
+            QStringLiteral("changedpass123"), authenticatedUser, error))
+    {
+        return fail(QStringLiteral("Changing a cashier password must replace the old password."));
+    }
+    if (Pos::updateCashierAccount(usersPath, QStringLiteral("manager"),
+            QStringLiteral("manager_renamed"), QString(), error))
+    {
+        return fail(QStringLiteral("Cashier account updates must not rename managers."));
+    }
+    if (Pos::createCashierAccount(usersPath, QStringLiteral("renamedcashier"),
             QStringLiteral("anotherpass"), error))
     {
         return fail(QStringLiteral("User repository accepted a duplicate username."));

@@ -19,4 +19,7 @@ bool updateUserPassword(QString filePath, QString username, QString password,
 
 bool createCashierAccount(QString filePath, QString username, QString password,
     QString &error);
+
+bool updateCashierAccount(QString filePath, QString currentUsername,
+    QString newUsername, QString newPassword, QString &error);
 }
