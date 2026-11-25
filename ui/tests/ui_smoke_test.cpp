@@ -1165,12 +1165,19 @@ void testSale(QStackedWidget *stack)
     settle();
     check(showsText(cashier, QStringLiteral("100001")),
         QStringLiteral("Clicking Add item must add the matched product."));
+    check(barcode->text() == QStringLiteral("100001"),
+        QStringLiteral("Add item must keep the barcode in the field, saw: %1").arg(barcode->text()));
+    // Backspace (the user deleting it) is what clears it.
+    barcode->setFocus();
+    barcode->end(false);
+    for (int i = 0; i < 6; ++i)
+        barcode->backspace();
     check(barcode->text().isEmpty(),
-        QStringLiteral("A typed barcode must be cleared after Add item, saw: %1").arg(barcode->text()));
+        QStringLiteral("Backspace must clear the kept barcode, saw: %1").arg(barcode->text()));
 
     // A scanned barcode (here an uploaded barcode image) is added to the
     // order AND stays in the barcode field with its product shown, so the
-    // cashier can open its description. Uses a separate New Order page so
+    // cashier can open its description (same as a typed one). Uses a separate New Order page so
     // this sale's cart is not changed.
     {
         QVector<Pos::Product> productList;
