@@ -35,7 +35,12 @@ bool openOrderForEditing(QString orderId, bool managerApproved,
     bool *managerApprovalRequired = nullptr);
 
 // Saves edits to an on-hold or eligible paid order. Paid-order inventory is
-// adjusted by the difference between the saved and edited quantities.
+// adjusted by the difference between the saved and edited quantities. For a
+// paid order its bill is rebuilt too (same Bill Id, date and time; Bill.txt
+// and BillDetail.txt), and the order amount in Order.txt becomes the new
+// payable. Money: if the new total is lower, the difference is added to the
+// balance returned; if it is higher, the difference is collected, so the
+// amount received becomes the new total (balance returned 0).
 bool saveOrderEdits(OrderSession &session, bool managerApproved,
     QString &error);
 

@@ -164,10 +164,80 @@ void testReportsAndOrderEditing(const QString &root)
 			&& details.size() == 1 && details.first().quantity == 3,
 		QStringLiteral("Paid edit did not save OrderDetail.txt: %1").arg(error));
 
+	// The bill follows the edit: same Bill Id, date and time; totals for 3
+	// teas (60.00 + 3.00 tax - 6.00 discount = 57.00); the extra 19.00 is
+	// collected, so received = 57.00 and balance 0. Order.txt amount = 57.00.
+	auto lineOf = [](const QString &path, const QString &prefix) {
+		QFile file(path);
+		if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+			return QString();
+		for (const QString &line : QString::fromUtf8(file.readAll()).split(QLatin1Char('\n')))
+			if (line.startsWith(prefix))
+				return line.trimmed();
+		return QString();
+	};
+	check(lineOf(QStringLiteral("Data/Bill.txt"), billId) == QStringLiteral(
+			"%1 Paid_customer 00000001 60.00 3.00 6.00 57.00 57.00 0.00 paid 0.00 0.00 %2 10:00:00#")
+			.arg(billId, paidDate),
+		QStringLiteral("Paid edit did not update Bill.txt, got: %1")
+			.arg(lineOf(QStringLiteral("Data/Bill.txt"), billId)));
+	check(lineOf(QStringLiteral("Data/BillDetail.txt"), billId)
+			== QStringLiteral("%1 TEA 20.00 3 6.00#").arg(billId),
+		QStringLiteral("Paid edit did not update BillDetail.txt, got: %1")
+			.arg(lineOf(QStringLiteral("Data/BillDetail.txt"), billId)));
+	check(lineOf(QStringLiteral("Data/Order.txt"), QStringLiteral("00000001"))
+			.contains(QStringLiteral(" paid 57.00 ")),
+		QStringLiteral("Paid edit did not update the order amount, got: %1")
+			.arg(lineOf(QStringLiteral("Data/Order.txt"), QStringLiteral("00000001"))));
+
+	// Fewer items: the lower total's difference becomes balance returned.
+	Pos::OrderSession smaller;
+	if (Pos::openOrderForEditing(QStringLiteral("00000001"), true, smaller, error)
+		&& !smaller.items.isEmpty())
+	{
+		smaller.items[0].quantity = 1;   // 20.00 + 1.00 - 2.00 = 19.00
+		check(Pos::saveOrderEdits(smaller, true, error),
+			QStringLiteral("Reducing a paid order did not save: %1").arg(error));
+		check(lineOf(QStringLiteral("Data/Bill.txt"), billId) == QStringLiteral(
+				"%1 Paid_customer 00000001 20.00 1.00 2.00 19.00 57.00 38.00 paid 0.00 0.00 %2 10:00:00#")
+				.arg(billId, paidDate),
+			QStringLiteral("Reduced paid edit: balance returned must grow, got: %1")
+				.arg(lineOf(QStringLiteral("Data/Bill.txt"), billId)));
+		smaller.items[0].quantity = 3;   // back to 3, so stock is 7 again
+		check(Pos::saveOrderEdits(smaller, true, error),
+			QStringLiteral("Restoring the paid order did not save: %1").arg(error));
+	}
+
+	// An edit keeps the original dates: Order.txt keeps when the order was
+	// made, Bill.txt keeps when it was paid (req 8 / req 15), so the 7-day
+	// edit window (req 3) is not restarted by editing. No "last edited"
+	// field is added: the lines keep exactly 9 (Order.txt) and 14
+	// (Bill.txt) fields.
+	const QString orderLine = lineOf(QStringLiteral("Data/Order.txt"), QStringLiteral("00000001"));
+	check(orderLine.startsWith(QStringLiteral("00000001 %1 10:00:00 ")
+			.arg(today.toString(Qt::ISODate))),
+		QStringLiteral("Editing must keep the order's original date and time, got: %1").arg(orderLine));
+	check(lineOf(QStringLiteral("Data/Bill.txt"), billId)
+			.endsWith(QStringLiteral(" %1 10:00:00#").arg(paidDate)),
+		QStringLiteral("Editing must keep the bill's original date and time."));
+	auto fieldCount = [](QString line) {
+		line.chop(1);   // the closing #
+		return line.split(QLatin1Char(' '), Qt::SkipEmptyParts).size();
+	};
+	check(fieldCount(orderLine) == 9,
+		QStringLiteral("An edited Order.txt line must keep 9 fields, has %1.").arg(fieldCount(orderLine)));
+	check(fieldCount(lineOf(QStringLiteral("Data/Bill.txt"), billId)) == 14,
+		QStringLiteral("An edited Bill.txt line must keep 14 fields."));
+	Pos::OrderSession reopened;
+	check(Pos::openOrderForEditing(QStringLiteral("00000001"), true, reopened, error),
+		QStringLiteral("A 3-day-old paid order must still open after being edited: %1").arg(error));
+
 	check(writeFile(QStringLiteral("Data/Bill.txt"),
 		QStringLiteral("%1 Paid_customer 00000001 40.00 2.00 4.00 38.00 "
 					   "38.00 0.00 paid 0.00 0.00 %2 10:00:00#\n")
-			.arg(billId, oldPaidDate).toUtf8()),
+			.arg(billId, oldPaidDate).toUtf8())
+			&& writeFile(QStringLiteral("Data/BillDetail.txt"),
+				QStringLiteral("%1 TEA 20.00 2 4.00#\n").arg(billId).toUtf8()),
 		QStringLiteral("Could not set test paid date."));
 	Pos::OrderSession expired;
 	managerApprovalRequired = true;
@@ -192,6 +262,10 @@ void testReportsAndOrderEditing(const QString &root)
 			QStringLiteral("00000002"), details, error)
 			&& details.size() == 1 && details.first().quantity == 4,
 		QStringLiteral("On-hold edit did not save OrderDetail.txt: %1").arg(error));
+	const QString heldLine = lineOf(QStringLiteral("Data/Order.txt"), QStringLiteral("00000002"));
+	check(heldLine.startsWith(QStringLiteral("00000002 %1 10:30:00 ").arg(today.toString(Qt::ISODate)))
+			&& fieldCount(heldLine) == 9,
+		QStringLiteral("Editing an on-hold order must keep its date, time and 9 fields, got: %1").arg(heldLine));
 }
 }
 

@@ -8,6 +8,7 @@
 #include <QFile>
 #include <QLockFile>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSet>
 #include <QTime>
 #include <QTextStream>
@@ -341,6 +342,50 @@ bool appendLines(const QString &path, const QStringList &lines, QString &error)
     return true;
 }
 
+// Reads a data file as lines (without line endings); a missing file is empty.
+bool readLines(const QString &path, QStringList &lines, QString &error)
+{
+    lines.clear();
+    QFile file(path);
+    if (!file.exists())
+        return true;
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot read %1: %2").arg(path, file.errorString());
+        return false;
+    }
+    QTextStream in(&file);
+    while (!in.atEnd())
+        lines.append(in.readLine());
+    return true;
+}
+
+// Writes the whole file at once (a failed write leaves the old file).
+bool writeLines(const QString &path, const QStringList &lines, QString &error)
+{
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {
+        error = QStringLiteral("Cannot write %1: %2").arg(path, file.errorString());
+        return false;
+    }
+    QTextStream out(&file);
+    for (const QString &line : lines)
+        out << line << '\n';
+    out.flush();
+    if (out.status() != QTextStream::Ok || !file.commit())
+    {
+        error = QStringLiteral("Failed while writing %1.").arg(path);
+        return false;
+    }
+    return true;
+}
+
+QString firstField(const QString &line)
+{
+    return line.trimmed().section(QLatin1Char(' '), 0, 0);
+}
+
 bool attachDetails(const QString &detailFile, Bill &bill, QString &error)
 {
     QVector<BillDetail> allDetails;
@@ -458,6 +503,77 @@ bool saveBill(QString billFile, QString detailFile, const Bill &bill,
         return false;
     if (!appendLines(billFile, {billLine(bill)}, error))
         return false;
+    error.clear();
+    return true;
+}
+
+bool updateBill(QString billFile, QString detailFile, const Bill &bill,
+    QString &error)
+{
+    error.clear();
+    if (!validateBill(bill, error))
+        return false;
+
+    QLockFile lock(billFile + QStringLiteral(".lock"));
+    if (!lock.tryLock(0))
+    {
+        error = QStringLiteral("Another checkout is saving a bill. Try again.");
+        return false;
+    }
+
+    QStringList billLines;
+    if (!readLines(billFile, billLines, error))
+        return false;
+    int headerRow = -1;
+    for (int i = 0; i < billLines.size(); ++i)
+    {
+        if (firstField(billLines.at(i)) == bill.id)
+        {
+            headerRow = i;
+            break;
+        }
+    }
+    if (headerRow < 0)
+    {
+        error = QStringLiteral("Bill %1 not found in Bill.txt.").arg(bill.id);
+        return false;
+    }
+
+    // The new detail rows go where the old ones were, so the file keeps
+    // the bills in the order they were made.
+    QStringList oldDetails;
+    if (!readLines(detailFile, oldDetails, error))
+        return false;
+    QStringList newDetails;
+    bool inserted = false;
+    for (const QString &line : oldDetails)
+    {
+        if (firstField(line) != bill.id)
+        {
+            newDetails.append(line);
+            continue;
+        }
+        if (!inserted)
+        {
+            for (const BillDetail &detail : bill.details)
+                newDetails.append(detailLine(detail));
+            inserted = true;
+        }
+    }
+    if (!inserted)
+        for (const BillDetail &detail : bill.details)
+            newDetails.append(detailLine(detail));
+
+    billLines[headerRow] = billLine(bill);
+    if (!writeLines(detailFile, newDetails, error))
+        return false;
+    if (!writeLines(billFile, billLines, error))
+    {
+        QString restoreError;
+        if (!writeLines(detailFile, oldDetails, restoreError))
+            error += QStringLiteral(" BillDetail.txt could not be restored: %1").arg(restoreError);
+        return false;
+    }
     error.clear();
     return true;
 }

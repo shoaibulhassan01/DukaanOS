@@ -122,7 +122,7 @@ public:
             },
             [this](const QString &barcode) {
                 barcodeEdit_->setText(barcode);
-                submitBarcode(barcode, true);
+                submitBarcode(barcode);
             },
             [this](const QString &error) {
                 stopCamera();
@@ -162,10 +162,11 @@ public:
             checkoutButton_->setText(QStringLiteral("Save changes"));
             if (existingOrderStatus_ == QStringLiteral("paid"))
             {
-                summarySubtitle_->setText(QStringLiteral("Editing paid order %1 · amount stays unchanged")
+                summarySubtitle_->setText(QStringLiteral("Editing paid order %1")
                     .arg(orderId_));
                 notice_->setText(QStringLiteral(
-                    "Manager-approved edits update order items and stock; the original paid amount and bill stay unchanged."));
+                    "Saving updates the order items, stock and its bill (same bill number and date). "
+                    "If the new total is lower, return the difference; if higher, collect it."));
             }
             else
             {
@@ -203,7 +204,7 @@ private:
         }
 
         barcodeEdit_->setText(barcode);
-        submitBarcode(barcode, true);
+        submitBarcode(barcode);
     }
 
     QWidget *createCustomerCard()
@@ -675,10 +676,10 @@ private:
         setStatus(QStringLiteral("Product matched from Product.txt."));
     }
 
-    // fromScan: the barcode came from the camera or an uploaded image. It is
-    // still added to the order, and also stays in the barcode field with its
-    // product shown, so Description works without retyping it.
-    void submitBarcode(QString barcode, bool fromScan = false)
+    // Typed, scanned or uploaded: the product is added, and the barcode stays
+    // in the field with its product shown (so Description works) until the
+    // cashier deletes it or the page is opened again.
+    void submitBarcode(QString barcode)
     {
         barcodeLookupTimer_->stop();
         barcode = barcode.trimmed();
@@ -691,7 +692,7 @@ private:
         }
         lookupBarcode(barcode);
         if (hasMatchedProduct_)
-            addProductToCart(fromScan);
+            addProductToCart();
     }
 
     void stepQuantity(int change)
@@ -703,7 +704,7 @@ private:
         quantity_->setText(QString::number(qBound(1, quantity + change, 999)));
     }
 
-    void addProductToCart(bool keepScannedBarcode = false)
+    void addProductToCart()
     {
         if (!hasMatchedProduct_)
         {
@@ -748,20 +749,16 @@ private:
         refreshCart();
         setStatus(QStringLiteral("Product added to the order preview."));
         quantity_->setText(QStringLiteral("1"));
-        if (keepScannedBarcode)
+        // The barcode is not cleared after adding: it stays with its product
+        // shown (no new lookup, so the "added" message stays). Backspace
+        // clears it; reopening the page starts empty.
         {
-            // Keep the scanned barcode and its product (no new lookup, so
-            // the "added" message stays); selected so typing replaces it.
             const QSignalBlocker block(barcodeEdit_);
             barcodeEdit_->setText(currentProduct_.barcode);
-            barcodeEdit_->selectAll();
-            matchLabel_->show();
         }
-        else
-        {
-            barcodeEdit_->clear();
-        }
+        matchLabel_->show();
         barcodeEdit_->setFocus();
+        barcodeEdit_->setCursorPosition(barcodeEdit_->text().size());
     }
 
     void adjustCartQuantity(int row, int change)
