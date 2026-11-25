@@ -471,6 +471,26 @@ private:
             layout, card, QStringLiteral("Discount"), QStringLiteral("PKR 0"));
         seasonalDiscountValue_ = addSummaryRow(
             layout, card, QStringLiteral("Seasonal discount"), QStringLiteral("PKR 0"));
+        specialDiscountValue_ = addSummaryRow(
+            layout, card, QStringLiteral("Special discount"), QStringLiteral("PKR 0"));
+        specialDiscountRateRow_ = new QWidget(card);
+        auto *specialDiscountRateLayout = new QHBoxLayout(specialDiscountRateRow_);
+        specialDiscountRateLayout->setContentsMargins(0, 0, 0, 12);
+        specialDiscountRateLayout->addWidget(createFieldLabel(
+            QStringLiteral("Special discount rate"), specialDiscountRateRow_));
+        specialDiscountRateLayout->addStretch(1);
+        specialDiscountRate_ = new QComboBox(specialDiscountRateRow_);
+        specialDiscountRate_->addItem(QStringLiteral("None"), 0.0);
+        for (int percentage = 1; percentage <= 8; ++percentage)
+            specialDiscountRate_->addItem(
+                QStringLiteral("%1%").arg(percentage), percentage);
+        specialDiscountRate_->setFixedHeight(34);
+        specialDiscountRate_->setMinimumWidth(84);
+        specialDiscountRate_->setStyleSheet(fieldStyle());
+        specialDiscountRateLayout->addWidget(specialDiscountRate_);
+        layout->addWidget(specialDiscountRateRow_);
+        if (editExistingOrder_)
+            specialDiscountRateRow_->hide();
 
         auto *divider = new QFrame(card);
         divider->setFrameShape(QFrame::HLine);
@@ -532,6 +552,8 @@ private:
         connect(paymentMethod_, &QComboBox::currentTextChanged, this, [this]() { updatePaymentFields(); });
         connect(cashReceived_, &QDoubleSpinBox::valueChanged, this, [this]() { updatePaymentFields(); });
         connect(cashReceived_, &QAbstractSpinBox::editingFinished, this, [this]() { cashEdited_ = true; });
+        connect(specialDiscountRate_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this]() { refreshCart(); });
 
         auto *checkout = new QPushButton(QStringLiteral("Generate bill"), card);
         checkoutButton_ = checkout;
@@ -891,7 +913,9 @@ private:
             items.reserve(cartLines_.size());
             for (const CartLine &line : cartLines_)
                 items.append(Pos::CartItem{line.product, line.quantity});
-            totalsValid = Pos::calculateCartTotals(items, totals, totalsError);
+            const double specialDiscountPercentage = specialDiscountRate_->currentData().toDouble();
+            totalsValid = Pos::calculateCartTotals(items, totals, totalsError,
+                specialDiscountPercentage);
         }
 
         itemsValue_->setText(QString::number(itemCount));
@@ -904,6 +928,8 @@ private:
             discountValue_->setText(QStringLiteral("PKR %1").arg(totals.discount, 0, 'f', 2));
             seasonalDiscountValue_->setText(
                 QStringLiteral("PKR %1").arg(totals.seasonalDiscount, 0, 'f', 2));
+            specialDiscountValue_->setText(
+                QStringLiteral("PKR %1").arg(totals.specialDiscount, 0, 'f', 2));
             totalValue_->setText(QStringLiteral("PKR %1").arg(totals.payable, 0, 'f', 2));
             currentTotal_ = totals.payable;
             if (!editExistingOrder_)
@@ -920,6 +946,7 @@ private:
             taxValue_->setText(QStringLiteral("Unavailable"));
             discountValue_->setText(QStringLiteral("Unavailable"));
             seasonalDiscountValue_->setText(QStringLiteral("Unavailable"));
+            specialDiscountValue_->setText(QStringLiteral("Unavailable"));
             totalValue_->setText(QStringLiteral("Unavailable"));
             currentTotal_ = 0;
             checkoutButton_->setEnabled(false);
@@ -1030,6 +1057,7 @@ private:
         request.customerContact = order.phone;
         request.existingOrderId = orderId_;
         request.paymentMode = paymentMethod_->currentText();
+        request.specialDiscountPercentage = specialDiscountRate_->currentData().toDouble();
         const bool cash = request.paymentMode == QStringLiteral("Cash");
         request.merchant = cash ? QString() : merchantEdit_->text().trimmed();
         request.amountPaid = cash ? cashReceived_->value() : currentTotal_;
@@ -1060,6 +1088,7 @@ private:
         order.tax = result.totals.tax;
         order.discount = result.totals.discount;
         order.seasonalDiscount = result.totals.seasonalDiscount;
+        order.specialDiscount = result.totals.specialDiscount;
         order.total = result.totals.payable;
         if (onGenerateBill_)
             onGenerateBill_(order);
@@ -1107,6 +1136,7 @@ private:
     QLabel *summarySubtitle_ = nullptr;
     QLabel *notice_ = nullptr;
     QWidget *paymentFields_ = nullptr;
+    QWidget *specialDiscountRateRow_ = nullptr;
     QPushButton *holdButton_ = nullptr;
     QPushButton *checkoutButton_ = nullptr;
     QLineEdit *barcodeEdit_ = nullptr;
@@ -1115,6 +1145,7 @@ private:
     QLineEdit *customerPhoneEdit_ = nullptr;
     QLineEdit *quantity_ = nullptr;
     QComboBox *paymentMethod_ = nullptr;
+    QComboBox *specialDiscountRate_ = nullptr;
     QLabel *previewLabel_ = nullptr;
     QLabel *matchLabel_ = nullptr;
     QLabel *statusLabel_ = nullptr;
@@ -1124,6 +1155,7 @@ private:
     QLabel *taxValue_ = nullptr;
     QLabel *discountValue_ = nullptr;
     QLabel *seasonalDiscountValue_ = nullptr;
+    QLabel *specialDiscountValue_ = nullptr;
     QLabel *totalValue_ = nullptr;
     Pos::Product currentProduct_;
     QString orderId_;

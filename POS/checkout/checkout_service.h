@@ -16,6 +16,7 @@ struct CheckoutRequest
     QString customerName, customerContact, paymentMode, merchant;
     QString existingOrderId;
     double amountPaid = 0;
+    double specialDiscountPercentage = 0;
     QVector<CartItem> items;
 };
 
@@ -28,7 +29,8 @@ struct CheckoutResult
 };
 
 bool calculateCartTotals(const QVector<CartItem> &items,
-    CartTotals &totals, QString &error);
+    CartTotals &totals, QString &error,
+    double specialDiscountPercentage = 0);
 
 // Runs the whole checkout: validate payment, order ID, bill ID, build bill,
 // save order, save bill, reduce stock. If a step fails the error is returned

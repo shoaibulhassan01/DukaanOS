@@ -65,11 +65,12 @@ void setErrorIfEmpty(QString &error, const QString &fallback)
 
 // Totals of the whole cart, computed with the same bill-line rules.
 bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
-    QString &error, double seasonalDiscountPercentage = 0)
+    QString &error, double seasonalDiscountPercentage = 0,
+    double specialDiscountPercentage = 0)
 {
     Bill bill;
     if (!buildBill(QString(), Order(), items, bill, error,
-            seasonalDiscountPercentage))
+            seasonalDiscountPercentage, specialDiscountPercentage))
         return false;
 
     CartTotals sum;
@@ -77,9 +78,11 @@ bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
     sum.tax = bill.totalTax;
     sum.discount = bill.totalDiscount;
     sum.seasonalDiscount = bill.seasonalDiscount;
+    sum.specialDiscount = bill.specialDiscount;
     sum.payable = bill.totalPayable;
     if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
-        || !std::isfinite(sum.discount) || !std::isfinite(sum.payable)) {
+        || !std::isfinite(sum.discount) || !std::isfinite(sum.specialDiscount)
+        || !std::isfinite(sum.payable)) {
         error = QStringLiteral("Cart totals are outside the supported range.");
         return false;
     }
@@ -88,9 +91,11 @@ bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
     sum.tax = std::round(sum.tax * 100.0) / 100.0;
     sum.discount = std::round(sum.discount * 100.0) / 100.0;
     sum.seasonalDiscount = std::round(sum.seasonalDiscount * 100.0) / 100.0;
+    sum.specialDiscount = std::round(sum.specialDiscount * 100.0) / 100.0;
     sum.payable = std::round(sum.payable * 100.0) / 100.0;
     if (!std::isfinite(sum.withoutTax) || !std::isfinite(sum.tax)
         || !std::isfinite(sum.discount) || !std::isfinite(sum.seasonalDiscount)
+        || !std::isfinite(sum.specialDiscount)
         || !std::isfinite(sum.payable)) {
         error = QStringLiteral("Cart totals are outside the supported range.");
         return false;
@@ -101,23 +106,26 @@ bool computeTotals(const QVector<CartItem> &items, CartTotals &totals,
 }
 
 bool computeTotalsForDate(const QVector<CartItem> &items, QDate billDate,
-    double &seasonalDiscountPercentage, CartTotals &totals, QString &error)
+    double specialDiscountPercentage, double &seasonalDiscountPercentage,
+    CartTotals &totals, QString &error)
 {
     seasonalDiscountPercentage = 0;
     if (!getActiveSeasonDiscountPercentage(billDate,
             seasonalDiscountPercentage, error))
         return false;
-    return computeTotals(items, totals, error, seasonalDiscountPercentage);
+    return computeTotals(items, totals, error, seasonalDiscountPercentage,
+        specialDiscountPercentage);
 }
 }
 
 bool calculateCartTotals(const QVector<CartItem> &items,
-    CartTotals &totals, QString &error)
+    CartTotals &totals, QString &error, double specialDiscountPercentage)
 {
     error.clear();
     totals = CartTotals{};
     double seasonalDiscountPercentage = 0;
     return computeTotalsForDate(items, QDate::currentDate(),
+        specialDiscountPercentage,
         seasonalDiscountPercentage, totals, error);
 }
 
@@ -137,6 +145,7 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     double seasonalDiscountPercentage = 0;
     CartTotals totals;
     if (!computeTotalsForDate(request.items, now.date(),
+            request.specialDiscountPercentage,
             seasonalDiscountPercentage, totals, error)) {
         setErrorIfEmpty(error, QStringLiteral("Could not calculate the cart totals."));
         return false;
@@ -226,7 +235,7 @@ bool generateBill(const CheckoutRequest &request, CheckoutResult &result,
     // Step 3: build the one-line bill header and its product details.
     Bill bill;
     if (!buildBill(billId, order, request.items, bill, error,
-            seasonalDiscountPercentage)) {
+            seasonalDiscountPercentage, request.specialDiscountPercentage)) {
         setErrorIfEmpty(error, QStringLiteral("Could not build the bill."));
         return false;
     }
