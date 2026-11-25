@@ -31,6 +31,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QWheelEvent>
 #include <QDateEdit>
 #include <QFileInfo>
 #include <QFileDialog>
@@ -1356,6 +1357,31 @@ void testSale(QStackedWidget *stack)
     check(customer && barcode, QStringLiteral("New Order: customer or barcode field missing."));
     QPushButton *addItem = button(cashier, QStringLiteral("Add item"));
     check(addItem, QStringLiteral("New Order: no Add item button beside the barcode field."));
+
+    // Payment method is Cash by default, and scrolling the mouse wheel over
+    // it (or the special discount) does not change it.
+    for (QComboBox *combo : cashier->findChildren<QComboBox *>())
+    {
+        const bool payment = combo->findText(QStringLiteral("Wallet")) >= 0;
+        const bool special = combo->findText(QStringLiteral("8%")) >= 0;
+        if (!payment && !special)
+            continue;
+        if (payment)
+            check(combo->currentText() == QStringLiteral("Cash"),
+                QStringLiteral("New Order: payment method must be Cash by default, is %1.").arg(combo->currentText()));
+        const QString before = combo->currentText();
+        const QPointF centre(combo->width() / 2.0, combo->height() / 2.0);
+        for (int notch : {-120, 120, -120})
+        {
+            QWheelEvent wheel(centre, combo->mapToGlobal(centre), QPoint(), QPoint(0, notch),
+                Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(combo, &wheel);
+        }
+        check(combo->currentText() == before,
+            QStringLiteral("New Order: scrolling over %1 changed it from %2 to %3.")
+                .arg(payment ? QStringLiteral("the payment method") : QStringLiteral("the special discount"),
+                    before, combo->currentText()));
+    }
     QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
     check(hold && !hold->isEnabled(),
         QStringLiteral("Hold order should be visible but disabled while the cart is empty."));

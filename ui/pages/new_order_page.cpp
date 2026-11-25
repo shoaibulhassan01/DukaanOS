@@ -488,6 +488,7 @@ private:
         specialDiscountRate_->setFixedHeight(34);
         specialDiscountRate_->setMinimumWidth(84);
         specialDiscountRate_->setStyleSheet(fieldStyle());
+        UiPages::ignoreMouseWheel(specialDiscountRate_);
         specialDiscountRateLayout->addWidget(specialDiscountRate_);
         layout->addWidget(specialDiscountRateRow_);
         if (editExistingOrder_)
@@ -521,6 +522,9 @@ private:
         paymentMethod_ = new QComboBox(paymentFields_);
         paymentMethod_->addItems({QStringLiteral("Cash"), QStringLiteral("Card"),
             QStringLiteral("Wallet")});
+        paymentMethod_->setCurrentIndex(0);   // Cash by default
+        // Scrolling over it must not switch Cash / Card / Wallet.
+        UiPages::ignoreMouseWheel(paymentMethod_);
         paymentMethod_->setFixedHeight(42);
         paymentMethod_->setStyleSheet(fieldStyle());
         paymentLayout->addWidget(paymentMethod_);
