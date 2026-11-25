@@ -38,6 +38,7 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QDoubleSpinBox>
+#include <QDialog>
 #include <QEventLoop>
 #include <QEvent>
 #include <QFile>
@@ -1110,6 +1111,89 @@ void testCashierAccountCreation(QStackedWidget *stack)
             QStringLiteral("smoke123"), user, error)
         && user.role == QStringLiteral("cashier"),
         QStringLiteral("Created account cannot log in as a cashier: %1").arg(error));
+
+    QTableWidget *accountsTable = nullptr;
+    for (QTableWidget *table : manager->findChildren<QTableWidget *>())
+        if (table->objectName() == QStringLiteral("cashierAccountsTable"))
+            accountsTable = table;
+    check(accountsTable && accountsTable->rowCount() > 0,
+        QStringLiteral("Cashier Accounts must list the existing cashier accounts."));
+    if (!accountsTable)
+        return;
+
+    auto accountRow = [accountsTable](const QString &accountName) {
+        for (int row = 0; row < accountsTable->rowCount(); ++row)
+            if (accountsTable->item(row, 0)
+                && accountsTable->item(row, 0)->text() == accountName)
+                return row;
+        return -1;
+    };
+    int row = accountRow(QStringLiteral("smoke_cashier"));
+    check(row >= 0, QStringLiteral("New cashier account was not added to the account list."));
+    if (row < 0)
+        return;
+
+    auto editCashier = [&](int accountRow, const QString &newName,
+                           const QString &newPassword) {
+        auto *edit = qobject_cast<QPushButton *>(accountsTable->cellWidget(accountRow, 1));
+        check(edit && edit->text() == QStringLiteral("Edit"),
+            QStringLiteral("Each cashier row must provide an Edit action."));
+        if (!edit)
+            return false;
+
+        bool dialogShown = false;
+        bool fieldsAvailable = false;
+        QTimer::singleShot(0, [&]() {
+            auto *dialog = qobject_cast<QDialog *>(QApplication::activeModalWidget());
+            if (!dialog || dialog->objectName() != QStringLiteral("editCashierAccountDialog"))
+                return;
+            dialogShown = true;
+            auto *usernameField = dialog->findChild<QLineEdit *>(
+                QStringLiteral("cashierEditUsername"));
+            auto *passwordField = dialog->findChild<QLineEdit *>(
+                QStringLiteral("cashierEditPassword"));
+            auto *save = dialog->findChild<QPushButton *>(
+                QStringLiteral("saveCashierEditButton"));
+            fieldsAvailable = usernameField && passwordField && save
+                && passwordField->echoMode() == QLineEdit::Password;
+            if (!fieldsAvailable)
+            {
+                dialog->reject();
+                return;
+            }
+            usernameField->setText(newName);
+            passwordField->setText(newPassword);
+            save->click();
+        });
+        edit->click();
+        check(dialogShown, QStringLiteral("Clicking Edit must open the cashier edit popup."));
+        check(fieldsAvailable,
+            QStringLiteral("Edit popup must provide username and masked password fields."));
+        return dialogShown && fieldsAvailable;
+    };
+
+    check(editCashier(row, QStringLiteral("smoke_cashier_renamed"), QString()),
+        QStringLiteral("Could not edit cashier username from the popup."));
+    settle();
+    check(!Pos::login(Pos::DataPaths::users(), QStringLiteral("smoke_cashier"),
+            QStringLiteral("smoke123"), user, error)
+            && Pos::login(Pos::DataPaths::users(), QStringLiteral("smoke_cashier_renamed"),
+                QStringLiteral("smoke123"), user, error),
+        QStringLiteral("Cashier username change must preserve the existing password."));
+
+    row = accountRow(QStringLiteral("smoke_cashier_renamed"));
+    check(row >= 0, QStringLiteral("Renamed cashier row was not refreshed."));
+    if (row < 0)
+        return;
+    check(editCashier(row, QStringLiteral("smoke_cashier_renamed"),
+            QStringLiteral("smoke456")),
+        QStringLiteral("Could not edit cashier password from the popup."));
+    settle();
+    check(!Pos::login(Pos::DataPaths::users(), QStringLiteral("smoke_cashier_renamed"),
+            QStringLiteral("smoke123"), user, error)
+            && Pos::login(Pos::DataPaths::users(), QStringLiteral("smoke_cashier_renamed"),
+                QStringLiteral("smoke456"), user, error),
+        QStringLiteral("Cashier password change must replace the old password."));
 }
 
 void testSale(QStackedWidget *stack)
@@ -1177,7 +1261,7 @@ void testSale(QStackedWidget *stack)
         Pos::readProducts(Pos::DataPaths::products(), productList, error);
         QString imagePath;
         for (const Pos::Product &product : productList)
-            if (product.barcode == QStringLiteral("100002"))
+            if (product.barcode == QStringLiteral("100001"))
                 imagePath = QFileInfo(product.barcodeImage).absoluteFilePath();
         QWidget *scanPage = UiPages::createNewOrderPage();
         scanPage->resize(1200, 800);
@@ -1203,15 +1287,15 @@ void testSale(QStackedWidget *stack)
         for (QTableWidget *table : scanPage->findChildren<QTableWidget *>())
             if (table->isVisible() && table->columnCount() == 5)
                 scanCart = table;
-        check(scanCart && scanCart->rowCount() == 1 && showsText(scanPage, QStringLiteral("100002")),
+        check(scanCart && scanCart->rowCount() == 1 && showsText(scanPage, QStringLiteral("100001")),
             QStringLiteral("A scanned barcode must still be added to the order."));
-        check(scanField && scanField->text() == QStringLiteral("100002"),
+        check(scanField && scanField->text() == QStringLiteral("100001"),
             QStringLiteral("A scanned barcode must stay in the barcode field, saw: %1")
                 .arg(scanField ? scanField->text() : QStringLiteral("(no field)")));
         bool matchShown = false;
         for (QLabel *label : scanPage->findChildren<QLabel *>())
             matchShown = matchShown
-                || (label->isVisible() && label->text().startsWith(QStringLiteral("<b>Dairy milk</b>")));
+                || (label->isVisible() && label->text().startsWith(QStringLiteral("<b>Apple juice</b>")));
         check(matchShown,
             QStringLiteral("The scanned product must stay shown under the barcode field."));
         delete scanPage;

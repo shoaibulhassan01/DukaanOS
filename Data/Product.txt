@@ -1,5 +1,5 @@
 P0001 100001 APL Apple_juice count 250.00 12.50 10.00 36 Data/barcodes/apple_juice_100001.png 10#
-P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 4 Data/barcodes/dairy_milk_100002.png 10#
+P0002 100002 MILK Dairy_milk count 180.00 9.00 0.00 0 Data/barcodes/dairy_milk_100002.png 10#
 P0003 100003 TEA Tea_leaves weight 850.00 42.50 25.00 10 Data/barcodes/tea_leaves_100003.png 10#
 P0004 100004 CFE Instant_coffee count 650.00 32.50 20.00 18 Data/barcodes/instant_coffee_100004.png 10#
 P0005 200001 BRD White_bread count 150.00 0.00 0.00 25 Data/barcodes/white_bread_200001.png 20#
