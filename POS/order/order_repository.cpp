@@ -32,11 +32,11 @@ namespace Pos
         return true;
     }
 
-    // Check whether the order status is valid.
+    // Check whether the order status is valid. An order is first saved when
+    // it is held (on-hold) or paid; a discarded held order is archived.
     static bool isValidStatus(QString status)
     {
-        return status == "in-progress"
-            || status == "on-hold"
+        return status == "on-hold"
             || status == "paid"
             || status == "archived";
     }

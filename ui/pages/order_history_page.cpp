@@ -62,8 +62,6 @@ QString displayStatus(const QString &status)
         return QStringLiteral("Paid");
     if (status == QStringLiteral("on-hold"))
         return QStringLiteral("On hold");
-    if (status == QStringLiteral("in-progress"))
-        return QStringLiteral("In progress");
     if (status == QStringLiteral("archived"))
         return QStringLiteral("Archived");
     return status;
@@ -208,7 +206,7 @@ public:
 
         statusFilter_ = new QComboBox(card);
         statusFilter_->addItems({QStringLiteral("All statuses"), QStringLiteral("Paid"),
-            QStringLiteral("On hold"), QStringLiteral("In progress"), QStringLiteral("Archived")});
+            QStringLiteral("On hold"), QStringLiteral("Archived")});
         statusFilter_->setFixedSize(145, 40);
         statusFilter_->setStyleSheet(search_->styleSheet());
         filters->addWidget(statusFilter_);

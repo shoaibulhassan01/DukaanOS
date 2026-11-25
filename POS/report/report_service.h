@@ -45,7 +45,7 @@ bool topStockProducts(QString productFile, int limit, QVector<Product> &rows, QS
 // yearly, specified time period)" and "all sales with total amount and
 // discounts". Agreed rules:
 //   - a sale is a PAID order (Order.txt status "paid") with its bill in
-//     Bill.txt; on-hold, in-progress and archived (discarded) orders are not
+//     Bill.txt; on-hold and archived (discarded) orders are not
 //     sales;
 //   - a sale's date is its bill date (when it was paid), and its amount is
 //     the bill's total payable;
