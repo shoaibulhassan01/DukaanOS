@@ -9,6 +9,7 @@
 // manager access to the saved bill and PDF export.
 
 #include "../ui.h"
+#include "../pages/new_order_page.h"
 #include "../pages/product_dialog.h"
 #include "../pages/seasons_page.h"
 #include "../theme.h"
@@ -30,6 +31,8 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QFileInfo>
+#include <QFileDialog>
 #include <QCompleter>
 #include <QDate>
 #include <QDir>
@@ -1162,6 +1165,57 @@ void testSale(QStackedWidget *stack)
     settle();
     check(showsText(cashier, QStringLiteral("100001")),
         QStringLiteral("Clicking Add item must add the matched product."));
+    check(barcode->text().isEmpty(),
+        QStringLiteral("A typed barcode must be cleared after Add item, saw: %1").arg(barcode->text()));
+
+    // A scanned barcode (here an uploaded barcode image) is added to the
+    // order AND stays in the barcode field with its product shown, so the
+    // cashier can open its description. Uses a separate New Order page so
+    // this sale's cart is not changed.
+    {
+        QVector<Pos::Product> productList;
+        Pos::readProducts(Pos::DataPaths::products(), productList, error);
+        QString imagePath;
+        for (const Pos::Product &product : productList)
+            if (product.barcode == QStringLiteral("100002"))
+                imagePath = QFileInfo(product.barcodeImage).absoluteFilePath();
+        QWidget *scanPage = UiPages::createNewOrderPage();
+        scanPage->resize(1200, 800);
+        scanPage->show();
+        settle();
+        popupHandler = [imagePath](QWidget *popup) {
+            auto *chooser = qobject_cast<QFileDialog *>(popup);
+            if (!chooser)
+                return false;
+            // Type the full path into the file name box, as a user would.
+            if (QLineEdit *name = chooser->findChild<QLineEdit *>(QStringLiteral("fileNameEdit")))
+                name->setText(imagePath);
+            QMetaObject::invokeMethod(chooser, "accept");
+            popupHandler = nullptr;   // last: this clears the lambda itself
+            return true;
+        };
+        if (QPushButton *upload = button(scanPage, QStringLiteral("Upload image")))
+            upload->click();
+        settle();
+        popupHandler = nullptr;
+        QLineEdit *scanField = field(scanPage, QStringLiteral("Enter product barcode"));
+        QTableWidget *scanCart = nullptr;
+        for (QTableWidget *table : scanPage->findChildren<QTableWidget *>())
+            if (table->isVisible() && table->columnCount() == 5)
+                scanCart = table;
+        check(scanCart && scanCart->rowCount() == 1 && showsText(scanPage, QStringLiteral("100002")),
+            QStringLiteral("A scanned barcode must still be added to the order."));
+        check(scanField && scanField->text() == QStringLiteral("100002"),
+            QStringLiteral("A scanned barcode must stay in the barcode field, saw: %1")
+                .arg(scanField ? scanField->text() : QStringLiteral("(no field)")));
+        bool matchShown = false;
+        for (QLabel *label : scanPage->findChildren<QLabel *>())
+            matchShown = matchShown
+                || (label->isVisible() && label->text().startsWith(QStringLiteral("<b>Dairy milk</b>")));
+        check(matchShown,
+            QStringLiteral("The scanned product must stay shown under the barcode field."));
+        delete scanPage;
+    }
     check(hold && hold->isEnabled(),
         QStringLiteral("Hold order should become available as soon as a product is added."));
 
