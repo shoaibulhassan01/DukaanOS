@@ -11,6 +11,10 @@ namespace Pos
 bool readBill(QString billFile, QString detailFile, QString billId, Bill &bill,
     QString &error);
 
+// Reads every Bill.txt header (no details), in file order. A missing file
+// means no bills yet.
+bool readBills(QString billFile, QVector<Bill> &bills, QString &error);
+
 // Reads the bill header and details belonging to an order.
 bool readBillForOrder(QString billFile, QString detailFile, QString orderId,
     Bill &bill, QString &error);

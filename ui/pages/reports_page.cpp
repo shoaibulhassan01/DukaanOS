@@ -7,6 +7,7 @@
 #include "../../POS/report/report_service.h"
 
 #include <QComboBox>
+#include <QDateEdit>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QHash>
@@ -35,13 +36,21 @@ struct ReportTable
     QString emptyText;         // shown when there are no rows
 };
 
+// What the manager chose above the table.
+struct ReportOptions
+{
+    QString unit;      // "" for all items, "count" or "weight" (unit filter)
+    QDate from;        // sales period (both days included)
+    QDate to;
+};
+
 struct ReportDefinition
 {
     QString title;
     QString description;
     bool usesUnitFilter = false;
-    // unit: "" for all items, "count" or "weight" for the unit filter.
-    std::function<bool(ReportTable &table, QString &error, const QString &unit)> build;
+    std::function<bool(ReportTable &table, QString &error, const ReportOptions &options)> build;
+    bool usesPeriod = false;   // shows the Daily / Weekly / ... period row
 };
 
 QString display(QString field)
@@ -70,6 +79,18 @@ QString amountText(double amount)
     return QStringLiteral("PKR %1").arg(amount, 0, 'f', 2);
 }
 
+QString dayText(const QDate &date)
+{
+    return date.toString(QStringLiteral("dd MMM yyyy"));
+}
+
+QString paymentText(QString mode)
+{
+    if (!mode.isEmpty())
+        mode[0] = mode.at(0).toUpper();
+    return mode;
+}
+
 void addOrderReportRows(ReportTable &table, const Pos::OrderReport &report)
 {
     table.columns = {QStringLiteral("ORDER ID"), QStringLiteral("CUSTOMER"),
@@ -92,8 +113,8 @@ void addOrderReportRows(ReportTable &table, const Pos::OrderReport &report)
 }
 
 // ---------------------------------------------------------------------------
-// The reports. To add one (e.g. cash sales), put its calculation in
-// POS/report/ and add one entry to this list; the page does the rest.
+// The reports (req 11). To add one, put its calculation in POS/report/ and
+// add one entry to this list; the page does the rest.
 // ---------------------------------------------------------------------------
 QVector<ReportDefinition> reports()
 {
@@ -102,8 +123,9 @@ QVector<ReportDefinition> reports()
          QStringLiteral("Items sold in paid orders, most sold first, with the stock that is left. "
                         "Held and archived orders are not counted."),
          true,
-         [](ReportTable &table, QString &error, const QString &unit) {
+         [](ReportTable &table, QString &error, const ReportOptions &options) {
              // Owner: Umar Khan
+             const QString &unit = options.unit;
              QVector<Pos::SoldItem> items;
              if (!Pos::topSoldProducts(Pos::DataPaths::products(), Pos::DataPaths::orders(),
                      Pos::DataPaths::orderDetail(), 10, items, error, unit))
@@ -137,8 +159,9 @@ QVector<ReportDefinition> reports()
         {QStringLiteral("Top 10 items by remaining stock"),
          QStringLiteral("Items with the most stock left, highest first, so that purchase of these is not initiated."),
          true,
-         [](ReportTable &table, QString &error, const QString &unit) {
+         [](ReportTable &table, QString &error, const ReportOptions &options) {
              // Owner: Umar Khan
+             const QString &unit = options.unit;
              QVector<Pos::Product> products;
              if (!Pos::topStockProducts(Pos::DataPaths::products(), 10, products, error, unit))
                  return false;
@@ -163,7 +186,7 @@ QVector<ReportDefinition> reports()
         {QStringLiteral("Incomplete orders"),
          QStringLiteral("Orders that are not paid or archived: on-hold and in-progress orders, with their total amount."),
          false,
-         [](ReportTable &table, QString &error, const QString &) {
+         [](ReportTable &table, QString &error, const ReportOptions &) {
              Pos::OrderReport report;
              if (!Pos::readIncompleteOrdersReport(report, error))
                  return false;
@@ -174,12 +197,76 @@ QVector<ReportDefinition> reports()
         {QStringLiteral("Completed orders"),
          QStringLiteral("Paid and archived orders, with their total amount."),
          false,
-         [](ReportTable &table, QString &error, const QString &) {
+         [](ReportTable &table, QString &error, const ReportOptions &) {
              Pos::OrderReport report;
              if (!Pos::readCompletedOrdersReport(report, error))
                  return false;
              addOrderReportRows(table, report);
              table.emptyText = QStringLiteral("There are no completed orders.");
+             return true;
+         }},
+        {QStringLiteral("Cash sales"),
+         QStringLiteral("Paid orders paid in cash, by bill date, for the chosen day, week (Monday to Sunday), "
+                        "month, year or period, with their total."),
+         false,
+         [](ReportTable &table, QString &error, const ReportOptions &options) {
+             // Owner: Umar Khan (req 11: daily, weekly, monthly, yearly, specified period)
+             Pos::SalesReport report;
+             if (!Pos::cashSalesReport(Pos::DataPaths::orders(), Pos::DataPaths::bills(),
+                     options.from, options.to, report, error))
+                 return false;
+             table.columns = {QStringLiteral("BILL ID"), QStringLiteral("CUSTOMER"),
+                              QStringLiteral("ORDER ID"), QStringLiteral("DATE & TIME"),
+                              QStringLiteral("AMOUNT")};
+             table.rightAligned = {4};
+             for (const Pos::Sale &sale : report.sales)
+                 table.rows.append({
+                     sale.bill.id,
+                     display(sale.bill.customerName),
+                     sale.bill.orderId,
+                     QStringLiteral("%1  %2").arg(sale.bill.date, sale.bill.time),
+                     amountText(sale.bill.totalPayable)});
+             table.footer = QStringLiteral("%1 cash sale(s)  \u00B7  Total: %2")
+                 .arg(report.sales.size()).arg(amountText(report.totalAmount));
+             table.emptyText = QStringLiteral("There are no cash sales in this period.");
+             return true;
+         },
+         true},
+        {QStringLiteral("All sales"),
+         QStringLiteral("Every paid order (cash, card and wallet) with its amounts and discounts, "
+                        "and the total amount and discounts of all sales."),
+         false,
+         [](ReportTable &table, QString &error, const ReportOptions &) {
+             // Owner: Umar Khan (req 11: all sales with total amount and discounts)
+             Pos::SalesReport report;
+             if (!Pos::allSalesReport(Pos::DataPaths::orders(), Pos::DataPaths::bills(), report, error))
+                 return false;
+             table.columns = {QStringLiteral("BILL ID"), QStringLiteral("CUSTOMER"),
+                              QStringLiteral("DATE & TIME"), QStringLiteral("PAYMENT"),
+                              QStringLiteral("BEFORE TAX"), QStringLiteral("TAX"),
+                              QStringLiteral("PRODUCT DISCOUNT"), QStringLiteral("SEASONAL DISCOUNT"),
+                              QStringLiteral("SPECIAL DISCOUNT"), QStringLiteral("TOTAL")};
+             table.rightAligned = {4, 5, 6, 7, 8, 9};
+             for (const Pos::Sale &sale : report.sales)
+                 table.rows.append({
+                     sale.bill.id,
+                     display(sale.bill.customerName),
+                     QStringLiteral("%1  %2").arg(sale.bill.date, sale.bill.time),
+                     paymentText(sale.paymentMode),
+                     amountText(sale.bill.totalWithoutTax),
+                     amountText(sale.bill.totalTax),
+                     amountText(sale.bill.totalDiscount),
+                     amountText(sale.bill.seasonalDiscount),
+                     amountText(sale.bill.specialDiscount),
+                     amountText(sale.bill.totalPayable)});
+             table.footer = QStringLiteral(
+                 "%1 sale(s)  \u00B7  Total amount: %2  \u00B7  Discounts: %3 "
+                 "(product %4, seasonal %5, special %6)")
+                 .arg(report.sales.size())
+                 .arg(amountText(report.totalAmount), amountText(report.totalDiscounts),
+                     amountText(report.productDiscounts), amountText(report.seasonalDiscounts),
+                     amountText(report.specialDiscounts));
+             table.emptyText = QStringLiteral("There are no sales yet: there are no paid orders.");
              return true;
          }},
     };
@@ -231,6 +318,56 @@ public:
         heading->addWidget(unitFilter_);
         layout->addLayout(heading);
 
+        // Sales period (cash sales): a calendar day, week (Monday to
+        // Sunday), month or year around the chosen date, or any from-to range.
+        periodRow_ = new QWidget(card);
+        periodRow_->setObjectName(QStringLiteral("salesPeriodRow"));
+        periodRow_->setStyleSheet(QStringLiteral("QWidget#salesPeriodRow { background: transparent; }"));
+        auto *period = new QHBoxLayout(periodRow_);
+        period->setContentsMargins(0, 0, 0, 0);
+        period->setSpacing(8);
+        auto caption = [this](const QString &text) {
+            auto *label = new QLabel(text, periodRow_);
+            label->setStyleSheet(QStringLiteral(
+                "color: %1; font-size: 11px; font-weight: 600; background: transparent;").arg(kInk));
+            return label;
+        };
+        auto dateBox = [this](const QString &name, const QDate &date) {
+            auto *box = new QDateEdit(date, periodRow_);
+            box->setObjectName(name);
+            box->setCalendarPopup(true);
+            box->setDisplayFormat(QStringLiteral("dd MMM yyyy"));
+            box->setFixedSize(140, 40);
+            return box;
+        };
+        periodKind_ = new QComboBox(periodRow_);
+        periodKind_->setObjectName(QStringLiteral("salesPeriod"));
+        periodKind_->setFixedSize(170, 40);
+        periodKind_->setCursor(Qt::PointingHandCursor);
+        periodKind_->addItem(QStringLiteral("Daily"), static_cast<int>(Pos::SalesPeriod::Daily));
+        periodKind_->addItem(QStringLiteral("Weekly"), static_cast<int>(Pos::SalesPeriod::Weekly));
+        periodKind_->addItem(QStringLiteral("Monthly"), static_cast<int>(Pos::SalesPeriod::Monthly));
+        periodKind_->addItem(QStringLiteral("Yearly"), static_cast<int>(Pos::SalesPeriod::Yearly));
+        periodKind_->addItem(QStringLiteral("Specified period"), -1);
+        const QDate today = QDate::currentDate();
+        dateLabel_ = caption(QStringLiteral("Date"));
+        periodDate_ = dateBox(QStringLiteral("salesPeriodDate"), today);
+        fromLabel_ = caption(QStringLiteral("From"));
+        periodFrom_ = dateBox(QStringLiteral("salesPeriodFrom"), QDate(today.year(), today.month(), 1));
+        toLabel_ = caption(QStringLiteral("To"));
+        periodTo_ = dateBox(QStringLiteral("salesPeriodTo"), today);
+        period->addWidget(caption(QStringLiteral("Period")));
+        period->addWidget(periodKind_);
+        period->addSpacing(8);
+        period->addWidget(dateLabel_);
+        period->addWidget(periodDate_);
+        period->addWidget(fromLabel_);
+        period->addWidget(periodFrom_);
+        period->addWidget(toLabel_);
+        period->addWidget(periodTo_);
+        period->addStretch(1);
+        layout->addWidget(periodRow_);
+
         description_ = new QLabel(card);
         description_->setWordWrap(true);
         description_->setStyleSheet(QStringLiteral(
@@ -270,34 +407,72 @@ public:
 
         connect(selector_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() { refreshReport(); });
         connect(unitFilter_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() { refreshReport(); });
+        connect(periodKind_, qOverload<int>(&QComboBox::currentIndexChanged), this, [this]() { refreshReport(); });
+        for (QDateEdit *box : {periodDate_, periodFrom_, periodTo_})
+            connect(box, &QDateEdit::dateChanged, this, [this]() { refreshReport(); });
         refreshReport();
     }
 
 private:
+    // The empty / error box: muted text, or red for an error. Built from the
+    // light colours each time (the theme turns them dark in dark mode).
+    void setEmptyStyle(bool isError)
+    {
+        emptyLabel_->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 12px; background: #FAFAFD;"
+            " border: 1px dashed %2; border-radius: 12px; padding: 18px;")
+            .arg(isError ? QStringLiteral("#B42318") : kMuted, kLine));
+    }
+
     void refreshReport()
     {
         const int index = selector_->currentIndex();
         if (index < 0 || index >= reports_.size())
             return;
         const ReportDefinition &report = reports_.at(index);
-        description_->setText(report.description);
         unitFilter_->setVisible(report.usesUnitFilter);
+
+        ReportOptions options;
+        options.unit = unitFilter_->currentData().toString();
+        const int kind = periodKind_->currentData().toInt();
+        const bool specified = kind < 0;
+        if (specified)
+        {
+            options.from = periodFrom_->date();
+            options.to = periodTo_->date();
+        }
+        else
+        {
+            Pos::salesPeriodRange(static_cast<Pos::SalesPeriod>(kind), periodDate_->date(),
+                options.from, options.to);
+        }
+        periodRow_->setVisible(report.usesPeriod);
+        dateLabel_->setVisible(!specified);
+        periodDate_->setVisible(!specified);
+        fromLabel_->setVisible(specified);
+        periodFrom_->setVisible(specified);
+        toLabel_->setVisible(specified);
+        periodTo_->setVisible(specified);
+        description_->setText(!report.usesPeriod ? report.description
+            : QStringLiteral("%1 Showing %2.").arg(report.description,
+                  options.from == options.to ? dayText(options.from)
+                      : QStringLiteral("%1 \u2013 %2").arg(dayText(options.from), dayText(options.to))));
 
         ReportTable result;
         QString error;
-        const bool ok = report.build(result, error, unitFilter_->currentData().toString());
+        const bool ok = report.build(result, error, options);
         table_->clear();
         table_->setRowCount(0);
         if (!ok)
         {
             table_->hide();
             emptyLabel_->setText(QStringLiteral("The report could not be made: %1").arg(error));
-            emptyLabel_->setStyleSheet(emptyLabel_->styleSheet().replace(kMuted, QStringLiteral("#B42318")));
+            setEmptyStyle(true);
             emptyLabel_->show();
             footer_->clear();
             return;
         }
-        emptyLabel_->setStyleSheet(emptyLabel_->styleSheet().replace(QStringLiteral("#B42318"), kMuted));
+        setEmptyStyle(false);
 
         table_->setColumnCount(result.columns.size());
         table_->setHorizontalHeaderLabels(result.columns);
@@ -327,6 +502,14 @@ private:
     QVector<ReportDefinition> reports_;
     QComboBox *selector_ = nullptr;
     QComboBox *unitFilter_ = nullptr;
+    QWidget *periodRow_ = nullptr;
+    QComboBox *periodKind_ = nullptr;
+    QLabel *dateLabel_ = nullptr;
+    QDateEdit *periodDate_ = nullptr;
+    QLabel *fromLabel_ = nullptr;
+    QDateEdit *periodFrom_ = nullptr;
+    QLabel *toLabel_ = nullptr;
+    QDateEdit *periodTo_ = nullptr;
     QLabel *description_ = nullptr;
     QTableWidget *table_ = nullptr;
     QLabel *emptyLabel_ = nullptr;

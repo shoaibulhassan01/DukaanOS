@@ -31,6 +31,7 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QDateEdit>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QCompleter>
@@ -1077,6 +1078,127 @@ void testReportsPage(QStackedWidget *stack)
         check(cell(row, 3).endsWith(QStringLiteral(" count")) && cell(row, 4).endsWith(QStringLiteral(" count")),
             QStringLiteral("Most sold, counted items row %1 shows '%2 | %3'.").arg(row + 1).arg(cell(row, 3), cell(row, 4)));
     units->setCurrentIndex(0);
+    settle();
+
+    // All six req 11 reports are offered.
+    for (const QString &title : {QStringLiteral("Incomplete orders"), QStringLiteral("Completed orders"),
+             QStringLiteral("Cash sales"), QStringLiteral("All sales"),
+             QStringLiteral("Top 10 most sold items"), QStringLiteral("Top 10 items by remaining stock")})
+        check(selector->findText(title) >= 0, QStringLiteral("Reports: '%1' is missing.").arg(title));
+
+    // Cash sales: the period row appears only for this report.
+    QComboBox *periodKind = manager->findChild<QComboBox *>(QStringLiteral("salesPeriod"));
+    QDateEdit *periodDate = manager->findChild<QDateEdit *>(QStringLiteral("salesPeriodDate"));
+    QDateEdit *periodFrom = manager->findChild<QDateEdit *>(QStringLiteral("salesPeriodFrom"));
+    QDateEdit *periodTo = manager->findChild<QDateEdit *>(QStringLiteral("salesPeriodTo"));
+    QLabel *reportFooter = nullptr;
+    check(periodKind && periodDate && periodFrom && periodTo && !periodKind->isVisible(),
+        QStringLiteral("Reports: the sales period controls must exist and be hidden for other reports."));
+    if (!periodKind || !periodDate || !periodFrom || !periodTo)
+        return;
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Cash sales")));
+    settle();
+    QStringList kinds;
+    for (int i = 0; i < periodKind->count(); ++i)
+        kinds << periodKind->itemText(i);
+    check(periodKind->isVisible() && kinds == QStringList({QStringLiteral("Daily"), QStringLiteral("Weekly"),
+              QStringLiteral("Monthly"), QStringLiteral("Yearly"), QStringLiteral("Specified period")}),
+        QStringLiteral("Cash sales must offer Daily, Weekly, Monthly, Yearly and Specified period, got: %1")
+            .arg(kinds.join(QStringLiteral(", "))));
+    for (QLabel *label : manager->findChildren<QLabel *>())
+        if (label->isVisible() && label->text().contains(QStringLiteral("cash sale(s)")))
+            reportFooter = label;
+
+    // Pick the year of a real cash sale in the sample data.
+    Pos::SalesReport all;
+    Pos::allSalesReport(QStringLiteral("Data/Order.txt"), QStringLiteral("Data/Bill.txt"), all, error);
+    QDate saleDay;
+    for (const Pos::Sale &sale : all.sales)
+        if (sale.paymentMode == QStringLiteral("cash"))
+            saleDay = QDate::fromString(sale.bill.date, Qt::ISODate);
+    check(saleDay.isValid(), QStringLiteral("Sample data: a cash sale is needed for the report test."));
+    QDate from;
+    QDate to;
+    Pos::SalesReport cash;
+    periodKind->setCurrentIndex(periodKind->findText(QStringLiteral("Yearly")));
+    periodDate->setDate(saleDay);
+    settle();
+    Pos::salesPeriodRange(Pos::SalesPeriod::Yearly, saleDay, from, to);
+    Pos::cashSalesReport(QStringLiteral("Data/Order.txt"), QStringLiteral("Data/Bill.txt"), from, to, cash, error);
+    for (QLabel *label : manager->findChildren<QLabel *>())
+        if (label->isVisible() && label->text().contains(QStringLiteral("cash sale(s)")))
+            reportFooter = label;
+    check(!cash.sales.isEmpty() && table->rowCount() == cash.sales.size()
+            && reportFooter && reportFooter->text().contains(QStringLiteral("PKR %1").arg(cash.totalAmount, 0, 'f', 2)),
+        QStringLiteral("Yearly cash sales: %1 rows and total PKR %2 expected; table has %3, footer '%4'.")
+            .arg(cash.sales.size()).arg(cash.totalAmount, 0, 'f', 2).arg(table->rowCount())
+            .arg(reportFooter ? reportFooter->text() : QString()));
+    for (int row = 0; row < qMin(table->rowCount(), cash.sales.size()); ++row)
+        check(cell(row, 0) == cash.sales.at(row).bill.id,
+            QStringLiteral("Cash sales row %1 must be bill %2, shows %3.")
+                .arg(row + 1).arg(cash.sales.at(row).bill.id, cell(row, 0)));
+
+    // Specified period: From / To replace the single date.
+    periodKind->setCurrentIndex(periodKind->findText(QStringLiteral("Specified period")));
+    periodFrom->setDate(saleDay);
+    periodTo->setDate(saleDay);
+    settle();
+    check(periodFrom->isVisible() && periodTo->isVisible() && !periodDate->isVisible(),
+        QStringLiteral("Specified period must show From and To instead of one date."));
+    Pos::cashSalesReport(QStringLiteral("Data/Order.txt"), QStringLiteral("Data/Bill.txt"), saleDay, saleDay, cash, error);
+    check(table->rowCount() == cash.sales.size() && !cash.sales.isEmpty(),
+        QStringLiteral("Specified period %1: %2 rows expected, %3 shown.")
+            .arg(saleDay.toString(Qt::ISODate)).arg(cash.sales.size()).arg(table->rowCount()));
+    periodKind->setCurrentIndex(0);
+
+    // All sales: every paid order with its discounts and the totals.
+    selector->setCurrentIndex(selector->findText(QStringLiteral("All sales")));
+    settle();
+    check(!periodKind->isVisible(), QStringLiteral("All sales has no period: the period row must be hidden."));
+    QString allFooter;
+    for (QLabel *label : manager->findChildren<QLabel *>())
+        if (label->isVisible() && label->text().contains(QStringLiteral("sale(s)")))
+            allFooter = label->text();
+    check(table->rowCount() == all.sales.size()
+            && allFooter.contains(QStringLiteral("Total amount: PKR %1").arg(all.totalAmount, 0, 'f', 2))
+            && allFooter.contains(QStringLiteral("Discounts: PKR %1").arg(all.totalDiscounts, 0, 'f', 2)),
+        QStringLiteral("All sales: %1 rows, total PKR %2 and discounts PKR %3 expected; table has %4, footer '%5'.")
+            .arg(all.sales.size()).arg(all.totalAmount, 0, 'f', 2).arg(all.totalDiscounts, 0, 'f', 2)
+            .arg(table->rowCount()).arg(allFooter));
+    QStringList headers;
+    for (int column = 0; column < table->columnCount(); ++column)
+        headers << (table->horizontalHeaderItem(column) ? table->horizontalHeaderItem(column)->text() : QString());
+    check(headers.contains(QStringLiteral("PRODUCT DISCOUNT")) && headers.contains(QStringLiteral("SEASONAL DISCOUNT"))
+            && headers.contains(QStringLiteral("SPECIAL DISCOUNT")) && headers.contains(QStringLiteral("TOTAL")),
+        QStringLiteral("All sales must show each discount and the total, columns: %1").arg(headers.join(QStringLiteral(", "))));
+
+    // Switching light / dark keeps the chosen report and period (the page
+    // is not rebuilt) and leaves nothing light in dark mode.
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Cash sales")));
+    periodKind->setCurrentIndex(periodKind->findText(QStringLiteral("Monthly")));
+    settle();
+    QPushButton *themeToggle = manager->findChild<QPushButton *>(QStringLiteral("themeToggle"));
+    check(themeToggle, QStringLiteral("Dashboard: no light/dark toggle found."));
+    if (themeToggle)
+    {
+        const bool wasDark = UiTheme::isDark();
+        themeToggle->click();
+        settle();
+        QComboBox *selectorAfter = manager->findChild<QComboBox *>(QStringLiteral("reportSelector"));
+        QComboBox *periodAfter = manager->findChild<QComboBox *>(QStringLiteral("salesPeriod"));
+        check(UiTheme::isDark() != wasDark && selectorAfter == selector
+                && selectorAfter->currentText() == QStringLiteral("Cash sales")
+                && periodAfter && periodAfter->currentText() == QStringLiteral("Monthly"),
+            QStringLiteral("Switching light/dark must keep the Reports page as it was, got '%1' / '%2'.")
+                .arg(selectorAfter ? selectorAfter->currentText() : QString(),
+                    periodAfter ? periodAfter->currentText() : QString()));
+        if (UiTheme::isDark())
+            checkNoLightBackgrounds(manager, QStringLiteral("Reports after switching to dark mode"));
+        themeToggle->click();   // back to how it was
+        settle();
+    }
+    periodKind->setCurrentIndex(0);
+    selector->setCurrentIndex(0);
     settle();
 }
 

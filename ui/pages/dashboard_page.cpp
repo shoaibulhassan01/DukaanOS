@@ -276,11 +276,15 @@ private:
         layout->addStretch(1);
 
         // Light / dark mode (sun / moon). After switching, rebuild the page so
-        // colours set in code (icons, status text) follow too; New Order is
-        // left as it is so the cart is not lost.
+        // colours set in code (icons, status text) follow too. New Order is
+        // left as it is so the cart is not lost, and Reports so the chosen
+        // report, filters and period stay (its colours all come from style
+        // sheets, which the theme re-colours in place).
         auto *themeButton = UiTheme::createToggleButton(header, true);
+        themeButton->setObjectName(QStringLiteral("themeToggle"));
         connect(themeButton, &QPushButton::clicked, this, [this]() {
-            if (currentPage_ != QStringLiteral("New Order"))
+            if (currentPage_ != QStringLiteral("New Order")
+                && currentPage_ != QStringLiteral("Reports"))
                 navigateTo(currentPage_);
         });
         layout->addWidget(themeButton);
