@@ -189,10 +189,14 @@ int main(int argc, char *argv[])
             const double withoutTax = row.at(3).toDouble();
             const double tax = row.at(4).toDouble();
             const double discount = row.at(5).toDouble();
+            const double seasonalDiscount = row.at(10).toDouble();
+            const double specialDiscount = row.at(11).toDouble();
             const double payable = row.at(6).toDouble();
-        check(sameMoney(withoutTax + tax - discount, payable),
-                QStringLiteral("Bill %1: %2 + %3 - %4 is not %5.")
-                    .arg(billId, row.at(3), row.at(4), row.at(5), row.at(6)));
+            check(sameMoney(withoutTax + tax - discount
+                    - seasonalDiscount - specialDiscount, payable),
+                QStringLiteral("Bill %1: %2 + %3 - %4 - %5 - %6 is not %7.")
+                    .arg(billId).arg(row.at(3)).arg(row.at(4)).arg(row.at(5))
+                    .arg(row.at(10)).arg(row.at(11)).arg(row.at(6)));
             if (row.at(9) == QStringLiteral("paid"))
             {
                 check(sameMoney(row.at(7).toDouble() - row.at(8).toDouble(), payable),
