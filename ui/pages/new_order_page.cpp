@@ -122,7 +122,7 @@ public:
             },
             [this](const QString &barcode) {
                 barcodeEdit_->setText(barcode);
-                submitBarcode(barcode);
+                submitBarcode(barcode, true);
             },
             [this](const QString &error) {
                 stopCamera();
@@ -203,7 +203,7 @@ private:
         }
 
         barcodeEdit_->setText(barcode);
-        submitBarcode(barcode);
+        submitBarcode(barcode, true);
     }
 
     QWidget *createCustomerCard()
@@ -675,7 +675,10 @@ private:
         setStatus(QStringLiteral("Product matched from Product.txt."));
     }
 
-    void submitBarcode(QString barcode)
+    // fromScan: the barcode came from the camera or an uploaded image. It is
+    // still added to the order, and also stays in the barcode field with its
+    // product shown, so Description works without retyping it.
+    void submitBarcode(QString barcode, bool fromScan = false)
     {
         barcodeLookupTimer_->stop();
         barcode = barcode.trimmed();
@@ -688,7 +691,7 @@ private:
         }
         lookupBarcode(barcode);
         if (hasMatchedProduct_)
-            addProductToCart();
+            addProductToCart(fromScan);
     }
 
     void stepQuantity(int change)
@@ -700,7 +703,7 @@ private:
         quantity_->setText(QString::number(qBound(1, quantity + change, 999)));
     }
 
-    void addProductToCart()
+    void addProductToCart(bool keepScannedBarcode = false)
     {
         if (!hasMatchedProduct_)
         {
@@ -745,7 +748,19 @@ private:
         refreshCart();
         setStatus(QStringLiteral("Product added to the order preview."));
         quantity_->setText(QStringLiteral("1"));
-        barcodeEdit_->clear();
+        if (keepScannedBarcode)
+        {
+            // Keep the scanned barcode and its product (no new lookup, so
+            // the "added" message stays); selected so typing replaces it.
+            const QSignalBlocker block(barcodeEdit_);
+            barcodeEdit_->setText(currentProduct_.barcode);
+            barcodeEdit_->selectAll();
+            matchLabel_->show();
+        }
+        else
+        {
+            barcodeEdit_->clear();
+        }
         barcodeEdit_->setFocus();
     }
 
