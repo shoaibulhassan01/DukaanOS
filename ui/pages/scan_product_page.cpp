@@ -15,6 +15,8 @@
 #include <QMediaDevices>
 #include <QPixmap>
 #include <QPushButton>
+#include <QRegularExpression>
+#include <QRegularExpressionValidator>
 #include <QVBoxLayout>
 
 namespace
@@ -23,6 +25,12 @@ const QString kNavy = QStringLiteral("#111184");
 const QString kInk = QStringLiteral("#20233B");
 const QString kMuted = QStringLiteral("#777B91");
 const QString kLine = QStringLiteral("#E7E9F3");
+
+bool isSixDigitBarcode(const QString &barcode)
+{
+    static const QRegularExpression pattern(QStringLiteral("^[0-9]{6}$"));
+    return pattern.match(barcode).hasMatch();
+}
 
 class ScanProductPage : public QWidget
 {
@@ -61,7 +69,7 @@ public:
         layout->addLayout(heading);
 
         auto *hint = new QLabel(QStringLiteral(
-            "Point the camera at a product barcode (any angle), or type the 6-digit barcode."), card);
+            "Camera scans automatically. Or enter a 6-digit barcode and click Look up."), card);
         hint->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 10px; background: transparent;").arg(kMuted));
         layout->addWidget(hint);
@@ -78,6 +86,9 @@ public:
         entry->setSpacing(9);
         barcodeEdit_ = new QLineEdit(card);
         barcodeEdit_->setPlaceholderText(QStringLiteral("Enter product barcode"));
+        barcodeEdit_->setMaxLength(6);
+        barcodeEdit_->setValidator(new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral("[0-9]{0,6}")), barcodeEdit_));
         barcodeEdit_->setFixedHeight(40);
         barcodeEdit_->setStyleSheet(QStringLiteral(
             "QLineEdit { background: #FAFAFD; color: %1; border: 1px solid %2; border-radius: 9px;"
@@ -190,6 +201,11 @@ private:
         if (barcode.isEmpty())
         {
             setStatus(QStringLiteral("Scan or enter a barcode first."), true);
+            return;
+        }
+        if (!isSixDigitBarcode(barcode))
+        {
+            setStatus(QStringLiteral("Barcode must contain exactly 6 digits."), true);
             return;
         }
 

@@ -16,12 +16,9 @@ namespace UiTheme
 // page backgrounds become dark surfaces, status colours (red, green, amber)
 // get dark-friendly versions. The bill PDF is not affected (it is for print).
 //
-// The app starts in the Windows mode (Settings > Personalisation > Colours >
-// Choose your mode) and follows it live, until the user clicks the sun / moon
-// button; from then on the user's choice is kept while the app is open.
-// Either way the app draws its own colours, so light mode looks the same on a
-// dark PC and dark mode looks the same on a light PC.
-// DUKAANOS_THEME=light or DUKAANOS_THEME=dark forces a starting mode.
+// The app starts in light mode regardless of the Windows appearance. The sun /
+// moon button switches the whole app between light and dark mode.
+// DUKAANOS_THEME=light or DUKAANOS_THEME=dark can override the starting mode.
 
 // Call once, right after creating the QApplication.
 void install(QApplication &app);

@@ -20,10 +20,15 @@ bool login(QString filePath, QString username, QString password,
         return false;
 
     User matchedUser;
-    if (!findUser(users, username, matchedUser)
-        || !verifyPassword(matchedUser.password, password))
+    if (!findUser(users, username, matchedUser))
     {
         error = QStringLiteral("Invalid username or password.");
+        return false;
+    }
+    if (!verifyPassword(matchedUser.password, password, &error))
+    {
+        if (error.isEmpty())
+            error = QStringLiteral("Invalid username or password.");
         return false;
     }
 

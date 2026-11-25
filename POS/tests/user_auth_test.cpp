@@ -18,6 +18,14 @@ int fail(const QString &message)
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+    if (!Pos::verifyPassword(
+            QStringLiteral("pbkdf2_sha256$100000$000102030405060708090a0b0c0d0e0f$"
+                           "a29fea0fed85c5b8610c2e5697ea41b5587139e58a388e0c7b7ced30d4e6d8df"),
+            QStringLiteral("password")))
+    {
+        return fail(QStringLiteral("PBKDF2 verification is incompatible with the standard vector."));
+    }
+
     QTemporaryDir directory;
     if (!directory.isValid())
         return fail(QStringLiteral("Could not create temporary test directory."));

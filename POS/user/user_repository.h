@@ -13,7 +13,7 @@ bool readUsers(QString filePath, QVector<User> &users, QString &error);
 // Owner: Umar Khan - find a user by exact username.
 bool findUser(QVector<User> users, QString username, User &user);
 
-bool verifyPassword(QString storedPassword, QString password);
+bool verifyPassword(QString storedPassword, QString password, QString *error = nullptr);
 bool updateUserPassword(QString filePath, QString username, QString password,
     QString &error);
 
