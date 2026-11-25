@@ -14,11 +14,9 @@
 #include <QDate>
 #include <QDateTime>
 #include <QDialog>
-#include <QDialogButtonBox>
 #include <QDir>
 #include <QFileInfo>
 #include <QFrame>
-#include <QFormLayout>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -132,9 +130,10 @@ class OrderHistoryPage : public QWidget
 {
 public:
     OrderHistoryPage(std::function<void()> onNewOrder,
-        std::function<void(const OrderPreview &, bool)> onEditOrder, QWidget *parent)
+        std::function<void(const OrderPreview &, bool)> onEditOrder,
+        bool signedInAsManager, QWidget *parent)
         : QWidget(parent), onNewOrder_(std::move(onNewOrder)),
-          onEditOrder_(std::move(onEditOrder))
+          onEditOrder_(std::move(onEditOrder)), signedInAsManager_(signedInAsManager)
     {
         auto *root = new QVBoxLayout(this);
         root->setContentsMargins(0, 0, 0, 20);
@@ -323,56 +322,112 @@ private:
                 || orders_.at(row).status == QStringLiteral("paid")));
     }
 
+    // Manager approval for editing a paid order (req 3), styled like the
+    // other forms (labels above fields, rounded inputs, Cancel / Approve).
     bool requestManagerApproval()
     {
         QDialog dialog(this);
         dialog.setObjectName(QStringLiteral("managerApprovalDialog"));
         dialog.setWindowTitle(QStringLiteral("Manager approval"));
-        dialog.setMinimumWidth(390);
-        auto *layout = new QVBoxLayout(&dialog);
-        auto *message = new QLabel(QStringLiteral(
-            "A manager must approve editing this paid order."), &dialog);
-        message->setWordWrap(true);
-        layout->addWidget(message);
+        dialog.setMinimumWidth(400);
+        dialog.setStyleSheet(QStringLiteral(
+            "QDialog { background: white; }"
+            "QLineEdit { background: #FAFAFD; color: %1; border: 1px solid %2;"
+            " border-radius: 8px; padding: 0 10px; font-size: 12px; }"
+            "QLineEdit:focus { background: white; border: 1px solid %3; }")
+            .arg(kInk, kLine, kNavy));
 
-        auto *form = new QFormLayout;
-        auto *username = new QLineEdit(&dialog);
-        username->setObjectName(QStringLiteral("managerApprovalUsername"));
-        username->setPlaceholderText(QStringLiteral("Manager username"));
-        auto *password = new QLineEdit(&dialog);
-        password->setObjectName(QStringLiteral("managerApprovalPassword"));
-        password->setPlaceholderText(QStringLiteral("Manager password"));
+        auto *layout = new QVBoxLayout(&dialog);
+        layout->setContentsMargins(22, 20, 22, 18);
+        layout->setSpacing(8);
+
+        auto *title = new QLabel(QStringLiteral("Manager approval"), &dialog);
+        title->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 15px; font-weight: 700;").arg(kInk));
+        layout->addWidget(title);
+        auto *message = new QLabel(QStringLiteral(
+            "This order is paid. A manager must sign in here to approve editing it."), &dialog);
+        message->setWordWrap(true);
+        message->setStyleSheet(QStringLiteral("color: %1; font-size: 10px;").arg(kMuted));
+        layout->addWidget(message);
+        layout->addSpacing(4);
+
+        auto field = [&dialog, layout](const QString &caption, const QString &placeholder,
+                         const QString &objectName) {
+            auto *label = new QLabel(caption, &dialog);
+            label->setStyleSheet(QStringLiteral(
+                "color: %1; font-size: 11px; font-weight: 600;").arg(kInk));
+            layout->addWidget(label);
+            auto *edit = new QLineEdit(&dialog);
+            edit->setObjectName(objectName);
+            edit->setPlaceholderText(placeholder);
+            edit->setFixedHeight(38);
+            layout->addWidget(edit);
+            return edit;
+        };
+        auto *username = field(QStringLiteral("Manager username"), QStringLiteral("e.g. manager"),
+            QStringLiteral("managerApprovalUsername"));
+        auto *password = field(QStringLiteral("Password"), QStringLiteral("Manager password"),
+            QStringLiteral("managerApprovalPassword"));
         password->setEchoMode(QLineEdit::Password);
-        form->addRow(QStringLiteral("Username"), username);
-        form->addRow(QStringLiteral("Password"), password);
-        layout->addLayout(form);
 
         auto *errorLabel = new QLabel(&dialog);
         errorLabel->setWordWrap(true);
-        errorLabel->setStyleSheet(QStringLiteral("color: #B42318;"));
+        errorLabel->setStyleSheet(QStringLiteral(
+            "color: #B42318; font-size: 10px; font-weight: 600;"));
+        errorLabel->hide();
         layout->addWidget(errorLabel);
 
-        auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel, &dialog);
-        QPushButton *approve = buttons->addButton(QStringLiteral("Approve"),
-            QDialogButtonBox::AcceptRole);
-        layout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        auto *buttons = new QHBoxLayout;
+        buttons->addStretch(1);
+        auto *cancel = new QPushButton(QStringLiteral("Cancel"), &dialog);
+        cancel->setCursor(Qt::PointingHandCursor);
+        cancel->setFixedHeight(36);
+        cancel->setStyleSheet(QStringLiteral(
+            "QPushButton { background: #F0F0FF; color: %1; border: 1px solid #E1E2FA;"
+            " border-radius: 8px; padding: 0 14px; font-size: 10px; font-weight: 600; }"
+            "QPushButton:hover { background: #E8E9FF; }").arg(kNavy));
+        auto *approve = new QPushButton(QStringLiteral("Approve"), &dialog);
+        approve->setCursor(Qt::PointingHandCursor);
+        approve->setFixedHeight(36);
+        approve->setDefault(true);
+        approve->setStyleSheet(QStringLiteral(
+            "QPushButton { background: %1; color: white; border: none; border-radius: 8px;"
+            " padding: 0 16px; font-size: 10px; font-weight: 700; }"
+            "QPushButton:hover { background: #0D0D6B; }"
+            "QPushButton:disabled { background: #8C8CC4; }").arg(kNavy));
+        buttons->addWidget(cancel);
+        buttons->addWidget(approve);
+        layout->addSpacing(8);
+        layout->addLayout(buttons);
+
+        connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
+        connect(password, &QLineEdit::returnPressed, approve, &QPushButton::click);
         connect(approve, &QPushButton::clicked, &dialog, [&]() {
+            // Checking the password takes a moment: show it, then check.
+            approve->setEnabled(false);
+            approve->setText(QStringLiteral("Checking…"));
+            errorLabel->hide();
+            QCoreApplication::processEvents();
             Pos::User user;
             QString error;
-            if (!Pos::login(Pos::DataPaths::users(), username->text(),
-                    password->text(), user, error))
+            const bool signedIn = Pos::login(Pos::DataPaths::users(), username->text(),
+                password->text(), user, error);
+            approve->setText(QStringLiteral("Approve"));
+            approve->setEnabled(true);
+            if (signedIn && user.role != QStringLiteral("manager"))
+                error = QStringLiteral("Only a manager account can approve this edit.");
+            if (!signedIn || user.role != QStringLiteral("manager"))
             {
                 errorLabel->setText(error);
-                return;
-            }
-            if (user.role != QStringLiteral("manager"))
-            {
-                errorLabel->setText(QStringLiteral("Only a manager account can approve this edit."));
+                errorLabel->show();
+                password->clear();
+                password->setFocus();
                 return;
             }
             dialog.accept();
         });
+        username->setFocus();
         return dialog.exec() == QDialog::Accepted;
     }
 
@@ -394,7 +449,9 @@ private:
                 QMessageBox::warning(this, QStringLiteral("Could not edit order"), error);
                 return;
             }
-            if (!requestManagerApproval())
+            // Req 3: a cashier needs a manager's approval. A manager who is
+            // signed in already is that approval, so no form is shown.
+            if (!signedInAsManager_ && !requestManagerApproval())
                 return;
             managerApproved = true;
             if (!Pos::openOrderForEditing(order.id, true, session, error))
@@ -583,6 +640,7 @@ private:
 
     std::function<void()> onNewOrder_;
     std::function<void(const OrderPreview &, bool)> onEditOrder_;
+    bool signedInAsManager_ = false;
     bool loadFailed_ = false;
     QPushButton *viewBillButton_ = nullptr;
     QPushButton *editOrderButton_ = nullptr;
@@ -605,8 +663,9 @@ private:
 
 QWidget *UiPages::createOrderHistoryPage(QWidget *parent,
     std::function<void()> onNewOrder,
-    std::function<void(const OrderPreview &, bool)> onEditOrder)
+    std::function<void(const OrderPreview &, bool)> onEditOrder,
+    bool signedInAsManager)
 {
     return new OrderHistoryPage(std::move(onNewOrder),
-        std::move(onEditOrder), parent);
+        std::move(onEditOrder), signedInAsManager, parent);
 }
