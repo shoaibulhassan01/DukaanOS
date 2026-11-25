@@ -1555,19 +1555,31 @@ void testSale(QStackedWidget *stack)
     QVector<Pos::Product> products;
     Pos::Product milk;
     Pos::CartTotals expectedTotals;
+    QComboBox *specialDiscount = nullptr;
+    for (QComboBox *candidate : cashier->findChildren<QComboBox *>())
+        if (candidate->isVisible()
+            && candidate->findText(QStringLiteral("8%")) >= 0)
+            specialDiscount = candidate;
+    check(specialDiscount,
+        QStringLiteral("New Order should offer a special discount up to 8%."));
+    if (specialDiscount)
+        specialDiscount->setCurrentText(QStringLiteral("8%"));
     check(Pos::readProducts(Pos::DataPaths::products(), products, error)
             && Pos::findProductByBarcode(products, QStringLiteral("100001"), milk)
-            && Pos::calculateCartTotals({Pos::CartItem{milk, 1}}, expectedTotals, error)
+            && Pos::calculateCartTotals({Pos::CartItem{milk, 1}}, expectedTotals, error, 8)
             && expectedTotals.seasonalDiscount > 0,
-        QStringLiteral("The active season should be included in the order total (%1).").arg(error));
+        QStringLiteral("Seasonal and special discounts should be included in the order total (%1).")
+            .arg(error));
     check(showsText(cashier, QStringLiteral("Seasonal discount")),
         QStringLiteral("New Order should show the seasonal discount in its summary."));
+    check(showsText(cashier, QStringLiteral("Special discount")),
+        QStringLiteral("New Order should show the special discount in its summary."));
     QDoubleSpinBox *cashAmount = nullptr;
     for (QDoubleSpinBox *candidate : cashier->findChildren<QDoubleSpinBox *>())
         if (candidate->isVisible())
             cashAmount = candidate;
     check(cashAmount && qAbs(cashAmount->value() - expectedTotals.payable) < 0.005,
-        QStringLiteral("Cash received should default to the seasonally discounted total."));
+        QStringLiteral("Cash received should default to the discounted total."));
 
     // Pay in cash. The bill pop-up is closed automatically.
     for (QComboBox *box : cashier->findChildren<QComboBox *>())
@@ -1597,9 +1609,9 @@ void testSale(QStackedWidget *stack)
             && UiPages::writeBillPdf(cashierBill, pdfs.filePath(QStringLiteral("cashier.pdf")))
             && isPdfFile(pdfs.filePath(QStringLiteral("cashier.pdf"))),
         QStringLiteral("Cashier bill could not be exported as a valid PDF (%1).").arg(error));
-    check(cashierBill.seasonalDiscount > 0
+    check(cashierBill.seasonalDiscount > 0 && cashierBill.specialDiscount > 0
             && qAbs(cashierBill.total - expectedTotals.payable) < 0.005,
-        QStringLiteral("The saved bill should include the active season discount in its final total."));
+        QStringLiteral("The saved bill should include both discounts in its final total."));
     QString checkoutError;
     for (QLabel *label : cashier->findChildren<QLabel *>())
         if (label->isVisible() && (label->text().startsWith(QStringLiteral("Bill not saved:"))

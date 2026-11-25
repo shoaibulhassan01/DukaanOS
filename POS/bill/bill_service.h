@@ -17,5 +17,6 @@ bool calculateBillLine(QString billId, Product product, int quantity,
 
 // Builds a single Bill header and one detail record per cart item.
 bool buildBill(QString billId, Order order, QVector<CartItem> items,
-    Bill &bill, QString &error, double seasonalDiscountPercentage = 0);
+    Bill &bill, QString &error, double seasonalDiscountPercentage = 0,
+    double specialDiscountPercentage = 0);
 }

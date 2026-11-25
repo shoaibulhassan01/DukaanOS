@@ -66,7 +66,8 @@ bool calculateBillLine(QString billId, Product product, int quantity,
 }
 
 bool buildBill(QString billId, Order order, QVector<CartItem> items,
-    Bill &bill, QString &error, double seasonalDiscountPercentage)
+    Bill &bill, QString &error, double seasonalDiscountPercentage,
+    double specialDiscountPercentage)
 {
     error.clear();
     bill = Bill{};
@@ -123,9 +124,27 @@ bool buildBill(QString billId, Order order, QVector<CartItem> items,
         built.totalPayable = round2(
             seasonalBase - built.seasonalDiscount);
     }
+    if (!std::isfinite(specialDiscountPercentage)
+        || (specialDiscountPercentage != 0
+            && (specialDiscountPercentage < 1 || specialDiscountPercentage > 8)))
+    {
+        error = QStringLiteral(
+            "Special discount percentage must be 1 through 8, or 0 for none.");
+        return false;
+    }
+    if (specialDiscountPercentage > 0)
+    {
+        const double specialDiscountBase = built.totalPayable;
+        built.specialDiscount = round2(
+            specialDiscountBase * specialDiscountPercentage / 100.0);
+        built.totalPayable = round2(
+            specialDiscountBase - built.specialDiscount);
+    }
     if (!std::isfinite(built.totalWithoutTax)
         || !std::isfinite(built.totalTax)
         || !std::isfinite(built.totalDiscount)
+        || !std::isfinite(built.seasonalDiscount)
+        || !std::isfinite(built.specialDiscount)
         || !std::isfinite(built.totalPayable))
     {
         error = QStringLiteral("Bill totals are outside the supported range.");
