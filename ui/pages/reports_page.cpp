@@ -184,7 +184,7 @@ QVector<ReportDefinition> reports()
              return true;
          }},
         {QStringLiteral("Incomplete orders"),
-         QStringLiteral("Orders that are not paid or archived: on-hold and in-progress orders, with their total amount."),
+         QStringLiteral("Orders that are not paid or archived (on-hold orders), with their total amount."),
          false,
          [](ReportTable &table, QString &error, const ReportOptions &) {
              Pos::OrderReport report;
@@ -397,7 +397,9 @@ public:
         emptyLabel_->setStyleSheet(QStringLiteral(
             "color: %1; font-size: 12px; background: #FAFAFD;"
             " border: 1px dashed %2; border-radius: 12px; padding: 18px;").arg(kMuted, kLine));
-        layout->addWidget(emptyLabel_);
+        // Takes the table's space when there are no rows, so the title and
+        // description stay at the top instead of spreading out.
+        layout->addWidget(emptyLabel_, 1);
 
         footer_ = new QLabel(card);
         footer_->setStyleSheet(QStringLiteral(
