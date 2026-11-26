@@ -97,19 +97,61 @@ QVector<OrderDetail> orderDetails(const QString &orderId,
     return details;
 }
 
+// What a held order would cost if it were paid today: its items at today's
+// product prices (tax and product discount included) with today's seasonal
+// discount. No special discount (that is chosen at checkout). Items whose
+// product no longer exists cannot be priced and are left out.
+bool currentOrderWorth(const Order &order, const QVector<Product> &products,
+    double &amount, QString &error)
+{
+    amount = 0;
+    QVector<OrderDetail> details;
+    if (!readOrderDetails(DataPaths::orderDetail(), order.id, details, error))
+        return false;
+    QVector<CartItem> items;
+    for (const OrderDetail &detail : details)
+    {
+        for (const Product &product : products)
+        {
+            if (product.id == detail.productId)
+            {
+                items.append(CartItem{product, detail.quantity});
+                break;
+            }
+        }
+    }
+    if (items.isEmpty())
+    {
+        error.clear();
+        return true;
+    }
+    CartTotals totals;
+    if (!calculateCartTotals(items, totals, error))
+        return false;
+    amount = totals.payable;
+    return true;
+}
+
 bool readOrderReport(bool completed, OrderReport &report, QString &error)
 {
     QVector<Order> allOrders;
     if (!readOrders(DataPaths::orders(), allOrders, error))
         return false;
+    QVector<Product> products;
+    if (!completed && !readProducts(DataPaths::products(), products, error))
+        return false;
 
     OrderReport result;
-    for (const Order &order : allOrders)
+    for (Order order : allOrders)
     {
         const bool isCompleted = order.status == QStringLiteral("paid")
             || order.status == QStringLiteral("archived");
         if (isCompleted != completed)
             continue;
+        // Req 11: an incomplete (on-hold) order has no bill yet, so it is
+        // shown at its current worth, not the 0.00 stored in Order.txt.
+        if (!completed && !currentOrderWorth(order, products, order.paymentAmount, error))
+            return false;
         result.orders.append(order);
         result.totalAmount += order.paymentAmount;
         if (!std::isfinite(result.totalAmount))

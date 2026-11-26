@@ -19,6 +19,7 @@
 
 #include "../../POS/tests/data_format_checker.h"
 #include "../../POS/checkout/checkout_service.h"
+#include "../../POS/order/order_service.h"
 #include "../../POS/order/order_repository.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/product/product_repository.h"
@@ -1678,6 +1679,25 @@ void testSale(QStackedWidget *stack)
         }
     }
     check(resume, QStringLiteral("Held Orders: no Resume button."));
+    // The held order's total on Held Orders is what it costs if paid today,
+    // seasonal discount included (a season is active in this test), the same
+    // as New Order and the incomplete-orders report show.
+    {
+        Pos::OrderSession heldSession;
+        Pos::CartTotals heldTotals;
+        const bool priced = Pos::resumeOrder(heldOrderId, heldSession, error)
+            && Pos::calculateCartTotals(heldSession.items, heldTotals, error);
+        QString shownTotal;
+        for (QTableWidget *table : cashier->findChildren<QTableWidget *>())
+            if (table->isVisible())
+                for (int row = 0; row < table->rowCount(); ++row)
+                    if (table->item(row, 0) && table->item(row, 0)->text() == heldOrderId && table->item(row, 4))
+                        shownTotal = table->item(row, 4)->text();
+        check(priced && heldTotals.seasonalDiscount > 0
+                && shownTotal == QStringLiteral("PKR %1").arg(heldTotals.payable, 0, 'f', 2),
+            QStringLiteral("Held Orders must show the total with today's seasonal discount (PKR %1), saw %2 (%3).")
+                .arg(heldTotals.payable, 0, 'f', 2).arg(shownTotal, error));
+    }
     if (!resume)
         return;
     resume->click();

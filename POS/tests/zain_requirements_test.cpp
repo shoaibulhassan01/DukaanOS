@@ -139,10 +139,44 @@ void testReportsAndOrderEditing(const QString &root)
 		QFile::remove(badOrders);
 	}
 
+	// Req 11: held orders have no bill, so the incomplete report shows each at
+	// what it would cost if paid today (current price, tax, product discount
+	// and today's seasonal discount), not the amount stored in Order.txt.
+	// No season: 2 x (20 + 1 - 2) = 38 and 1 x 19 = 19, total 57.
+	writeFile(QStringLiteral("Data/Seasons.txt"), QByteArray());
 	Pos::OrderReport incomplete;
-	check(Pos::readIncompleteOrdersReport(incomplete, error)
-			&& incomplete.orders.size() == 2 && incomplete.totalAmount == 20.00,
-		QStringLiteral("Incomplete report had wrong orders/total: %1").arg(error));
+	const bool incompleteRead = Pos::readIncompleteOrdersReport(incomplete, error);
+	check(incompleteRead
+			&& incomplete.orders.size() == 2
+			&& qAbs(incomplete.orders.at(0).paymentAmount - 38.00) < 0.005
+			&& qAbs(incomplete.orders.at(1).paymentAmount - 19.00) < 0.005
+			&& qAbs(incomplete.totalAmount - 57.00) < 0.005,
+		QStringLiteral("Incomplete report must show held orders at today's worth (38 + 19 = 57), saw %1: %2")
+			.arg(incomplete.totalAmount).arg(error));
+	{
+		// New price (30) and a 10% season today: each unit is 30 + 1 - 2 = 29,
+		// so 58 - 5.80 = 52.20 and 29 - 2.90 = 26.10, total 78.30.
+		writeFile(QStringLiteral("Data/Product.txt"),
+			QByteArrayLiteral("P1 100001 TEA Tea count 30.00 1.00 2.00 8 Data/barcodes/100001.png#\n"));
+		writeFile(QStringLiteral("Data/Seasons.txt"),
+			QStringLiteral("%1 %1 10.00 true#\n").arg(today.toString(Qt::ISODate)).toUtf8());
+		Pos::OrderReport repriced;
+		const bool repricedRead = Pos::readIncompleteOrdersReport(repriced, error);
+		check(repricedRead
+				&& repriced.orders.size() == 2
+				&& qAbs(repriced.orders.at(0).paymentAmount - 52.20) < 0.005
+				&& qAbs(repriced.orders.at(1).paymentAmount - 26.10) < 0.005
+				&& qAbs(repriced.totalAmount - 78.30) < 0.005,
+			QStringLiteral("Incomplete report must use today's price and seasonal discount (78.30), saw %1: %2")
+				.arg(repriced.totalAmount).arg(error));
+		QVector<Pos::Order> stored;
+		check(Pos::readOrders(QStringLiteral("Data/Order.txt"), stored, error)
+				&& stored.size() == 4 && stored.at(1).paymentAmount == 0.00,
+			QStringLiteral("The incomplete report must not change Order.txt."));
+		writeFile(QStringLiteral("Data/Product.txt"),
+			QByteArrayLiteral("P1 100001 TEA Tea count 20.00 1.00 2.00 8 Data/barcodes/100001.png#\n"));
+		writeFile(QStringLiteral("Data/Seasons.txt"), QByteArray());
+	}
 	Pos::OrderReport completed;
 	check(Pos::readCompletedOrdersReport(completed, error)
 			&& completed.orders.size() == 2 && completed.totalAmount == 50.00,

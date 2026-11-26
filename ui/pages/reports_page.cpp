@@ -184,7 +184,7 @@ QVector<ReportDefinition> reports()
              return true;
          }},
         {QStringLiteral("Incomplete orders"),
-         QStringLiteral("Orders that are not paid or archived (on-hold orders), with their total amount."),
+         QStringLiteral("Orders that are not paid or archived (on-hold orders). Each is shown at what it would cost if paid today (current prices and seasonal discount)."),
          false,
          [](ReportTable &table, QString &error, const ReportOptions &) {
              Pos::OrderReport report;
