@@ -124,12 +124,15 @@ bool buildBill(QString billId, Order order, QVector<CartItem> items,
         built.totalPayable = round2(
             seasonalBase - built.seasonalDiscount);
     }
+    // Req 8: special discount "not more than 8 percent"; any amount from
+    // 0.01 to 8.00 (2 decimals), 0 for none.
     if (!std::isfinite(specialDiscountPercentage)
-        || (specialDiscountPercentage != 0
-            && (specialDiscountPercentage < 1 || specialDiscountPercentage > 8)))
+        || specialDiscountPercentage < 0 || specialDiscountPercentage > 8
+        || std::abs(specialDiscountPercentage * 100.0
+               - std::round(specialDiscountPercentage * 100.0)) > 1e-6)
     {
         error = QStringLiteral(
-            "Special discount percentage must be 1 through 8, or 0 for none.");
+            "Special discount must be from 0 to 8 percent, with at most 2 decimals.");
         return false;
     }
     if (specialDiscountPercentage > 0)

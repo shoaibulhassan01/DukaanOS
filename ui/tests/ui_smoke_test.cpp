@@ -31,6 +31,8 @@
 #include <QAbstractItemView>
 #include <QApplication>
 #include <QComboBox>
+#include <QWheelEvent>
+#include <QDateEdit>
 #include <QFileInfo>
 #include <QFileDialog>
 #include <QCompleter>
@@ -1078,6 +1080,127 @@ void testReportsPage(QStackedWidget *stack)
             QStringLiteral("Most sold, counted items row %1 shows '%2 | %3'.").arg(row + 1).arg(cell(row, 3), cell(row, 4)));
     units->setCurrentIndex(0);
     settle();
+
+    // All six req 11 reports are offered.
+    for (const QString &title : {QStringLiteral("Incomplete orders"), QStringLiteral("Completed orders"),
+             QStringLiteral("Cash sales"), QStringLiteral("All sales"),
+             QStringLiteral("Top 10 most sold items"), QStringLiteral("Top 10 items by remaining stock")})
+        check(selector->findText(title) >= 0, QStringLiteral("Reports: '%1' is missing.").arg(title));
+
+    // Cash sales: the period row appears only for this report.
+    QComboBox *periodKind = manager->findChild<QComboBox *>(QStringLiteral("salesPeriod"));
+    QDateEdit *periodDate = manager->findChild<QDateEdit *>(QStringLiteral("salesPeriodDate"));
+    QDateEdit *periodFrom = manager->findChild<QDateEdit *>(QStringLiteral("salesPeriodFrom"));
+    QDateEdit *periodTo = manager->findChild<QDateEdit *>(QStringLiteral("salesPeriodTo"));
+    QLabel *reportFooter = nullptr;
+    check(periodKind && periodDate && periodFrom && periodTo && !periodKind->isVisible(),
+        QStringLiteral("Reports: the sales period controls must exist and be hidden for other reports."));
+    if (!periodKind || !periodDate || !periodFrom || !periodTo)
+        return;
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Cash sales")));
+    settle();
+    QStringList kinds;
+    for (int i = 0; i < periodKind->count(); ++i)
+        kinds << periodKind->itemText(i);
+    check(periodKind->isVisible() && kinds == QStringList({QStringLiteral("Daily"), QStringLiteral("Weekly"),
+              QStringLiteral("Monthly"), QStringLiteral("Yearly"), QStringLiteral("Specified period")}),
+        QStringLiteral("Cash sales must offer Daily, Weekly, Monthly, Yearly and Specified period, got: %1")
+            .arg(kinds.join(QStringLiteral(", "))));
+    for (QLabel *label : manager->findChildren<QLabel *>())
+        if (label->isVisible() && label->text().contains(QStringLiteral("cash sale(s)")))
+            reportFooter = label;
+
+    // Pick the year of a real cash sale in the sample data.
+    Pos::SalesReport all;
+    Pos::allSalesReport(QStringLiteral("Data/Order.txt"), QStringLiteral("Data/Bill.txt"), all, error);
+    QDate saleDay;
+    for (const Pos::Sale &sale : all.sales)
+        if (sale.paymentMode == QStringLiteral("cash"))
+            saleDay = QDate::fromString(sale.bill.date, Qt::ISODate);
+    check(saleDay.isValid(), QStringLiteral("Sample data: a cash sale is needed for the report test."));
+    QDate from;
+    QDate to;
+    Pos::SalesReport cash;
+    periodKind->setCurrentIndex(periodKind->findText(QStringLiteral("Yearly")));
+    periodDate->setDate(saleDay);
+    settle();
+    Pos::salesPeriodRange(Pos::SalesPeriod::Yearly, saleDay, from, to);
+    Pos::cashSalesReport(QStringLiteral("Data/Order.txt"), QStringLiteral("Data/Bill.txt"), from, to, cash, error);
+    for (QLabel *label : manager->findChildren<QLabel *>())
+        if (label->isVisible() && label->text().contains(QStringLiteral("cash sale(s)")))
+            reportFooter = label;
+    check(!cash.sales.isEmpty() && table->rowCount() == cash.sales.size()
+            && reportFooter && reportFooter->text().contains(QStringLiteral("PKR %1").arg(cash.totalAmount, 0, 'f', 2)),
+        QStringLiteral("Yearly cash sales: %1 rows and total PKR %2 expected; table has %3, footer '%4'.")
+            .arg(cash.sales.size()).arg(cash.totalAmount, 0, 'f', 2).arg(table->rowCount())
+            .arg(reportFooter ? reportFooter->text() : QString()));
+    for (int row = 0; row < qMin(table->rowCount(), cash.sales.size()); ++row)
+        check(cell(row, 0) == cash.sales.at(row).bill.id,
+            QStringLiteral("Cash sales row %1 must be bill %2, shows %3.")
+                .arg(row + 1).arg(cash.sales.at(row).bill.id, cell(row, 0)));
+
+    // Specified period: From / To replace the single date.
+    periodKind->setCurrentIndex(periodKind->findText(QStringLiteral("Specified period")));
+    periodFrom->setDate(saleDay);
+    periodTo->setDate(saleDay);
+    settle();
+    check(periodFrom->isVisible() && periodTo->isVisible() && !periodDate->isVisible(),
+        QStringLiteral("Specified period must show From and To instead of one date."));
+    Pos::cashSalesReport(QStringLiteral("Data/Order.txt"), QStringLiteral("Data/Bill.txt"), saleDay, saleDay, cash, error);
+    check(table->rowCount() == cash.sales.size() && !cash.sales.isEmpty(),
+        QStringLiteral("Specified period %1: %2 rows expected, %3 shown.")
+            .arg(saleDay.toString(Qt::ISODate)).arg(cash.sales.size()).arg(table->rowCount()));
+    periodKind->setCurrentIndex(0);
+
+    // All sales: every paid order with its discounts and the totals.
+    selector->setCurrentIndex(selector->findText(QStringLiteral("All sales")));
+    settle();
+    check(!periodKind->isVisible(), QStringLiteral("All sales has no period: the period row must be hidden."));
+    QString allFooter;
+    for (QLabel *label : manager->findChildren<QLabel *>())
+        if (label->isVisible() && label->text().contains(QStringLiteral("sale(s)")))
+            allFooter = label->text();
+    check(table->rowCount() == all.sales.size()
+            && allFooter.contains(QStringLiteral("Total amount: PKR %1").arg(all.totalAmount, 0, 'f', 2))
+            && allFooter.contains(QStringLiteral("Discounts: PKR %1").arg(all.totalDiscounts, 0, 'f', 2)),
+        QStringLiteral("All sales: %1 rows, total PKR %2 and discounts PKR %3 expected; table has %4, footer '%5'.")
+            .arg(all.sales.size()).arg(all.totalAmount, 0, 'f', 2).arg(all.totalDiscounts, 0, 'f', 2)
+            .arg(table->rowCount()).arg(allFooter));
+    QStringList headers;
+    for (int column = 0; column < table->columnCount(); ++column)
+        headers << (table->horizontalHeaderItem(column) ? table->horizontalHeaderItem(column)->text() : QString());
+    check(headers.contains(QStringLiteral("PRODUCT DISCOUNT")) && headers.contains(QStringLiteral("SEASONAL DISCOUNT"))
+            && headers.contains(QStringLiteral("SPECIAL DISCOUNT")) && headers.contains(QStringLiteral("TOTAL")),
+        QStringLiteral("All sales must show each discount and the total, columns: %1").arg(headers.join(QStringLiteral(", "))));
+
+    // Switching light / dark keeps the chosen report and period (the page
+    // is not rebuilt) and leaves nothing light in dark mode.
+    selector->setCurrentIndex(selector->findText(QStringLiteral("Cash sales")));
+    periodKind->setCurrentIndex(periodKind->findText(QStringLiteral("Monthly")));
+    settle();
+    QPushButton *themeToggle = manager->findChild<QPushButton *>(QStringLiteral("themeToggle"));
+    check(themeToggle, QStringLiteral("Dashboard: no light/dark toggle found."));
+    if (themeToggle)
+    {
+        const bool wasDark = UiTheme::isDark();
+        themeToggle->click();
+        settle();
+        QComboBox *selectorAfter = manager->findChild<QComboBox *>(QStringLiteral("reportSelector"));
+        QComboBox *periodAfter = manager->findChild<QComboBox *>(QStringLiteral("salesPeriod"));
+        check(UiTheme::isDark() != wasDark && selectorAfter == selector
+                && selectorAfter->currentText() == QStringLiteral("Cash sales")
+                && periodAfter && periodAfter->currentText() == QStringLiteral("Monthly"),
+            QStringLiteral("Switching light/dark must keep the Reports page as it was, got '%1' / '%2'.")
+                .arg(selectorAfter ? selectorAfter->currentText() : QString(),
+                    periodAfter ? periodAfter->currentText() : QString()));
+        if (UiTheme::isDark())
+            checkNoLightBackgrounds(manager, QStringLiteral("Reports after switching to dark mode"));
+        themeToggle->click();   // back to how it was
+        settle();
+    }
+    periodKind->setCurrentIndex(0);
+    selector->setCurrentIndex(0);
+    settle();
 }
 
 void testCashierAccountCreation(QStackedWidget *stack)
@@ -1203,8 +1326,11 @@ void testSale(QStackedWidget *stack)
     if (!pdfs.isValid())
         return;
 
+    // Add a season around today (the sample seasons are kept, so the sample
+    // bills that used them still have their season and stay valid whatever
+    // the date the test runs on).
     QFile seasons(Pos::DataPaths::seasons());
-    check(seasons.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate),
+    check(seasons.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append),
         QStringLiteral("Could not prepare an active season for the sale test."));
     if (seasons.isOpen())
     {
@@ -1234,6 +1360,39 @@ void testSale(QStackedWidget *stack)
     check(customer && barcode, QStringLiteral("New Order: customer or barcode field missing."));
     QPushButton *addItem = button(cashier, QStringLiteral("Add item"));
     check(addItem, QStringLiteral("New Order: no Add item button beside the barcode field."));
+
+    // Payment method is Cash by default, and scrolling the mouse wheel over
+    // it (or the special discount) does not change it.
+    auto scroll = [](QWidget *target) {
+        const QPointF centre(target->width() / 2.0, target->height() / 2.0);
+        for (int notch : {-120, 120, -120})
+        {
+            QWheelEvent wheel(centre, target->mapToGlobal(centre), QPoint(), QPoint(0, notch),
+                Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+            QCoreApplication::sendEvent(target, &wheel);
+        }
+    };
+    for (QComboBox *combo : cashier->findChildren<QComboBox *>())
+    {
+        if (combo->findText(QStringLiteral("Wallet")) < 0)
+            continue;
+        check(combo->currentText() == QStringLiteral("Cash"),
+            QStringLiteral("New Order: payment method must be Cash by default, is %1.").arg(combo->currentText()));
+        scroll(combo);
+        check(combo->currentText() == QStringLiteral("Cash"),
+            QStringLiteral("New Order: scrolling over the payment method changed it to %1.").arg(combo->currentText()));
+    }
+    // Special discount: typed percentage, 2 decimals, at most 8.
+    QDoubleSpinBox *specialRate = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+    check(specialRate && specialRate->decimals() == 2 && specialRate->maximum() == 8
+            && specialRate->minimum() == 0 && specialRate->value() == 0,
+        QStringLiteral("New Order: the special discount must be a typed 0.00-8.00 percentage starting at 0."));
+    if (specialRate)
+    {
+        scroll(specialRate);
+        check(specialRate->value() == 0,
+            QStringLiteral("New Order: scrolling over the special discount changed it to %1.").arg(specialRate->value()));
+    }
     QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
     check(hold && !hold->isEnabled(),
         QStringLiteral("Hold order should be visible but disabled while the cart is empty."));
@@ -1307,6 +1466,115 @@ void testSale(QStackedWidget *stack)
             QStringLiteral("The scanned product must stay shown under the barcode field."));
         delete scanPage;
     }
+
+    // Removing items: the remove button deletes the whole line in one click
+    // (whatever its quantity); removing the last one shows the empty message.
+    // A typed decimal special discount is used in the total.
+    {
+        QWidget *removePage = UiPages::createNewOrderPage();
+        removePage->resize(1200, 800);
+        removePage->show();
+        settle();
+        QLineEdit *code = field(removePage, QStringLiteral("Enter product barcode"));
+        QPushButton *add = button(removePage, QStringLiteral("Add item"));
+        QTableWidget *cart = nullptr;
+        for (QTableWidget *table : removePage->findChildren<QTableWidget *>())
+            if (table->isVisible() && table->columnCount() == 5)
+                cart = table;
+        check(code && add && cart, QStringLiteral("New Order: barcode field, Add item or cart missing."));
+        if (code && add && cart)
+        {
+            // A second product that is in stock (some sample items sell out).
+            QVector<Pos::Product> inStock;
+            Pos::readProducts(Pos::DataPaths::products(), inStock, error);
+            QString secondBarcode;
+            for (const Pos::Product &candidate : inStock)
+                if (secondBarcode.isEmpty() && candidate.barcode != QStringLiteral("100001")
+                    && candidate.quantity >= 2)
+                    secondBarcode = candidate.barcode;
+            for (const QString &barcodeText : {QStringLiteral("100001"), QStringLiteral("100001"),
+                     QStringLiteral("100001"), secondBarcode})
+            {
+                code->setText(barcodeText);
+                add->click();
+                settle();
+            }
+            QDoubleSpinBox *rate = removePage->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+            if (rate)
+                rate->setValue(2.5);
+            settle();
+            QVector<Pos::Product> catalogue;
+            Pos::readProducts(Pos::DataPaths::products(), catalogue, error);
+            Pos::Product first;
+            Pos::Product second;
+            Pos::findProductByBarcode(catalogue, QStringLiteral("100001"), first);
+            Pos::findProductByBarcode(catalogue, secondBarcode, second);
+            Pos::CartTotals twoItems;
+            Pos::calculateCartTotals({Pos::CartItem{first, 3}, Pos::CartItem{second, 1}}, twoItems, error, 2.5);
+            check(cart->rowCount() == 2 && twoItems.specialDiscount > 0
+                    && showsText(removePage, QStringLiteral("PKR %1").arg(twoItems.specialDiscount, 0, 'f', 2)),
+                QStringLiteral("A 2.50% special discount must be used in the total (PKR %1 expected).")
+                    .arg(twoItems.specialDiscount, 0, 'f', 2));
+            QList<QPushButton *> removeButtons = cart->findChildren<QPushButton *>(QStringLiteral("removeCartItem"));
+            check(removeButtons.size() == 2,
+                QStringLiteral("Each cart line needs a remove button, found %1.").arg(removeButtons.size()));
+            // Remove the first line (quantity 3) with one click.
+            if (QWidget *firstCell = cart->cellWidget(0, 3))
+                if (QPushButton *remove = firstCell->findChild<QPushButton *>(QStringLiteral("removeCartItem")))
+                    remove->click();
+            settle();
+            check(cart->rowCount() == 1 && cart->item(0, 1) && cart->item(0, 1)->text() == secondBarcode,
+                QStringLiteral("One click must remove the whole line (quantity 3), leaving only %1.").arg(secondBarcode));
+            if (QWidget *lastCell = cart->cellWidget(0, 3))
+                if (QPushButton *remove = lastCell->findChild<QPushButton *>(QStringLiteral("removeCartItem")))
+                    remove->click();
+            settle();
+            check(showsText(removePage, QStringLiteral("Your order is empty")),
+                QStringLiteral("Removing the last item must show the empty-order message again."));
+        }
+        delete removePage;
+    }
+
+    // "-" behaves the same when an order is being edited: it stops at 1
+    // and never removes the line (the remove button does that).
+    {
+        QVector<Pos::Product> catalogue;
+        Pos::readProducts(Pos::DataPaths::products(), catalogue, error);
+        Pos::Product item;
+        Pos::findProductByBarcode(catalogue, QStringLiteral("100001"), item);
+        OrderPreview held;
+        held.orderId = QStringLiteral("99999999");
+        held.status = QStringLiteral("on-hold");
+        held.customerName = QStringLiteral("Edit Test");
+        held.phone = QStringLiteral("03001234567");
+        held.lines.append(OrderPreviewLine{item, 2});
+        QWidget *editPage = UiPages::createNewOrderPage(nullptr, &held, {}, {}, {}, true, true);
+        editPage->resize(1200, 800);
+        editPage->show();
+        settle();
+        QTableWidget *cart = nullptr;
+        for (QTableWidget *table : editPage->findChildren<QTableWidget *>())
+            if (table->isVisible() && table->columnCount() == 5)
+                cart = table;
+        auto decreaseButton = [&cart]() -> QPushButton * {
+            QWidget *cell = cart && cart->rowCount() > 0 ? cart->cellWidget(0, 3) : nullptr;
+            return cell ? cell->findChild<QPushButton *>(QStringLiteral("decreaseCartItem")) : nullptr;
+        };
+        check(cart && cart->rowCount() == 1 && decreaseButton() && decreaseButton()->isEnabled(),
+            QStringLiteral("Edit order: a line with quantity 2 needs an enabled \u2212 button."));
+        if (QPushButton *minus = decreaseButton())
+            minus->click();
+        settle();
+        QPushButton *minusAtOne = decreaseButton();
+        check(cart && cart->rowCount() == 1 && minusAtOne && !minusAtOne->isEnabled(),
+            QStringLiteral("Edit order: \u2212 must stop at 1 (disabled), as in a new order, not remove the line."));
+        if (minusAtOne)
+            minusAtOne->click();
+        settle();
+        check(cart && cart->rowCount() == 1,
+            QStringLiteral("Edit order: \u2212 at quantity 1 must not remove the line."));
+        delete editPage;
+    }
     check(hold && hold->isEnabled(),
         QStringLiteral("Hold order should become available as soon as a product is added."));
 
@@ -1376,27 +1644,15 @@ void testSale(QStackedWidget *stack)
 
     // A newly created dashboard after sign-out must reload the held order from disk.
     cashier = openDashboard(stack, QStringLiteral("Cashier"));
-    QPushButton *resumeQuickAction = nullptr;
+    // Held orders are resumed from the Held Orders page only; the separate
+    // "Resume latest order" card was removed from the dashboard.
+    bool resumeQuickAction = false;
     for (QPushButton *candidate : cashier->findChildren<QPushButton *>())
         if (candidate->isVisible()
             && candidate->accessibleName() == QStringLiteral("Resume latest order"))
-            resumeQuickAction = candidate;
-    check(resumeQuickAction,
-        QStringLiteral("Dashboard should offer direct resume when an order is held."));
-    if (resumeQuickAction)
-    {
-        resumeQuickAction->click();
-        settle();
-        check(hasLabel(cashier, QStringLiteral("New Order")),
-            QStringLiteral("The dashboard Resume action should open New Order directly."));
-        QPushButton *dashboard = button(cashier, QStringLiteral("Dashboard"));
-        check(dashboard, QStringLiteral("Cashier: no Dashboard navigation button."));
-        if (dashboard)
-        {
-            dashboard->click();
-            settle();
-        }
-    }
+            resumeQuickAction = true;
+    check(!resumeQuickAction,
+        QStringLiteral("Dashboard should not show a Resume latest order card; Held Orders covers it."));
     QPushButton *heldOrders = button(cashier, QStringLiteral("Held Orders"));
     check(heldOrders, QStringLiteral("Cashier: no Held Orders button after signing in again."));
     if (!heldOrders)
@@ -1433,15 +1689,16 @@ void testSale(QStackedWidget *stack)
     QVector<Pos::Product> products;
     Pos::Product milk;
     Pos::CartTotals expectedTotals;
-    QComboBox *specialDiscount = nullptr;
-    for (QComboBox *candidate : cashier->findChildren<QComboBox *>())
-        if (candidate->isVisible()
-            && candidate->findText(QStringLiteral("8%")) >= 0)
-            specialDiscount = candidate;
-    check(specialDiscount,
+    QDoubleSpinBox *specialDiscount = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+    check(specialDiscount && specialDiscount->isVisible(),
         QStringLiteral("New Order should offer a special discount up to 8%."));
     if (specialDiscount)
-        specialDiscount->setCurrentText(QStringLiteral("8%"));
+    {
+        specialDiscount->setValue(8.5);   // more than 8 is not allowed
+        check(specialDiscount->value() == 8,
+            QStringLiteral("Special discount above 8 percent must be refused, got %1.").arg(specialDiscount->value()));
+        specialDiscount->setValue(8);
+    }
     check(Pos::readProducts(Pos::DataPaths::products(), products, error)
             && Pos::findProductByBarcode(products, QStringLiteral("100001"), milk)
             && Pos::calculateCartTotals({Pos::CartItem{milk, 1}}, expectedTotals, error, 8)

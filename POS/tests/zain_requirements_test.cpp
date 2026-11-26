@@ -110,7 +110,7 @@ void testReportsAndOrderEditing(const QString &root)
 		QStringLiteral("00000001 %1 10:00:00 Paid_customer - paid 38.00 cash -#\n"
 					   "00000002 %1 10:30:00 Held_customer - on-hold 0.00 cash -#\n"
 					   "00000003 %1 11:00:00 Archived_customer - archived 12.00 cash -#\n"
-					   "00000004 %1 11:30:00 Active_customer - in-progress 20.00 cash -#\n")
+					   "00000004 %1 11:30:00 Second_held - on-hold 20.00 cash -#\n")
 			.arg(today.toString(Qt::ISODate)).toUtf8()),
 		QStringLiteral("Could not create test Order.txt."));
 	check(writeFile(QStringLiteral("Data/OrderDetail.txt"),
@@ -125,6 +125,19 @@ void testReportsAndOrderEditing(const QString &root)
 	check(writeFile(QStringLiteral("Data/BillDetail.txt"),
 		QStringLiteral("%1 TEA 20.00 2 4.00#\n").arg(billId).toUtf8()),
 		QStringLiteral("Could not create test BillDetail.txt."));
+
+	// "in-progress" is not an order status: orders are first saved when held
+	// or paid (statuses paid, on-hold, archived only).
+	{
+		const QString badOrders = QStringLiteral("Data/BadStatus.txt");
+		writeFile(badOrders, QStringLiteral(
+			"00000009 %1 12:00:00 Someone - in-progress 0.00 cash -#\n")
+			.arg(today.toString(Qt::ISODate)).toUtf8());
+		QVector<Pos::Order> unused;
+		check(!Pos::readOrders(badOrders, unused, error),
+			QStringLiteral("An order with status in-progress must be refused."));
+		QFile::remove(badOrders);
+	}
 
 	Pos::OrderReport incomplete;
 	check(Pos::readIncompleteOrdersReport(incomplete, error)

@@ -1,5 +1,6 @@
-// Owner: Umar Khan - tests for the two manager reports (Increment 3, req 11):
-// top 10 most sold items and top 10 items by remaining stock. Edge cases on
+// Owner: Umar Khan - tests for the manager reports (Increment 3, req 11):
+// top 10 most sold items, top 10 items by remaining stock, cash sales by
+// period and all sales with totals and discounts. Edge cases on
 // made-up data in a temporary folder, then rules that must hold on the
 // project's real sample data.
 
@@ -7,6 +8,7 @@
 #include "../report/report_service.h"
 
 #include <QCoreApplication>
+#include <QDate>
 #include <QDir>
 #include <QFile>
 #include <QTemporaryDir>
@@ -209,6 +211,93 @@ int main(int argc, char *argv[])
             Pos::quantityText(36, QStringLiteral("count")) == QStringLiteral("36 count"),
         QStringLiteral("Quantities must show as '100 kg' and '36 count'."));
 
+    // ------------------------------------------- sales reports (req 11)
+    // Calendar periods around a chosen date (week = Monday to Sunday).
+    QDate from;
+    QDate to;
+    const QDate wednesday(2026, 11, 25);
+    Pos::salesPeriodRange(Pos::SalesPeriod::Daily, wednesday, from, to);
+    check(from == wednesday && to == wednesday, QStringLiteral("Daily period must be the chosen day."));
+    Pos::salesPeriodRange(Pos::SalesPeriod::Weekly, wednesday, from, to);
+    check(from == QDate(2026, 11, 23) && to == QDate(2026, 11, 29),
+        QStringLiteral("Weekly period must be Monday to Sunday, got %1 to %2.")
+            .arg(from.toString(Qt::ISODate), to.toString(Qt::ISODate)));
+    Pos::salesPeriodRange(Pos::SalesPeriod::Weekly, QDate(2026, 11, 29), from, to);
+    check(from == QDate(2026, 11, 23) && to == QDate(2026, 11, 29),
+        QStringLiteral("A Sunday belongs to the week that started on Monday."));
+    Pos::salesPeriodRange(Pos::SalesPeriod::Monthly, QDate(2028, 2, 10), from, to);
+    check(from == QDate(2028, 2, 1) && to == QDate(2028, 2, 29),
+        QStringLiteral("Monthly period must be the whole month (leap February)."));
+    Pos::salesPeriodRange(Pos::SalesPeriod::Yearly, wednesday, from, to);
+    check(from == QDate(2026, 1, 1) && to == QDate(2026, 12, 31),
+        QStringLiteral("Yearly period must be 1 January to 31 December."));
+
+    // Paid cash/card orders with bills, an on-hold order (no bill) and an
+    // archived (discarded) order that still has a bill line.
+    const QString salesOrders = dir.filePath(QStringLiteral("SalesOrder.txt"));
+    const QString salesBills = dir.filePath(QStringLiteral("SalesBill.txt"));
+    writeText(salesOrders,
+        QStringLiteral("00000001 2026-11-23 10:00:00 A - paid 95.00 cash -#\n"
+                       "00000002 2026-11-25 11:00:00 B - paid 200.00 card HBL#\n"
+                       "00000003 2026-11-29 18:00:00 C - paid 47.50 cash -#\n"
+                       "00000004 2026-11-30 09:00:00 D - paid 30.00 cash -#\n"
+                       "00000005 2026-12-01 12:00:00 E - paid 42.00 cash -#\n"
+                       "00000006 2025-11-25 12:00:00 F - paid 63.00 cash -#\n"
+                       "00000007 2026-11-24 12:00:00 H - on-hold 0.00 cash -#\n"
+                       "00000008 2026-11-24 12:00:00 G - archived 0.00 cash -#\n"));
+    writeText(salesBills,
+        QStringLiteral("261123001 A 00000001 100.00 5.00 10.00 95.00 100.00 5.00 paid 0.00 0.00 2026-11-23 10:00:00#\n"
+                       "261125001 B 00000002 200.00 10.00 0.00 200.00 200.00 0.00 paid 0.00 10.00 2026-11-25 11:00:00#\n"
+                       "261129001 C 00000003 50.00 2.50 0.00 47.50 50.00 2.50 paid 5.00 0.00 2026-11-29 18:00:00#\n"
+                       "261130001 D 00000004 30.00 1.50 1.50 30.00 30.00 0.00 paid 0.00 0.00 2026-11-30 09:00:00#\n"
+                       "261201001 E 00000005 40.00 2.00 0.00 42.00 50.00 8.00 paid 0.00 0.00 2026-12-01 12:00:00#\n"
+                       "251125001 F 00000006 60.00 3.00 0.00 63.00 63.00 0.00 paid 0.00 0.00 2025-11-25 12:00:00#\n"
+                       "261124001 G 00000008 70.00 3.50 0.00 73.50 0.00 0.00 archived 0.00 0.00 2026-11-24 12:00:00#\n"));
+    auto billIds = [](const Pos::SalesReport &report) {
+        QStringList ids;
+        for (const Pos::Sale &sale : report.sales)
+            ids << sale.bill.id;
+        return ids.join(QLatin1Char(','));
+    };
+    Pos::SalesReport sales;
+    Pos::salesPeriodRange(Pos::SalesPeriod::Weekly, wednesday, from, to);
+    check(Pos::cashSalesReport(salesOrders, salesBills, from, to, sales, error)
+            && billIds(sales) == QStringLiteral("261123001,261129001") && sales.totalAmount == 142.50,
+        QStringLiteral("Weekly cash sales: only paid cash bills of that week (card, on-hold and archived "
+                       "excluded); got %1 total %2 %3").arg(billIds(sales)).arg(sales.totalAmount).arg(error));
+    check(Pos::cashSalesReport(salesOrders, salesBills, wednesday, wednesday, sales, error)
+            && sales.sales.isEmpty() && sales.totalAmount == 0,
+        QStringLiteral("Daily cash sales: a day with only a card sale must be empty."));
+    Pos::salesPeriodRange(Pos::SalesPeriod::Monthly, wednesday, from, to);
+    check(Pos::cashSalesReport(salesOrders, salesBills, from, to, sales, error)
+            && billIds(sales) == QStringLiteral("261123001,261129001,261130001") && sales.totalAmount == 172.50,
+        QStringLiteral("Monthly cash sales gave %1 total %2").arg(billIds(sales)).arg(sales.totalAmount));
+    Pos::salesPeriodRange(Pos::SalesPeriod::Yearly, wednesday, from, to);
+    check(Pos::cashSalesReport(salesOrders, salesBills, from, to, sales, error)
+            && sales.sales.size() == 4 && sales.totalAmount == 214.50,
+        QStringLiteral("Yearly cash sales gave %1 total %2").arg(billIds(sales)).arg(sales.totalAmount));
+    check(Pos::cashSalesReport(salesOrders, salesBills, QDate(2025, 11, 1), QDate(2026, 11, 23), sales, error)
+            && billIds(sales) == QStringLiteral("251125001,261123001") && sales.totalAmount == 158.00,
+        QStringLiteral("Specified period: both end days included, oldest first; got %1").arg(billIds(sales)));
+    check(!Pos::cashSalesReport(salesOrders, salesBills, QDate(2026, 11, 30), QDate(2026, 11, 1), sales, error)
+            && !error.isEmpty(),
+        QStringLiteral("A period that ends before it starts must be refused."));
+
+    check(Pos::allSalesReport(salesOrders, salesBills, sales, error)
+            && billIds(sales) == QStringLiteral("251125001,261123001,261125001,261129001,261130001,261201001"),
+        QStringLiteral("All sales: every paid bill (any payment), oldest first; got %1 %2").arg(billIds(sales), error));
+    check(sales.totalAmount == 477.50 && sales.totalWithoutTax == 480.00 && sales.totalTax == 24.00,
+        QStringLiteral("All sales totals wrong: amount %1, before tax %2, tax %3")
+            .arg(sales.totalAmount).arg(sales.totalWithoutTax).arg(sales.totalTax));
+    check(sales.productDiscounts == 11.50 && sales.seasonalDiscounts == 5.00
+            && sales.specialDiscounts == 10.00 && sales.totalDiscounts == 26.50,
+        QStringLiteral("All sales discounts wrong: product %1, seasonal %2, special %3, total %4")
+            .arg(sales.productDiscounts).arg(sales.seasonalDiscounts)
+            .arg(sales.specialDiscounts).arg(sales.totalDiscounts));
+    check(Pos::allSalesReport(dir.filePath(QStringLiteral("NoOrders.txt")),
+              dir.filePath(QStringLiteral("NoBills.txt")), sales, error) && sales.sales.isEmpty(),
+        QStringLiteral("No Order.txt / Bill.txt yet must mean no sales, not an error: %1").arg(error));
+
     // ------------------------------------------- the real sample data
     const QDir data(QDir(QStringLiteral(DUKAANOS_SOURCE_DIR)).filePath(QStringLiteral("Data")));
     check(Pos::topSoldProducts(data.filePath(QStringLiteral("Product.txt")), data.filePath(QStringLiteral("Order.txt")),
@@ -224,6 +313,14 @@ int main(int argc, char *argv[])
     for (int i = 1; i < stock.size(); ++i)
         check(stock.at(i - 1).quantity >= stock.at(i).quantity,
             QStringLiteral("Sample data: top stock is not in descending order."));
+    check(Pos::allSalesReport(data.filePath(QStringLiteral("Order.txt")), data.filePath(QStringLiteral("Bill.txt")),
+              sales, error) && !sales.sales.isEmpty(),
+        QStringLiteral("All sales fails on the sample data: %1").arg(error));
+    double sampleTotal = 0;
+    for (const Pos::Sale &sale : sales.sales)
+        sampleTotal += sale.bill.totalPayable;
+    check(qAbs(sampleTotal - sales.totalAmount) < 0.005,
+        QStringLiteral("Sample data: the all-sales total must equal the sum of its rows."));
 
     if (failures > 0)
     {

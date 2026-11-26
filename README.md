@@ -4,9 +4,9 @@ A Point of Sale (POS) system currently being built with C++ and Qt.
 
 ## Current UI
 
-- The app opens directly to a dashboard preview. New Order can scan a barcode or accept typed input and look up matching products in `Data/Product.txt`; order saving and billing are not connected.
-- Use the role dropdown to switch between Cashier and Manager navigation.
-- Dashboard stats are placeholders. Manager Products reads from `Data/Product.txt`; Order History reads saved order records. Held Orders and bill generation work as in-memory previews only, and no new order is written to storage or sent to a printer.
+- The app opens at Login. Users sign in from `Data/Users.txt` and get the dashboard for their role (Cashier or Manager); the role shown in the header is read-only. Log out to switch users.
+- Dashboard stats show today's orders and paid sales from `Data/Order.txt`.
+- New Order takes a barcode from the camera, an uploaded image or typing. Held orders are saved to `Data/Order.txt` and resumed from Held Orders; checkout saves the order, its bill and the stock change to the `Data/` files.
 - Each page has its own file under `ui/pages/` and is assembled through `ui/ui.cpp`.
 - The old BarcodeX screen is removed from the app window. Barcode code remains available for future POS work.
 
@@ -90,14 +90,14 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 | Bill.txt | bill id (9 digits), customer name, order id, total without tax, total tax, total discount, total payable, amount received, balance returned, status, seasonal discount amount, special discount amount, date, time |
 | Users.txt | username, password, role |
 
-Order status: `in-progress`, `on-hold`, `paid`, `archived`. Payment mode: `cash`, `card`, `wallet`.
-At checkout, cashiers can optionally apply a 1%-8% special discount; the bill stores the discount amount after product and seasonal discounts.
+Order status: `on-hold`, `paid`, `archived` (an archived order is a discarded held order). Payment mode: `cash`, `card`, `wallet`.
+At checkout, cashiers can optionally type a special discount from 0 to 8 percent with up to 2 decimals (0 means none); the bill stores the discount amount after product and seasonal discounts.
 
 ### Order reports and editing (POS service API)
 
 Shoaib's UI can call `readIncompleteOrdersReport(report, error)` and `readCompletedOrdersReport(report, error)`. Each `OrderReport` has the matching `orders` and their summed `totalAmount` (from `Order.txt`).
 
-For editing, call `openOrderForEditing(orderId, false, session, error)`. On-hold orders open without approval. For a paid order, the service returns an approval message if it was paid within 7 days; after the UI authenticates a manager, retry with `managerApproved=true`. The UI then edits `session.items` and calls `saveOrderEdits(session, managerApproved, error)`. Paid edits adjust stock by the quantity difference; on-hold edits do not change stock. Orders paid more than 7 days ago are refused even with approval.
+For editing, call `openOrderForEditing(orderId, false, session, error)`. On-hold orders open without approval. For a paid order, the service returns an approval message if it was paid within 7 days; after the UI authenticates a manager, retry with `managerApproved=true`. The UI then edits `session.items` and calls `saveOrderEdits(session, managerApproved, error)`. Paid edits adjust stock by the quantity difference and update the order's bill in `Bill.txt` and `BillDetail.txt` (same bill id, date and time) and its amount in `Order.txt`; on-hold edits do not change stock. A manager editing from their own dashboard is not asked for approval again. Orders paid more than 7 days ago are refused even with approval.
 
 `Users.txt` stores usernames and roles in plain text, but passwords use salted PBKDF2-HMAC-SHA-256 hashes. Existing plaintext passwords are upgraded after a successful login, and new cashier accounts are hashed before they are saved. The sample accounts are for local UI testing only; do not use real or reused passwords.
 

@@ -2,8 +2,8 @@
 20 Bakery BKY#
 30 Fresh_produce FRP#
 34 Snacks SNK#
+39 Perfumes PRF#
 40 Household HSH#
 45 Personal_care PCR#
 56 Dairy DRY#
 60 Grains_and_pulses GRN#
-39 Perfumes Per#

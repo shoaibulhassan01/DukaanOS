@@ -82,9 +82,9 @@ QLabel *createFieldLabel(const QString &text, QWidget *parent)
 QString fieldStyle()
 {
     return QStringLiteral(
-        "QLineEdit, QSpinBox, QComboBox { background: #FAFAFD; color: %1;"
+        "QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox { background: #FAFAFD; color: %1;"
         " border: 1px solid %2; border-radius: 9px; padding: 0 11px; font-size: 12px; }"
-        "QLineEdit:focus, QSpinBox:focus, QComboBox:focus { background: white;"
+        "QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { background: white;"
         " border: 1px solid %3; }"
         // The arrow sits inside the field: no separate box or divider around it.
         "QComboBox::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
@@ -411,16 +411,7 @@ private:
             QStringLiteral("UNIT PRICE"), QStringLiteral("QTY"),
             QStringLiteral("TOTAL")
         });
-        table->setRowCount(1);
-        table->setSpan(0, 0, 1, 5);
-        auto *empty = new QLabel(
-            QStringLiteral("<b>Your order is empty</b><br><span style='color:#777B91;'>"
-                           "Scan a barcode to start adding products.</span>"), table);
-        empty->setAlignment(Qt::AlignCenter);
-        empty->setStyleSheet(QStringLiteral(
-            "color: %1; font-size: 11px; background: transparent;").arg(kMuted));
-        table->setCellWidget(0, 0, empty);
-        table->setRowHeight(0, 118);
+        showEmptyCart();
         table->verticalHeader()->hide();
         table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
         table->horizontalHeader()->setFixedHeight(38);
@@ -480,14 +471,19 @@ private:
         specialDiscountRateLayout->addWidget(createFieldLabel(
             QStringLiteral("Special discount rate"), specialDiscountRateRow_));
         specialDiscountRateLayout->addStretch(1);
-        specialDiscountRate_ = new QComboBox(specialDiscountRateRow_);
-        specialDiscountRate_->addItem(QStringLiteral("None"), 0.0);
-        for (int percentage = 1; percentage <= 8; ++percentage)
-            specialDiscountRate_->addItem(
-                QStringLiteral("%1%").arg(percentage), percentage);
+        // Typed percentage, 0.00 to 8.00 (req 8: not more than 8 percent).
+        specialDiscountRate_ = new QDoubleSpinBox(specialDiscountRateRow_);
+        specialDiscountRate_->setObjectName(QStringLiteral("specialDiscountRate"));
+        specialDiscountRate_->setRange(0, 8);
+        specialDiscountRate_->setDecimals(2);
+        specialDiscountRate_->setSuffix(QStringLiteral(" %"));
+        specialDiscountRate_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        specialDiscountRate_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        specialDiscountRate_->setToolTip(QStringLiteral("Up to 8 percent, e.g. 2.50"));
         specialDiscountRate_->setFixedHeight(34);
-        specialDiscountRate_->setMinimumWidth(84);
+        specialDiscountRate_->setFixedWidth(96);
         specialDiscountRate_->setStyleSheet(fieldStyle());
+        UiPages::ignoreMouseWheel(specialDiscountRate_);
         specialDiscountRateLayout->addWidget(specialDiscountRate_);
         layout->addWidget(specialDiscountRateRow_);
         if (editExistingOrder_)
@@ -521,6 +517,9 @@ private:
         paymentMethod_ = new QComboBox(paymentFields_);
         paymentMethod_->addItems({QStringLiteral("Cash"), QStringLiteral("Card"),
             QStringLiteral("Wallet")});
+        paymentMethod_->setCurrentIndex(0);   // Cash by default
+        // Scrolling over it must not switch Cash / Card / Wallet.
+        UiPages::ignoreMouseWheel(paymentMethod_);
         paymentMethod_->setFixedHeight(42);
         paymentMethod_->setStyleSheet(fieldStyle());
         paymentLayout->addWidget(paymentMethod_);
@@ -553,7 +552,7 @@ private:
         connect(paymentMethod_, &QComboBox::currentTextChanged, this, [this]() { updatePaymentFields(); });
         connect(cashReceived_, &QDoubleSpinBox::valueChanged, this, [this]() { updatePaymentFields(); });
         connect(cashReceived_, &QAbstractSpinBox::editingFinished, this, [this]() { cashEdited_ = true; });
-        connect(specialDiscountRate_, QOverload<int>::of(&QComboBox::currentIndexChanged),
+        connect(specialDiscountRate_, &QDoubleSpinBox::valueChanged,
             this, [this]() { refreshCart(); });
 
         auto *checkout = new QPushButton(QStringLiteral("Generate bill"), card);
@@ -783,18 +782,24 @@ private:
         barcodeEdit_->setCursorPosition(barcodeEdit_->text().size());
     }
 
+    void removeCartLine(int row)
+    {
+        if (row < 0 || row >= cartLines_.size())
+            return;
+        QString name = cartLines_.at(row).product.name;
+        name.replace(QLatin1Char('_'), QLatin1Char(' '));
+        cartLines_.removeAt(row);
+        refreshCart();
+        setStatus(QStringLiteral("%1 removed from the order.").arg(name));
+    }
+
     void adjustCartQuantity(int row, int change)
     {
         if (row < 0 || row >= cartLines_.size())
             return;
 
         CartLine &line = cartLines_[row];
-        if (change < 0 && line.quantity + change <= 0 && editExistingOrder_)
-        {
-            cartLines_.removeAt(row);
-            refreshCart();
-            return;
-        }
+        // "-" stops at 1 in both new and edited orders; the remove button takes a line out.
         if (change > 0 && !hasAvailableStock(line.product, line.quantity + change))
         {
             setStatus(QStringLiteral("Required quantity %1 the available stock (%2).")
@@ -825,11 +830,31 @@ private:
         return Pos::checkStock(product, requestedQuantity);
     }
 
+    // The "order is empty" message: when the page opens and when the last
+    // item is removed.
+    void showEmptyCart()
+    {
+        cartTable_->clearSpans();
+        cartTable_->setRowCount(0);
+        cartTable_->setRowCount(1);
+        cartTable_->setSpan(0, 0, 1, cartTable_->columnCount());
+        auto *empty = new QLabel(
+            QStringLiteral("<b>Your order is empty</b><br><span style='color:#777B91;'>"
+                           "Scan a barcode to start adding products.</span>"), cartTable_);
+        empty->setAlignment(Qt::AlignCenter);
+        empty->setStyleSheet(QStringLiteral(
+            "color: %1; font-size: 11px; background: transparent;").arg(kMuted));
+        cartTable_->setCellWidget(0, 0, empty);
+        cartTable_->setRowHeight(0, 118);
+    }
+
     void refreshCart()
     {
         cartTable_->clearSpans();
         cartTable_->setRowCount(0);   // also removes the "order is empty" message
         cartTable_->setRowCount(cartLines_.size());
+        if (cartLines_.isEmpty())
+            showEmptyCart();
         int itemCount = 0;
         double subtotal = 0;
         double tax = 0;
@@ -870,6 +895,7 @@ private:
                 return button;
             };
             auto *decrease = makeQuantityButton(QString(QChar(0x2212)));
+            decrease->setObjectName(QStringLiteral("decreaseCartItem"));
             auto *quantity = new QLabel(QString::number(line.quantity), quantityControl);
             quantity->setAlignment(Qt::AlignCenter);
             quantity->setMinimumWidth(24);
@@ -881,12 +907,25 @@ private:
             quantityLayout->addWidget(decrease);
             quantityLayout->addWidget(quantity);
             quantityLayout->addWidget(increase);
+            // Remove the whole line in one click, whatever its quantity.
+            auto *remove = new QPushButton(QString(QChar(0x2715)), quantityControl);
+            remove->setObjectName(QStringLiteral("removeCartItem"));
+            remove->setToolTip(QStringLiteral("Remove this item from the order"));
+            remove->setFixedSize(24, 24);
+            remove->setCursor(Qt::PointingHandCursor);
+            remove->setStyleSheet(QStringLiteral(
+                "QPushButton { background: transparent; color: #D92D20; border: 1px solid #E8A39C;"
+                " border-radius: 6px; font-size: 11px; font-weight: 700; padding: 0; }"
+                "QPushButton:hover { border: 1px solid #D92D20; }"));
+            quantityLayout->addSpacing(6);
+            quantityLayout->addWidget(remove);
             quantityLayout->addStretch(1);
+            connect(remove, &QPushButton::clicked, this, [this, row]() { removeCartLine(row); });
             connect(decrease, &QPushButton::clicked, this,
                 [this, row]() { adjustCartQuantity(row, -1); });
             connect(increase, &QPushButton::clicked, this,
                 [this, row]() { adjustCartQuantity(row, 1); });
-            decrease->setEnabled(line.quantity > 1 || editExistingOrder_);
+            decrease->setEnabled(line.quantity > 1);
             increase->setEnabled(hasAvailableStock(line.product, line.quantity + 1));
             cartTable_->setCellWidget(row, 3, quantityControl);
 
@@ -910,7 +949,7 @@ private:
             items.reserve(cartLines_.size());
             for (const CartLine &line : cartLines_)
                 items.append(Pos::CartItem{line.product, line.quantity});
-            const double specialDiscountPercentage = specialDiscountRate_->currentData().toDouble();
+            const double specialDiscountPercentage = specialDiscountRate_->value();
             totalsValid = Pos::calculateCartTotals(items, totals, totalsError,
                 specialDiscountPercentage);
         }
@@ -1054,7 +1093,7 @@ private:
         request.customerContact = order.phone;
         request.existingOrderId = orderId_;
         request.paymentMode = paymentMethod_->currentText();
-        request.specialDiscountPercentage = specialDiscountRate_->currentData().toDouble();
+        request.specialDiscountPercentage = specialDiscountRate_->value();
         const bool cash = request.paymentMode == QStringLiteral("Cash");
         request.merchant = cash ? QString() : merchantEdit_->text().trimmed();
         request.amountPaid = cash ? cashReceived_->value() : currentTotal_;
@@ -1142,7 +1181,7 @@ private:
     QLineEdit *customerPhoneEdit_ = nullptr;
     QLineEdit *quantity_ = nullptr;
     QComboBox *paymentMethod_ = nullptr;
-    QComboBox *specialDiscountRate_ = nullptr;
+    QDoubleSpinBox *specialDiscountRate_ = nullptr;
     QLabel *previewLabel_ = nullptr;
     QLabel *matchLabel_ = nullptr;
     QLabel *statusLabel_ = nullptr;

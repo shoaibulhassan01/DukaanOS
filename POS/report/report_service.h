@@ -1,7 +1,9 @@
 #pragma once
 
+#include "../bill/bill.h"
 #include "../product/product.h"
 
+#include <QDate>
 #include <QString>
 #include <QVector>
 
@@ -37,4 +39,46 @@ bool topSoldProducts(QString productFile, QString orderFile, QString orderDetail
 // first. Ties by product name, then id. At most `limit` rows.
 bool topStockProducts(QString productFile, int limit, QVector<Product> &rows, QString &error,
     QString unitFilter = QString());
+
+// ---------------------------------------------------------------------------
+// Sales reports (req 11): "list all the cash sales (daily, weekly, monthly,
+// yearly, specified time period)" and "all sales with total amount and
+// discounts". Agreed rules:
+//   - a sale is a PAID order (Order.txt status "paid") with its bill in
+//     Bill.txt; on-hold and archived (discarded) orders are not
+//     sales;
+//   - a sale's date is its bill date (when it was paid), and its amount is
+//     the bill's total payable;
+//   - periods are calendar periods around a chosen date: the day, its week
+//     (Monday to Sunday), its month, or its year.
+// ---------------------------------------------------------------------------
+enum class SalesPeriod { Daily, Weekly, Monthly, Yearly };
+
+// The first and last day of the calendar period that contains `date`.
+void salesPeriodRange(SalesPeriod period, QDate date, QDate &from, QDate &to);
+
+struct Sale
+{
+    Bill bill;              // header from Bill.txt (no details)
+    QString paymentMode;    // cash, card or wallet (from Order.txt)
+};
+
+struct SalesReport
+{
+    QVector<Sale> sales;              // oldest first (bill date, time, id)
+    double totalWithoutTax = 0;
+    double totalTax = 0;
+    double productDiscounts = 0;      // Bill.txt "total applicable discount"
+    double seasonalDiscounts = 0;
+    double specialDiscounts = 0;
+    double totalDiscounts = 0;        // the three discounts together
+    double totalAmount = 0;           // sum of total payable
+};
+
+// Cash sales whose bill date is from `from` to `to` (both included).
+bool cashSalesReport(QString orderFile, QString billFile, QDate from, QDate to,
+    SalesReport &report, QString &error);
+
+// Every sale (any payment mode), with totals of amounts and discounts.
+bool allSalesReport(QString orderFile, QString billFile, SalesReport &report, QString &error);
 }

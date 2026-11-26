@@ -425,6 +425,14 @@ bool readBill(QString billFile, QString detailFile, QString billId, Bill &bill,
     return false;
 }
 
+bool readBills(QString billFile, QVector<Bill> &bills, QString &error)
+{
+    bills.clear();
+    if (!QFile::exists(billFile))
+        return true;
+    return readBillRecords(billFile, bills, error);
+}
+
 bool readBillForOrder(QString billFile, QString detailFile, QString orderId,
     Bill &bill, QString &error)
 {
