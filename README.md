@@ -44,7 +44,7 @@ Unassigned work (including shared record-codec changes, tests, documentation, bu
 
 If Qt is installed outside `C:\Qt`, set `QT_ROOT` to its folder or `QT_PREFIX_PATH` to the kit's `mingw_64` folder. If the matching compiler is not detected automatically, set `MINGW_ROOT` to its folder.
 
-To build an installer, run `run.bat --package`, then compile `DukaanOS.iss` in Inno Setup to create `dist\DukaanOS-Setup.exe`.
+To build an installer, run `run.bat --package`, then open `DukaanOS.iss` in Inno Setup and compile it to create `dist\DukaanOS-Setup.exe`. The script installs per-user (no administrator access required). Existing files in the installed `Data` folder are kept during upgrades and uninstall so sales and inventory data are not replaced by the sample files or deleted.
 
 ## Project Structure
 
@@ -91,7 +91,7 @@ One record per line, fields separated by a space, each line ending with `#`. Nam
 | Users.txt | username, password, role |
 
 Order status: `on-hold`, `paid`, `archived` (an archived order is a discarded held order). Payment mode: `cash`, `card`, `wallet`.
-At checkout, cashiers can optionally type a special discount from 0 to 8 percent with up to 2 decimals (0 means none); the bill stores the discount amount after product and seasonal discounts.
+At checkout, cashiers can optionally type a special discount from 0% to 8% with up to 2 decimals; the bill stores the discount amount after product and seasonal discounts.
 
 ### Order reports and editing (POS service API)
 

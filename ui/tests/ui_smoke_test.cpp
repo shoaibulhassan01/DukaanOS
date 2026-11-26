@@ -46,6 +46,7 @@
 #include <QEvent>
 #include <QFile>
 #include <QLabel>
+#include <QKeyEvent>
 #include <QLineEdit>
 #include <QPalette>
 #include <QPushButton>
@@ -75,6 +76,20 @@ void check(bool condition, const QString &message)
     {
         QTextStream(stderr) << "FAIL: " << message << Qt::endl;
         ++failures;
+    }
+}
+
+void typeText(QLineEdit *editor, const QString &text)
+{
+    editor->setFocus();
+    editor->selectAll();
+    for (const QChar character : text)
+    {
+        const int key = character == QLatin1Char('.')
+            ? Qt::Key_Period
+            : Qt::Key_0 + character.digitValue();
+        QKeyEvent event(QEvent::KeyPress, key, Qt::NoModifier, QString(character));
+        QApplication::sendEvent(editor, &event);
     }
 }
 
@@ -974,6 +989,18 @@ void testFormsInDarkMode()
             return false;
         opened << QStringLiteral("Add season");
         checkNoLightBackgrounds(popup, QStringLiteral("Add season form"));
+        QLineEdit *percentage = popup->findChild<QLineEdit *>(
+            QStringLiteral("seasonDiscountPercentage"));
+        check(percentage && percentage->validator()
+                && percentage->palette().color(QPalette::Text)
+                    != percentage->palette().color(QPalette::Base),
+            QStringLiteral("Season discount must use a visible validated text field."));
+        if (percentage)
+        {
+            typeText(percentage, QStringLiteral("12.5"));
+            check(percentage->text() == QStringLiteral("12.5"),
+                QStringLiteral("Typed season discount must remain visible."));
+        }
         if (QPushButton *cancel = button(popup, QStringLiteral("Cancel")))
             cancel->click();
         popupHandler = nullptr;
@@ -1384,16 +1411,21 @@ void testSale(QStackedWidget *stack)
         check(combo->currentText() == QStringLiteral("Cash"),
             QStringLiteral("New Order: scrolling over the payment method changed it to %1.").arg(combo->currentText()));
     }
-    // Special discount: typed percentage, 2 decimals, at most 8.
-    QDoubleSpinBox *specialRate = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
-    check(specialRate && specialRate->decimals() == 2 && specialRate->maximum() == 8
-            && specialRate->minimum() == 0 && specialRate->value() == 0,
-        QStringLiteral("New Order: the special discount must be a typed 0.00-8.00 percentage starting at 0."));
+    // Special discount accepts a typed percentage from 0 to 8, including decimals.
+    QLineEdit *specialRate = cashier->findChild<QLineEdit *>(QStringLiteral("specialDiscountRate"));
+    check(specialRate && specialRate->validator()
+            && specialRate->text() == QStringLiteral("0.00"),
+        QStringLiteral("New Order: the special discount must be a visible percentage input."));
     if (specialRate)
     {
-        scroll(specialRate);
-        check(specialRate->value() == 0,
-            QStringLiteral("New Order: scrolling over the special discount changed it to %1.").arg(specialRate->value()));
+        typeText(specialRate, QStringLiteral("1.5"));
+        check(specialRate->text() == QStringLiteral("1.5"),
+            QStringLiteral("Typing a decimal special discount must remain visible."));
+        typeText(specialRate, QStringLiteral("0"));
+        typeText(specialRate, QStringLiteral("9"));
+        check(specialRate->text() != QStringLiteral("9")
+                && specialRate->hasAcceptableInput(),
+            QStringLiteral("The special discount input must reject values above 8%."));
     }
     QPushButton *hold = button(cashier, QStringLiteral("Hold order"));
     check(hold && !hold->isEnabled(),
@@ -1501,9 +1533,9 @@ void testSale(QStackedWidget *stack)
                 add->click();
                 settle();
             }
-            QDoubleSpinBox *rate = removePage->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+            QLineEdit *rate = removePage->findChild<QLineEdit *>(QStringLiteral("specialDiscountRate"));
             if (rate)
-                rate->setValue(2.5);
+                rate->setText(QStringLiteral("2.5"));
             settle();
             QVector<Pos::Product> catalogue;
             Pos::readProducts(Pos::DataPaths::products(), catalogue, error);
@@ -1515,7 +1547,7 @@ void testSale(QStackedWidget *stack)
             Pos::calculateCartTotals({Pos::CartItem{first, 3}, Pos::CartItem{second, 1}}, twoItems, error, 2.5);
             check(cart->rowCount() == 2 && twoItems.specialDiscount > 0
                     && showsText(removePage, QStringLiteral("PKR %1").arg(twoItems.specialDiscount, 0, 'f', 2)),
-                QStringLiteral("A 2.50% special discount must be used in the total (PKR %1 expected).")
+                QStringLiteral("A typed 2.5% special discount must be used in the total (PKR %1 expected).")
                     .arg(twoItems.specialDiscount, 0, 'f', 2));
             QList<QPushButton *> removeButtons = cart->findChildren<QPushButton *>(QStringLiteral("removeCartItem"));
             check(removeButtons.size() == 2,
@@ -1710,21 +1742,18 @@ void testSale(QStackedWidget *stack)
     QVector<Pos::Product> products;
     Pos::Product milk;
     Pos::CartTotals expectedTotals;
-    QDoubleSpinBox *specialDiscount = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("specialDiscountRate"));
+    QLineEdit *specialDiscount = cashier->findChild<QLineEdit *>(QStringLiteral("specialDiscountRate"));
     check(specialDiscount && specialDiscount->isVisible(),
         QStringLiteral("New Order should offer a special discount up to 8%."));
     if (specialDiscount)
     {
-        specialDiscount->setValue(8.5);   // more than 8 is not allowed
-        check(specialDiscount->value() == 8,
-            QStringLiteral("Special discount above 8 percent must be refused, got %1.").arg(specialDiscount->value()));
-        specialDiscount->setValue(8);
-        QLineEdit *editor = specialDiscount->findChild<QLineEdit *>();
-        check(editor && editor->isVisible() && !editor->text().isEmpty()
-                && editor->styleSheet().contains(QStringLiteral("color:"))
-                && editor->styleSheet().contains(QStringLiteral("selection-color:"))
-                && editor->palette().color(QPalette::Text) != editor->palette().color(QPalette::Base),
-            QStringLiteral("Special discount input text must remain visible while editing."));
+        typeText(specialDiscount, QStringLiteral("9"));
+        check(specialDiscount->text() != QStringLiteral("9")
+                && specialDiscount->hasAcceptableInput(),
+            QStringLiteral("Typing a special discount above 8% must be rejected."));
+        typeText(specialDiscount, QStringLiteral("8"));
+        check(specialDiscount->text() == QStringLiteral("8"),
+            QStringLiteral("Typing an 8% discount must remain visible."));
     }
     check(Pos::readProducts(Pos::DataPaths::products(), products, error)
             && Pos::findProductByBarcode(products, QStringLiteral("100001"), milk)
@@ -1736,22 +1765,29 @@ void testSale(QStackedWidget *stack)
         QStringLiteral("New Order should show the seasonal discount in its summary."));
     check(showsText(cashier, QStringLiteral("Special discount")),
         QStringLiteral("New Order should show the special discount in its summary."));
-    QDoubleSpinBox *cashAmount = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("cashReceived"));
-    check(cashAmount && qAbs(cashAmount->value() - expectedTotals.payable) < 0.005,
+    QLineEdit *cashAmount = cashier->findChild<QLineEdit *>(QStringLiteral("cashReceived"));
+    bool defaultCashValid = false;
+    const double defaultCash = cashAmount ? cashAmount->text().toDouble(&defaultCashValid) : 0;
+    check(cashAmount && defaultCashValid && qAbs(defaultCash - expectedTotals.payable) < 0.005,
         QStringLiteral("Cash received should default to the discounted total."));
+    if (cashAmount)
+    {
+        typeText(cashAmount, QStringLiteral("1234.56"));
+        bool typedCashValid = false;
+        const double typedCash = cashAmount->text().toDouble(&typedCashValid);
+        check(typedCashValid && qAbs(typedCash - 1234.56) < 0.005
+                && cashAmount->text() == QStringLiteral("1234.56"),
+            QStringLiteral("Typed cash received must remain visible and be accepted."));
+    }
 
     // Pay in cash. The bill pop-up is closed automatically.
     for (QComboBox *box : cashier->findChildren<QComboBox *>())
         if (box->isVisible() && box->findText(QStringLiteral("Cash")) >= 0)
             box->setCurrentText(QStringLiteral("Cash"));
-    for (QDoubleSpinBox *cash : cashier->findChildren<QDoubleSpinBox *>())
-        if (cash->isVisible())
-            cash->setValue(100000);
-    QLineEdit *cashEditor = cashAmount ? cashAmount->findChild<QLineEdit *>() : nullptr;
-    check(cashAmount && cashEditor && cashEditor->isVisible() && !cashEditor->text().isEmpty()
-            && cashEditor->styleSheet().contains(QStringLiteral("color:"))
-            && cashEditor->styleSheet().contains(QStringLiteral("selection-color:"))
-            && cashEditor->palette().color(QPalette::Text) != cashEditor->palette().color(QPalette::Base),
+    if (cashAmount)
+        cashAmount->setText(QStringLiteral("100000.00"));
+    check(cashAmount && cashAmount->isVisible() && !cashAmount->text().isEmpty()
+            && cashAmount->styleSheet().contains(QStringLiteral("color:")),
         QStringLiteral("Cash received input text must remain visible while editing."));
     QPushButton *pay = button(cashier, QStringLiteral("Generate bill"));
     check(pay, QStringLiteral("New Order: no Generate bill button."));
