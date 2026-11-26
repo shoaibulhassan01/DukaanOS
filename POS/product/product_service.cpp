@@ -35,7 +35,7 @@ bool findProductByBarcode(QVector<Product> products, QString barcode,
 // Owner: Umar Khan - check that the requested quantity is in stock.
 bool checkStock(Product product, int requestedQuantity)
 {
-    return requestedQuantity > 0 && requestedQuantity < product.quantity;
+    return requestedQuantity > 0 && requestedQuantity <= product.quantity;
 }
 
 // Owner: Umar Khan - read, subtract on a copy, then save once.

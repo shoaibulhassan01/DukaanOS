@@ -13,8 +13,8 @@ bool findProductByBarcode(QVector<Product> products, QString barcode,
     Product &foundProduct);
 
 // Owner: Umar Khan - check that the requested quantity is in stock.
-// Requirement 5: the required quantity must be LESS THAN the available
-// quantity, so asking for all of the remaining stock is refused.
+// Requirement 5: the requested quantity must be positive and cannot exceed
+// the available stock; selling the last units is allowed.
 bool checkStock(Product product, int requestedQuantity);
 
 // Owner: Umar Khan - after a sale, subtract every sold quantity from
