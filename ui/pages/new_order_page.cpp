@@ -474,9 +474,10 @@ private:
         specialDiscountRateLayout->addStretch(1);
         specialDiscountRate_ = new QLineEdit(specialDiscountRateRow_);
         specialDiscountRate_->setObjectName(QStringLiteral("specialDiscountRate"));
-        auto *discountValidator = new QDoubleValidator(0, 8, 2, specialDiscountRate_);
-        discountValidator->setNotation(QDoubleValidator::StandardNotation);
-        discountValidator->setLocale(QLocale::c());
+        auto *discountValidator = new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral(
+                "^(?:[0-7](?:\\.[0-9]{0,2})?|8(?:\\.0{0,2})?)$")),
+            specialDiscountRate_);
         specialDiscountRate_->setValidator(discountValidator);
         specialDiscountRate_->setText(QStringLiteral("0.00"));
         specialDiscountRate_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
