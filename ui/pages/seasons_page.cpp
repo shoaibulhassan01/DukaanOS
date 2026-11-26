@@ -9,14 +9,16 @@
 #include <QDateEdit>
 #include <QDialog>
 #include <QDialogButtonBox>
-#include <QDoubleSpinBox>
+#include <QDoubleValidator>
 #include <QFormLayout>
 #include <QFrame>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QLocale>
 #include <QMessageBox>
+#include <QLineEdit>
 #include <QPushButton>
 #include <QTableWidget>
 #include <QTableWidgetItem>
@@ -85,9 +87,9 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     dialog.setMinimumWidth(420);
     dialog.setStyleSheet(QStringLiteral(
         "QDialog { background: white; }"
-        "QDateEdit, QDoubleSpinBox { background: #FAFAFD; color: %1; border: 1px solid %2;"
+        "QDateEdit, QLineEdit { background: #FAFAFD; color: %1; border: 1px solid %2;"
         " border-radius: 8px; padding: 0 10px; font-size: 12px; }"
-        "QDateEdit:focus, QDoubleSpinBox:focus { background: white; border: 1px solid %3; }"
+        "QDateEdit:focus, QLineEdit:focus { background: white; border: 1px solid %3; }"
         "QDateEdit::drop-down { subcontrol-origin: padding; subcontrol-position: center right;"
         " width: 28px; border: none; background: transparent; }"
         "QDateEdit::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }")
@@ -136,11 +138,14 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     layout->addLayout(dates);
 
     layout->addWidget(caption(QStringLiteral("Discount (%)")));
-    auto *percentage = new QDoubleSpinBox(&dialog);
-    percentage->setRange(0.01, 100.00);
-    percentage->setDecimals(2);
-    percentage->setSuffix(QStringLiteral(" %"));
-    percentage->setButtonSymbols(QAbstractSpinBox::NoButtons);
+    auto *percentage = new QLineEdit(&dialog);
+    percentage->setObjectName(QStringLiteral("seasonDiscountPercentage"));
+    auto *percentageValidator = new QDoubleValidator(0.01, 100.00, 2, percentage);
+    percentageValidator->setNotation(QDoubleValidator::StandardNotation);
+    percentageValidator->setLocale(QLocale::c());
+    percentage->setValidator(percentageValidator);
+    percentage->setPlaceholderText(QStringLiteral("e.g. 10.00"));
+    percentage->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
     percentage->setFixedHeight(38);
     layout->addWidget(percentage);
 
@@ -162,7 +167,7 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     {
         startDate->setDate(existing->startDate);
         endDate->setDate(existing->endDate);
-        percentage->setValue(existing->percentage);
+        percentage->setText(QString::number(existing->percentage, 'f', 2));
         active->setChecked(existing->isActive);
     }
 
@@ -190,14 +195,26 @@ bool showSeasonDialog(QWidget *parent, const Pos::Season *existing,
     layout->addLayout(buttons);
 
     QObject::connect(cancel, &QPushButton::clicked, &dialog, &QDialog::reject);
-    QObject::connect(save, &QPushButton::clicked, &dialog, &QDialog::accept);
+    QObject::connect(save, &QPushButton::clicked, &dialog, [&dialog, percentage]()
+    {
+        bool validPercentage = false;
+        percentage->text().toDouble(&validPercentage);
+        if (!percentage->hasAcceptableInput() || !validPercentage)
+        {
+            QMessageBox::warning(&dialog, QStringLiteral("Invalid discount"),
+                QStringLiteral("Enter a discount between 0.01% and 100.00%."));
+            percentage->setFocus();
+            return;
+        }
+        dialog.accept();
+    });
 
     if (dialog.exec() != QDialog::Accepted)
         return false;
 
     result.startDate = startDate->date();
     result.endDate = endDate->date();
-    result.percentage = percentage->value();
+    result.percentage = percentage->text().toDouble();
     result.isActive = active->isChecked();
 
     return true;

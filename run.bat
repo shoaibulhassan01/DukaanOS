@@ -154,6 +154,14 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo Copying application data...
+xcopy "%~dp0Data" "%PACKAGE_DIR%\Data\" /E /I /Y >nul
+if errorlevel 2 (
+    echo Could not copy the application data files.
+    pause
+    exit /b 1
+)
+
 echo Installer files are ready in "%PACKAGE_DIR%".
 exit /b 0
 

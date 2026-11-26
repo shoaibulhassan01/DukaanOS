@@ -13,7 +13,7 @@
 
 #include <QCoreApplication>
 #include <QComboBox>
-#include <QDoubleSpinBox>
+#include <QDoubleValidator>
 #include <QHash>
 #include <QSignalBlocker>
 #include <QDir>
@@ -28,6 +28,7 @@
 #include <QIntValidator>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMediaDevices>
 #include <QPixmap>
 #include <QPushButton>
@@ -91,22 +92,6 @@ QString fieldStyle()
         " width: 28px; border: none; background: transparent; }"
         "QComboBox::down-arrow { image: url(:/assets/combo_arrow.png); width: 12px; height: 8px; }")
         .arg(kInk, kLine, kNavy);
-}
-
-void styleDoubleSpinBox(QDoubleSpinBox *field)
-{
-    field->setStyleSheet(fieldStyle());
-    if (QLineEdit *editor = field->findChild<QLineEdit *>())
-    {
-        QPalette editorPalette = editor->palette();
-        editorPalette.setColor(QPalette::Text, field->palette().color(QPalette::Text));
-        editorPalette.setColor(QPalette::HighlightedText,
-            field->palette().color(QPalette::HighlightedText));
-        editor->setPalette(editorPalette);
-        editor->setStyleSheet(QStringLiteral(
-            "QLineEdit { background: transparent; color: %1; border: none; padding: 0;"
-            " selection-color: white; selection-background-color: %2; }").arg(kInk, kNavy));
-    }
 }
 
 class NewOrderPage : public QWidget
@@ -485,21 +470,21 @@ private:
         auto *specialDiscountRateLayout = new QHBoxLayout(specialDiscountRateRow_);
         specialDiscountRateLayout->setContentsMargins(0, 0, 0, 12);
         specialDiscountRateLayout->addWidget(createFieldLabel(
-            QStringLiteral("Special discount rate"), specialDiscountRateRow_));
+            QStringLiteral("Special discount rate (%)"), specialDiscountRateRow_));
         specialDiscountRateLayout->addStretch(1);
-        // Typed percentage, 0.00 to 8.00 (req 8: not more than 8 percent).
-        specialDiscountRate_ = new QDoubleSpinBox(specialDiscountRateRow_);
+        specialDiscountRate_ = new QLineEdit(specialDiscountRateRow_);
         specialDiscountRate_->setObjectName(QStringLiteral("specialDiscountRate"));
-        specialDiscountRate_->setRange(0, 8);
-        specialDiscountRate_->setDecimals(2);
-        specialDiscountRate_->setSuffix(QStringLiteral(" %"));
-        specialDiscountRate_->setButtonSymbols(QAbstractSpinBox::NoButtons);
+        auto *discountValidator = new QRegularExpressionValidator(
+            QRegularExpression(QStringLiteral(
+                "^(?:[0-7](?:\\.[0-9]{0,2})?|8(?:\\.0{0,2})?)$")),
+            specialDiscountRate_);
+        specialDiscountRate_->setValidator(discountValidator);
+        specialDiscountRate_->setText(QStringLiteral("0.00"));
         specialDiscountRate_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        specialDiscountRate_->setToolTip(QStringLiteral("Up to 8 percent, e.g. 2.50"));
+        specialDiscountRate_->setToolTip(QStringLiteral("Enter a discount from 0% to 8%, up to 2 decimals."));
         specialDiscountRate_->setFixedHeight(34);
         specialDiscountRate_->setFixedWidth(96);
-        styleDoubleSpinBox(specialDiscountRate_);
-        UiPages::ignoreMouseWheel(specialDiscountRate_);
+        specialDiscountRate_->setStyleSheet(fieldStyle());
         specialDiscountRateLayout->addWidget(specialDiscountRate_);
         layout->addWidget(specialDiscountRateRow_);
         if (editExistingOrder_)
@@ -551,14 +536,16 @@ private:
 
         cashLabel_ = createFieldLabel(QStringLiteral("Cash received (PKR)"), paymentFields_);
         paymentLayout->addWidget(cashLabel_);
-        cashReceived_ = new QDoubleSpinBox(paymentFields_);
+        cashReceived_ = new QLineEdit(paymentFields_);
         cashReceived_->setObjectName(QStringLiteral("cashReceived"));
-        cashReceived_->setRange(0, 100000000);
-        cashReceived_->setDecimals(2);
-        cashReceived_->setButtonSymbols(QAbstractSpinBox::NoButtons);
-        UiPages::ignoreMouseWheel(cashReceived_);
+        auto *cashValidator = new QDoubleValidator(0, 100000000, 2, cashReceived_);
+        cashValidator->setNotation(QDoubleValidator::StandardNotation);
+        cashValidator->setLocale(QLocale::c());
+        cashReceived_->setValidator(cashValidator);
+        cashReceived_->setPlaceholderText(QStringLiteral("0.00"));
+        cashReceived_->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+        cashReceived_->setStyleSheet(fieldStyle());
         cashReceived_->setFixedHeight(42);
-        styleDoubleSpinBox(cashReceived_);
         paymentLayout->addWidget(cashReceived_);
         changeLabel_ = new QLabel(paymentFields_);
         changeLabel_->setStyleSheet(QStringLiteral(
@@ -567,9 +554,10 @@ private:
         layout->addWidget(paymentFields_);
         layout->addSpacing(14);
         connect(paymentMethod_, &QComboBox::currentTextChanged, this, [this]() { updatePaymentFields(); });
-        connect(cashReceived_, &QDoubleSpinBox::valueChanged, this, [this]() { updatePaymentFields(); });
-        connect(cashReceived_, &QAbstractSpinBox::editingFinished, this, [this]() { cashEdited_ = true; });
-        connect(specialDiscountRate_, &QDoubleSpinBox::valueChanged,
+        connect(cashReceived_, &QLineEdit::textChanged, this, [this]() { updatePaymentFields(); });
+        connect(cashReceived_, &QLineEdit::textEdited, this,
+            [this]() { cashEdited_ = true; });
+        connect(specialDiscountRate_, &QLineEdit::textChanged,
             this, [this]() { refreshCart(); });
 
         auto *checkout = new QPushButton(QStringLiteral("Generate bill"), card);
@@ -964,9 +952,13 @@ private:
             items.reserve(cartLines_.size());
             for (const CartLine &line : cartLines_)
                 items.append(Pos::CartItem{line.product, line.quantity});
-            const double specialDiscountPercentage = specialDiscountRate_->value();
-            totalsValid = Pos::calculateCartTotals(items, totals, totalsError,
-                specialDiscountPercentage);
+            double specialDiscountPercentage = 0;
+            totalsValid = readSpecialDiscountPercentage(specialDiscountPercentage);
+            if (totalsValid)
+                totalsValid = Pos::calculateCartTotals(items, totals, totalsError,
+                    specialDiscountPercentage);
+            else
+                totalsError = QStringLiteral("Enter a special discount from 0% to 8% with up to 2 decimals.");
         }
 
         itemsValue_->setText(QString::number(itemCount));
@@ -1009,7 +1001,7 @@ private:
         if (totalsValid && cashReceived_ && !cashEdited_)
         {
             const QSignalBlocker block(cashReceived_);
-            cashReceived_->setValue(currentTotal_);
+            cashReceived_->setText(QString::number(currentTotal_, 'f', 2));
         }
         updatePaymentFields();
     }
@@ -1024,12 +1016,28 @@ private:
         cashLabel_->setVisible(cash);
         cashReceived_->setVisible(cash);
         changeLabel_->setVisible(cash);
-        const double change = cashReceived_->value() - currentTotal_;
-        changeLabel_->setText(cashReceived_->value() <= 0
+        bool amountValid = false;
+        const double amountReceived = cashReceived_->text().toDouble(&amountValid);
+        const double change = amountReceived - currentTotal_;
+        changeLabel_->setText(cashReceived_->text().isEmpty()
             ? QStringLiteral("Enter the cash given by the customer.")
+            : !amountValid
+                ? QStringLiteral("Enter a valid cash amount.")
             : change < -0.005
                 ? QStringLiteral("PKR %1 still due").arg(-change, 0, 'f', 2)
                 : QStringLiteral("Change to return: PKR %1").arg(change, 0, 'f', 2));
+    }
+
+    bool readSpecialDiscountPercentage(double &percentage) const
+    {
+        if (specialDiscountRate_->text().trimmed().isEmpty())
+        {
+            percentage = 0;
+            return true;
+        }
+        bool validPercentage = false;
+        percentage = specialDiscountRate_->text().toDouble(&validPercentage);
+        return specialDiscountRate_->hasAcceptableInput() && validPercentage;
     }
 
     void showDescription()
@@ -1108,10 +1116,24 @@ private:
         request.customerContact = order.phone;
         request.existingOrderId = orderId_;
         request.paymentMode = paymentMethod_->currentText();
-        request.specialDiscountPercentage = specialDiscountRate_->value();
+        if (!readSpecialDiscountPercentage(request.specialDiscountPercentage))
+        {
+            checkoutMessage_->setText(
+                QStringLiteral("Enter a special discount from 0% to 8% with up to 2 decimals."));
+            checkoutMessage_->show();
+            return;
+        }
         const bool cash = request.paymentMode == QStringLiteral("Cash");
+        bool amountReceivedValid = false;
+        const double amountReceived = cashReceived_->text().toDouble(&amountReceivedValid);
+        if (cash && (!amountReceivedValid || !cashReceived_->hasAcceptableInput()))
+        {
+            checkoutMessage_->setText(QStringLiteral("Enter a valid cash received amount."));
+            checkoutMessage_->show();
+            return;
+        }
         request.merchant = cash ? QString() : merchantEdit_->text().trimmed();
-        request.amountPaid = cash ? cashReceived_->value() : currentTotal_;
+        request.amountPaid = cash ? amountReceived : currentTotal_;
         for (const CartLine &line : cartLines_)
             request.items.append(Pos::CartItem{line.product, line.quantity});
 
@@ -1179,7 +1201,7 @@ private:
     QLabel *merchantLabel_ = nullptr;
     QLineEdit *merchantEdit_ = nullptr;
     QLabel *cashLabel_ = nullptr;
-    QDoubleSpinBox *cashReceived_ = nullptr;
+    QLineEdit *cashReceived_ = nullptr;
     QLabel *changeLabel_ = nullptr;
     double currentTotal_ = 0;
     bool cashEdited_ = false;
@@ -1196,7 +1218,7 @@ private:
     QLineEdit *customerPhoneEdit_ = nullptr;
     QLineEdit *quantity_ = nullptr;
     QComboBox *paymentMethod_ = nullptr;
-    QDoubleSpinBox *specialDiscountRate_ = nullptr;
+    QLineEdit *specialDiscountRate_ = nullptr;
     QLabel *previewLabel_ = nullptr;
     QLabel *matchLabel_ = nullptr;
     QLabel *statusLabel_ = nullptr;
