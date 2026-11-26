@@ -41,13 +41,13 @@ int main(int argc, char *argv[])
     if (Pos::splitRecord(QStringLiteral("P1 123456"), fields))
         return fail(QStringLiteral("RecordCodec accepted a record without #."));
 
-    // Requirement 5: required quantity must be less than the available quantity.
+    // Requirement 5: a sale may consume all remaining stock, but not exceed it.
     Pos::Product product;
     product.quantity = 5;
     if (!Pos::checkStock(product, 4))
         return fail(QStringLiteral("A quantity below the stock must be allowed."));
-    if (Pos::checkStock(product, 5))
-        return fail(QStringLiteral("A quantity equal to the stock must be refused."));
+    if (!Pos::checkStock(product, 5))
+        return fail(QStringLiteral("A quantity equal to the stock must be allowed."));
     if (Pos::checkStock(product, 6))
         return fail(QStringLiteral("A quantity above the stock must be refused."));
     if (Pos::checkStock(product, 0))
@@ -146,6 +146,22 @@ int main(int argc, char *argv[])
     unknown.product.id = QStringLiteral("P9999");
     if (Pos::reduceStock(productFile, { unknown }, error))
         return fail(QStringLiteral("reduceStock accepted an unknown product."));
+
+    Pos::Product lastUnits = juice;
+    lastUnits.id = QStringLiteral("P0005");
+    lastUnits.barcode = QStringLiteral("100005");
+    lastUnits.quantity = 2;
+    const QString lastUnitsFile = dataDir.filePath(QStringLiteral("LastUnits.txt"));
+    if (!Pos::saveProducts(lastUnitsFile, { lastUnits }, error))
+        return fail(error);
+    Pos::CartItem sellAll;
+    sellAll.product = lastUnits;
+    sellAll.quantity = 2;
+    if (!Pos::checkStock(lastUnits, sellAll.quantity)
+        || !Pos::reduceStock(lastUnitsFile, { sellAll }, error)
+        || !Pos::readProducts(lastUnitsFile, loaded, error)
+        || loaded.size() != 1 || loaded.first().quantity != 0)
+        return fail(QStringLiteral("Selling all remaining stock must leave zero available."));
 
     // validateProduct
     if (!Pos::validateProduct(juice, error))

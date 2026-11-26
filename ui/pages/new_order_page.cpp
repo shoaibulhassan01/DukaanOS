@@ -381,7 +381,7 @@ private:
         layout->addLayout(entry);
 
         auto *stockHint = new QLabel(
-            QStringLiteral("Matched unit price is read from Product.txt. Required quantity must be less than stock."),
+            QStringLiteral("Matched unit price is read from Product.txt. Required quantity cannot exceed stock."),
             card);
         stockHint->setWordWrap(true);
         stockHint->setStyleSheet(QStringLiteral(
@@ -756,8 +756,7 @@ private:
 
         if (!hasAvailableStock(currentProduct_, existingQuantity + requestedQuantity))
         {
-            setStatus(QStringLiteral("Required quantity %1 the available stock (%2).")
-                .arg(isPaidOrderEdit() ? QStringLiteral("cannot exceed") : QStringLiteral("must be less than"))
+            setStatus(QStringLiteral("Required quantity cannot exceed the available stock (%1).")
                 .arg(availableStock(currentProduct_)), true);
             return;
         }
@@ -802,8 +801,7 @@ private:
         // "-" stops at 1 in both new and edited orders; the remove button takes a line out.
         if (change > 0 && !hasAvailableStock(line.product, line.quantity + change))
         {
-            setStatus(QStringLiteral("Required quantity %1 the available stock (%2).")
-                .arg(isPaidOrderEdit() ? QStringLiteral("cannot exceed") : QStringLiteral("must be less than"))
+            setStatus(QStringLiteral("Required quantity cannot exceed the available stock (%1).")
                 .arg(availableStock(line.product)), true);
             return;
         }
