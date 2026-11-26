@@ -93,6 +93,22 @@ QString fieldStyle()
         .arg(kInk, kLine, kNavy);
 }
 
+void styleDoubleSpinBox(QDoubleSpinBox *field)
+{
+    field->setStyleSheet(fieldStyle());
+    if (QLineEdit *editor = field->findChild<QLineEdit *>())
+    {
+        QPalette editorPalette = editor->palette();
+        editorPalette.setColor(QPalette::Text, field->palette().color(QPalette::Text));
+        editorPalette.setColor(QPalette::HighlightedText,
+            field->palette().color(QPalette::HighlightedText));
+        editor->setPalette(editorPalette);
+        editor->setStyleSheet(QStringLiteral(
+            "QLineEdit { background: transparent; color: %1; border: none; padding: 0;"
+            " selection-color: white; selection-background-color: %2; }").arg(kInk, kNavy));
+    }
+}
+
 class NewOrderPage : public QWidget
 {
     struct CartLine
@@ -482,7 +498,7 @@ private:
         specialDiscountRate_->setToolTip(QStringLiteral("Up to 8 percent, e.g. 2.50"));
         specialDiscountRate_->setFixedHeight(34);
         specialDiscountRate_->setFixedWidth(96);
-        specialDiscountRate_->setStyleSheet(fieldStyle());
+        styleDoubleSpinBox(specialDiscountRate_);
         UiPages::ignoreMouseWheel(specialDiscountRate_);
         specialDiscountRateLayout->addWidget(specialDiscountRate_);
         layout->addWidget(specialDiscountRateRow_);
@@ -536,12 +552,13 @@ private:
         cashLabel_ = createFieldLabel(QStringLiteral("Cash received (PKR)"), paymentFields_);
         paymentLayout->addWidget(cashLabel_);
         cashReceived_ = new QDoubleSpinBox(paymentFields_);
+        cashReceived_->setObjectName(QStringLiteral("cashReceived"));
         cashReceived_->setRange(0, 100000000);
         cashReceived_->setDecimals(2);
         cashReceived_->setButtonSymbols(QAbstractSpinBox::NoButtons);
         UiPages::ignoreMouseWheel(cashReceived_);
         cashReceived_->setFixedHeight(42);
-        cashReceived_->setStyleSheet(fieldStyle());
+        styleDoubleSpinBox(cashReceived_);
         paymentLayout->addWidget(cashReceived_);
         changeLabel_ = new QLabel(paymentFields_);
         changeLabel_->setStyleSheet(QStringLiteral(

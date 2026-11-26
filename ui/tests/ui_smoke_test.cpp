@@ -46,6 +46,7 @@
 #include <QFile>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPalette>
 #include <QPushButton>
 #include <QRegularExpression>
 #include <QStackedWidget>
@@ -1698,6 +1699,12 @@ void testSale(QStackedWidget *stack)
         check(specialDiscount->value() == 8,
             QStringLiteral("Special discount above 8 percent must be refused, got %1.").arg(specialDiscount->value()));
         specialDiscount->setValue(8);
+        QLineEdit *editor = specialDiscount->findChild<QLineEdit *>();
+        check(editor && editor->isVisible() && !editor->text().isEmpty()
+                && editor->styleSheet().contains(QStringLiteral("color:"))
+                && editor->styleSheet().contains(QStringLiteral("selection-color:"))
+                && editor->palette().color(QPalette::Text) != editor->palette().color(QPalette::Base),
+            QStringLiteral("Special discount input text must remain visible while editing."));
     }
     check(Pos::readProducts(Pos::DataPaths::products(), products, error)
             && Pos::findProductByBarcode(products, QStringLiteral("100001"), milk)
@@ -1709,10 +1716,7 @@ void testSale(QStackedWidget *stack)
         QStringLiteral("New Order should show the seasonal discount in its summary."));
     check(showsText(cashier, QStringLiteral("Special discount")),
         QStringLiteral("New Order should show the special discount in its summary."));
-    QDoubleSpinBox *cashAmount = nullptr;
-    for (QDoubleSpinBox *candidate : cashier->findChildren<QDoubleSpinBox *>())
-        if (candidate->isVisible())
-            cashAmount = candidate;
+    QDoubleSpinBox *cashAmount = cashier->findChild<QDoubleSpinBox *>(QStringLiteral("cashReceived"));
     check(cashAmount && qAbs(cashAmount->value() - expectedTotals.payable) < 0.005,
         QStringLiteral("Cash received should default to the discounted total."));
 
@@ -1723,6 +1727,12 @@ void testSale(QStackedWidget *stack)
     for (QDoubleSpinBox *cash : cashier->findChildren<QDoubleSpinBox *>())
         if (cash->isVisible())
             cash->setValue(100000);
+    QLineEdit *cashEditor = cashAmount ? cashAmount->findChild<QLineEdit *>() : nullptr;
+    check(cashAmount && cashEditor && cashEditor->isVisible() && !cashEditor->text().isEmpty()
+            && cashEditor->styleSheet().contains(QStringLiteral("color:"))
+            && cashEditor->styleSheet().contains(QStringLiteral("selection-color:"))
+            && cashEditor->palette().color(QPalette::Text) != cashEditor->palette().color(QPalette::Base),
+        QStringLiteral("Cash received input text must remain visible while editing."));
     QPushButton *pay = button(cashier, QStringLiteral("Generate bill"));
     check(pay, QStringLiteral("New Order: no Generate bill button."));
     if (!pay)
