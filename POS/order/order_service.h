@@ -24,6 +24,10 @@ struct OrderReport
 };
 
 bool readHeldOrders(QVector<Order> &orders, QString &error);
+// Req 11. Incomplete (on-hold) orders have no bill, so each one's amount in
+// the report is its current worth: what it would cost if paid today, at
+// today's product prices and seasonal discount (no special discount).
+// Order.txt itself is not changed.
 bool readIncompleteOrdersReport(OrderReport &report, QString &error);
 bool readCompletedOrdersReport(OrderReport &report, QString &error);
 

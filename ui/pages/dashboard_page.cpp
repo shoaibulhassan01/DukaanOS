@@ -12,6 +12,7 @@
 #include "seasons_page.h"
 #include "../../POS/common/data_paths.h"
 #include "../../POS/order/order_repository.h"
+#include "../../POS/checkout/checkout_service.h"
 #include "../../POS/order/order_service.h"
 
 #include <QComboBox>
@@ -838,11 +839,18 @@ private:
         {
             preview.lines.append(OrderPreviewLine{item.product, item.quantity});
             preview.itemCount += item.quantity;
-            preview.subtotal += item.product.unitPrice * item.quantity;
-            preview.tax += item.product.tax * item.quantity;
-            preview.discount += item.product.discountPerUnit * item.quantity;
         }
-        preview.total = preview.subtotal + preview.tax - preview.discount;
+        // Same total as New Order shows on resume and the incomplete-orders
+        // report: today's prices, tax, product discounts and seasonal discount
+        // (no special discount until checkout).
+        Pos::CartTotals totals;
+        if (!Pos::calculateCartTotals(session.items, totals, error))
+            return false;
+        preview.subtotal = totals.withoutTax;
+        preview.tax = totals.tax;
+        preview.discount = totals.discount;
+        preview.seasonalDiscount = totals.seasonalDiscount;
+        preview.total = totals.payable;
         error.clear();
         return true;
     }
